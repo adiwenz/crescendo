@@ -17,7 +17,7 @@ WINDOW_SECONDS = 10       # how much history to show on the graph
 
 # For display range
 MIDI_MIN_DISPLAY = librosa.note_to_midi("C3")
-MIDI_MAX_DISPLAY = librosa.note_to_midi("C6")
+MIDI_MAX_DISPLAY = librosa.note_to_midi("C5")
 
 # Audio buffer + queue from callback → main thread
 audio_buffer = deque(maxlen=int(BUFFER_SECONDS * SR))
@@ -80,8 +80,10 @@ def main():
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 5))
     line_pitch, = ax.plot([], [], "-", label="Sung pitch (MIDI)")
-    scatter_nearest = ax.plot([], [], "o", color="orange", markersize=4,
-                              label="Nearest note")[0]
+    # scatter_nearest = ax.plot([], [], "-", color="orange", 
+    #                           label="Nearest note")[0]
+    scatter_nearest = ax.plot([], [], "o", color="orange", markersize=1,
+                             label="Nearest note")[0]
 
     midi_ticks = list(range(MIDI_MIN_DISPLAY, MIDI_MAX_DISPLAY + 1))
     midi_labels = [librosa.midi_to_note(m, octave=True) for m in midi_ticks]
@@ -127,7 +129,7 @@ def main():
 
                     ax.set_xlim(max(0, t_now - WINDOW_SECONDS), t_now)
 
-                plt.pause(0.03)  # ~30 FPS update
+                plt.pause(0.01)  # ~10 FPS update
         except KeyboardInterrupt:
             print("\n👋 Stopped.")
 

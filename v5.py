@@ -79,6 +79,7 @@ def smooth_short_jumps(midi_float, max_len=2):
     """
     Smooth very short note segments (1–2 frames) between longer ones by
     replacing them with the average of neighboring segments.
+    Operates on the continuous MIDI track (before snapping to semitones).
     """
     midi = midi_float.copy()
     n = len(midi)
@@ -148,56 +149,65 @@ def remove_outlier_frames(midi_float, max_semitone_jump=4, window=4):
     return midi
 
 
-def clean_short_nearest_segments(midi_nearest, max_len=4, max_neighbor_diff=2):
+# ---------- NEW: smooth tiny nearest-note flips between same note ----------
+
+def smooth_nearest_note_flips(midi_nearest, max_flip_len=20):
     """
-    For snapped MIDI notes:
-      • Find short segments (len <= max_len) of a given note.
-      • If they sit between two neighbor-note segments whose notes are close
-        (within max_neighbor_diff semitones), replace with the average neighbor note.
-      • Otherwise, drop them (NaN).
+    Merge very short different-note 'flips' between two runs of the same note.
+
+    Example: A A A  B  A A A, where B lasts <= max_flip_len frames,
+    becomes:  A A A  A  A A A.
+
+    This removes little orange outliers between what should be a single note.
     """
     midi = midi_nearest.copy()
     n = len(midi)
-
-    segments = []
     i = 0
+
     while i < n:
         if np.isnan(midi[i]):
             i += 1
             continue
-        note = midi[i]
-        start = i
+
+        base_note = midi[i]
+
+        # first segment of base_note
+        start1 = i
         j = i + 1
-        while j < n and not np.isnan(midi[j]) and midi[j] == note:
+        while j < n and not np.isnan(midi[j]) and midi[j] == base_note:
             j += 1
-        segments.append((start, j, note))
-        i = j
+        end1 = j
 
-    for idx, (s_start, s_end, s_note) in enumerate(segments):
-        seg_len = s_end - s_start
-        if seg_len > max_len:
-            continue
+        # middle flip segment (different note)
+        mid_start = end1
+        mid_end = mid_start
+        while mid_end < n and not np.isnan(midi[mid_end]) and midi[mid_end] != base_note:
+            mid_end += 1
+        flip_len = mid_end - mid_start
 
-        prev_note = None
-        next_note = None
+        # following base_note segment
+        next_start = mid_end
+        next_end = next_start
+        while (
+            next_end < n
+            and not np.isnan(midi[next_end])
+            and midi[next_end] == base_note
+        ):
+            next_end += 1
 
-        if idx > 0:
-            prev_note = segments[idx - 1][2]
-        if idx < len(segments) - 1:
-            next_note = segments[idx + 1][2]
+        if (
+            flip_len > 0
+            and flip_len <= max_flip_len
+            and next_end > next_start  # we actually return to base_note
+        ):
+            # Replace the tiny middle flip with the base note
+            midi[mid_start:mid_end] = base_note
 
-        # If we have two neighbors and they're reasonably similar,
-        # merge this little segment into their "average" note.
-        if prev_note is not None and next_note is not None:
-            if abs(prev_note - next_note) <= max_neighbor_diff:
-                replacement = round((prev_note + next_note) / 2.0)
-                midi[s_start:s_end] = replacement
-            else:
-                # neighbors disagree a lot → treat this as noise
-                midi[s_start:s_end] = np.nan
+        # advance
+        if next_end > end1:
+            i = next_end
         else:
-            # At edges or no neighbors → treat as noise / silence
-            midi[s_start:s_end] = np.nan
+            i = end1
 
     return midi
 
@@ -209,10 +219,10 @@ def hz_to_note_and_cents(f0_hz):
     Processing steps:
       • convert Hz → MIDI
       • smooth very short jumps (continuous MIDI)
-      • remove outliers (continuous MIDI)
+      • remove outliers on continuous MIDI
       • round to nearest MIDI note
-      • clean small "nearest note" outlier segments
-      • sync NaNs between continuous + snapped MIDI
+      • remove outliers on snapped MIDI notes
+      • smooth tiny nearest-note flips between same note
     """
     # Raw continuous MIDI
     midi_raw = librosa.hz_to_midi(f0_hz)
@@ -226,15 +236,18 @@ def hz_to_note_and_cents(f0_hz):
     # Snap to nearest semitone
     midi_nearest = np.round(midi_clean).astype(float)
 
-    # Clean small weird nearest-note clusters
-    midi_nearest_clean = clean_short_nearest_segments(
-        midi_nearest, max_len=4, max_neighbor_diff=2
+    # ALSO remove outliers on the snapped notes themselves
+    midi_nearest_clean = remove_outlier_frames(
+        midi_nearest, max_semitone_jump=4, window=4
     )
 
-    # Any frame that was dropped/changed in nearest notes → mirror in continuous
+    # Any frame that was outlier in snapped notes → drop from continuous too
     bad = np.isnan(midi_nearest_clean)
     midi_clean[bad] = np.nan
     midi_nearest = midi_nearest_clean
+
+    # Merge very short wrong-note flips between two runs of the same note
+    midi_nearest = smooth_nearest_note_flips(midi_nearest, max_flip_len=40)
 
     # Cents offset from nearest note
     cents_off = 100.0 * (midi_clean - midi_nearest)
@@ -308,13 +321,85 @@ def summary_stats(cents_per_note):
     print(f"   • % of notes within ±50 cents: {within_50:.1f}%\n")
 
 
+# ---------- Mask short nearest-note segments for plotting ----------
+
+def mask_short_nearest_segments(midi_nearest, cents, min_len=10, max_cents=100.0):
+    """
+    For visualization:
+
+      • Keep only nearest-note segments that last at least `min_len` frames
+        AND whose average |cents| <= max_cents.
+      • Treat everything else as 'silence' (set to NaN) so it does NOT
+        get plotted.
+
+    This removes:
+      • tiny orange blips (short segments)
+      • 'staircase' notes in slides where the pitch is far from the
+        snapped note (large cents error).
+    """
+    midi = midi_nearest.copy()
+    n = len(midi)
+    i = 0
+
+    while i < n:
+        if np.isnan(midi[i]):
+            i += 1
+            continue
+
+        note = midi[i]
+        start = i
+        j = i + 1
+        while (
+            j < n
+            and not np.isnan(midi[j])
+            and midi[j] == note
+        ):
+            j += 1
+
+        seg_len = j - start
+        seg_cents = cents[start:j]
+        valid_cents = seg_cents[~np.isnan(seg_cents)]
+        avg_abs_cents = np.mean(np.abs(valid_cents)) if valid_cents.size > 0 else np.inf
+
+        # Hide if too short OR too out-of-tune (likely part of a slide)
+        if seg_len < min_len or avg_abs_cents > max_cents:
+            midi[start:j] = np.nan
+
+        i = j
+
+    return midi
+
+
+def median_smooth_midi_for_plot(midi_nearest, window=9):
+    """
+    Simple median filter over the nearest-note track, used ONLY for
+    plotting. This collapses fast flips (e.g. A–B–A–B) into a single
+    stable note for visualization.
+    """
+    midi = midi_nearest.copy()
+    n = len(midi)
+    out = np.full_like(midi, np.nan, dtype=float)
+    half = window // 2
+
+    for i in range(n):
+        start = max(0, i - half)
+        end = min(n, i + half + 1)
+        vals = midi[start:end]
+        vals = vals[~np.isnan(vals)]
+        if len(vals) == 0:
+            continue
+        out[i] = np.median(vals)
+
+    return out
+
+
 def plot_results(times, midi_float, midi_nearest, cents_note_avg, note_names):
     """
     Interactive Melodyne-style plot:
 
       • y-axis limited to C3–C6
-      • nearest note = orange dots
-      • sung pitch = blue line, not connected across different notes
+      • nearest note = orange dots (short blips hidden)
+      • sung pitch = blue line, broken when nearest note changes
       • hover shows time, note, and NOTE-AVERAGED cents offset
     """
     # Only plot frames with valid pitch in display range
@@ -333,6 +418,15 @@ def plot_results(times, midi_float, midi_nearest, cents_note_avg, note_names):
     cents_v = cents_note_avg[valid]
     notes_v = np.array(note_names)[valid]
 
+    # Smooth nearest-note track for plotting, then hide tiny / slide-ish bits
+    midi_nearest_smooth = median_smooth_midi_for_plot(midi_nearest_v, window=5)
+    midi_nearest_plot = mask_short_nearest_segments(
+        midi_nearest_smooth,
+        cents_v,
+        min_len=10,
+        max_cents=120.0,
+    )
+
     midi_ticks = list(range(MIDI_MIN_DISPLAY, MIDI_MAX_DISPLAY + 1))
     midi_labels = [librosa.midi_to_note(m, octave=True) for m in midi_ticks]
 
@@ -349,7 +443,7 @@ def plot_results(times, midi_float, midi_nearest, cents_note_avg, note_names):
     # Nearest snapped notes in orange (dots)
     ax.plot(
         times_v,
-        midi_nearest_v,
+        midi_nearest_plot,
         ".",
         markersize=4,
         alpha=0.7,
@@ -357,10 +451,13 @@ def plot_results(times, midi_float, midi_nearest, cents_note_avg, note_names):
         label="Nearest note",
     )
 
-    # Build a sung-pitch line that BREAKS when the note changes
+    # Break the sung pitch only on BIG note jumps (>= 3 semitones) or NaNs
     midi_line = midi_v.copy()
     for i in range(1, len(midi_line)):
-        if midi_nearest_v[i] != midi_nearest_v[i - 1]:
+        if (
+            np.isnan(midi_v[i]) or np.isnan(midi_v[i - 1])
+            or abs(midi_nearest_v[i] - midi_nearest_v[i - 1]) >= 3   # <= KEY LINE
+        ):
             midi_line[i] = np.nan
             midi_line[i - 1] = np.nan
 
@@ -405,7 +502,7 @@ def main():
     parser.add_argument(
         "--duration",
         type=float,
-        default=15.0,
+        default=5.0,
         help="Recording duration in seconds (default: 15)",
     )
     parser.add_argument(
