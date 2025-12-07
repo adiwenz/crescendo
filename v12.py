@@ -1,0 +1,347 @@
+import argparse
+import numpy as np
+import sounddevice as sd
+import librosa
+import matplotlib.pyplot as plt
+import mplcursors
+
+
+# Fixed display range
+MIDI_MIN_DISPLAY = librosa.note_to_midi("C3")  # 48
+MIDI_MAX_DISPLAY = librosa.note_to_midi("C6")  # 84
+
+
+# ---------- Recording ----------
+
+def record_audio(duration, sr):
+    print(f"🎙 Recording for {duration} seconds... Sing now!")
+    audio = sd.rec(int(duration * sr), samplerate=sr, channels=1, dtype="float32")
+    sd.wait()
+    print("✅ Recording done.\n")
+    return audio.flatten()
+
+
+# ---------- Pitch Detection ----------
+
+def analyze_pitch(audio, sr, fmin=80.0, fmax=1000.0):
+    """
+    YIN pitch detection + simple cleaning:
+      • RMS energy threshold to remove silence
+      • neighbor filter to remove isolated blips
+    """
+    frame_length = 2048
+    hop_length = 256
+
+    print("🎼 Running pitch detection (YIN)...")
+    f0 = librosa.yin(
+        audio,
+        fmin=fmin,
+        fmax=fmax,
+        sr=sr,
+        frame_length=frame_length,
+        hop_length=hop_length,
+    )
+
+    times = librosa.times_like(f0, sr=sr, hop_length=hop_length)
+    f0 = np.array(f0, dtype=float)
+
+    # --- Silence removal via RMS energy ---
+    rms = librosa.feature.rms(
+        y=audio, frame_length=frame_length, hop_length=hop_length
+    )[0]
+
+    if np.max(rms) > 0:
+        rms_norm = rms / np.max(rms)
+    else:
+        rms_norm = rms
+
+    energy_threshold = 0.25
+    voiced_mask = rms_norm > energy_threshold
+    f0[~voiced_mask] = np.nan
+
+    # Replace non-positive values with NaN
+    f0[f0 <= 0] = np.nan
+
+    # --- Neighbor filter to remove isolated "blips" ---
+    voiced = ~np.isnan(f0)
+    window_radius = 10
+    min_voiced_in_window = 10
+
+    for i in range(len(f0)):
+        if not voiced[i]:
+            continue
+        start = max(0, i - window_radius)
+        end = min(len(f0), i + window_radius + 1)
+        if np.sum(voiced[start:end]) < min_voiced_in_window:
+            f0[i] = np.nan
+
+    print("✅ Pitch detection done.\n")
+    return times, f0
+
+
+def remove_outlier_frames(midi_float, max_semitone_jump=3, window=5):
+    """
+    Remove frames whose MIDI is very far from local median.
+    This cleans up crazy spikes without being too aggressive.
+    """
+    midi = midi_float.copy()
+    n = len(midi)
+
+    for i in range(n):
+        if np.isnan(midi[i]):
+            continue
+
+        start = max(0, i - window)
+        end = min(n, i + window + 1)
+        neighbors = midi[start:end]
+        neighbors = neighbors[~np.isnan(neighbors)]
+        if len(neighbors) < 3:
+            continue
+
+        median = np.median(neighbors)
+        if abs(midi[i] - median) > max_semitone_jump:
+            midi[i] = np.nan
+
+    return midi
+
+
+# ---------- Note + cents ----------
+
+def hz_to_note_and_cents(f0_hz):
+    """
+    Hz → MIDI → nearest MIDI, note names, cents offset (per frame).
+    Continuous MIDI is lightly de-noised; nearest note is simple rounding.
+    """
+    midi_raw = librosa.hz_to_midi(f0_hz)
+    midi_clean = remove_outlier_frames(midi_raw)
+
+    midi_nearest = np.round(midi_clean).astype(float)
+    cents_off = 100.0 * (midi_clean - midi_nearest)
+
+    note_names = []
+    for m in midi_nearest:
+        if np.isnan(m):
+            note_names.append("Rest")
+        else:
+            note_names.append(librosa.midi_to_note(int(m), octave=True))
+
+    return midi_clean, midi_nearest, note_names, cents_off
+
+
+def average_cents_per_note(midi_nearest, cents_off):
+    """
+    Collapse frame-level cents into note-level averages.
+    """
+    n = len(midi_nearest)
+    cents_avg = np.full_like(cents_off, np.nan, dtype=float)
+    segment_means = []
+
+    i = 0
+    while i < n:
+        if np.isnan(midi_nearest[i]):
+            i += 1
+            continue
+
+        note = midi_nearest[i]
+        start = i
+        j = i + 1
+        while (
+            j < n
+            and not np.isnan(midi_nearest[j])
+            and midi_nearest[j] == note
+        ):
+            j += 1
+
+        seg_slice = slice(start, j)
+        seg_cents = cents_off[seg_slice]
+        valid = ~np.isnan(seg_cents)
+        if np.any(valid):
+            mean_cents = float(np.mean(seg_cents[valid]))
+            cents_avg[seg_slice] = mean_cents
+            segment_means.append(mean_cents)
+
+        i = j
+
+    return cents_avg, np.array(segment_means, dtype=float)
+
+
+def summary_stats(cents_per_note):
+    valid = ~np.isnan(cents_per_note)
+    if not np.any(valid):
+        print("⚠️ No valid pitch detected (maybe too quiet or too noisy?).")
+        return
+
+    vals = cents_per_note[valid]
+    abs_cents = np.abs(vals)
+
+    within_25 = np.mean(abs_cents <= 25) * 100.0
+    within_50 = np.mean(abs_cents <= 50) * 100.0
+    avg_abs = np.mean(abs_cents)
+
+    print("📊 Tuning summary (per sung note):")
+    print(f"   • Avg absolute error: {avg_abs:.1f} cents")
+    print(f"   • % of notes within ±25 cents: {within_25:.1f}%")
+    print(f"   • % of notes within ±50 cents: {within_50:.1f}%\n")
+
+
+# ---------- Plotting ----------
+
+def plot_results(times, midi_float, midi_nearest, cents_note_avg, note_names):
+    """
+    Melodyne-ish plot:
+
+      • y-axis limited to C3–C6
+      • nearest note = orange horizontal segments only where there is a
+        real held note (no lines between notes)
+      • sung pitch = blue line, broken between notes
+      • hover shows time, note, and NOTE-AVERAGED cents offset
+    """
+    # Only plot frames with valid pitch in display range
+    valid = (
+        ~np.isnan(midi_float)
+        & (midi_float >= MIDI_MIN_DISPLAY)
+        & (midi_float <= MIDI_MAX_DISPLAY)
+    )
+    if not np.any(valid):
+        print("⚠️ Nothing to plot in C3–C6 range.")
+        return
+
+    times_v = times[valid]
+    midi_v = midi_float[valid]
+    midi_nearest_v = midi_nearest[valid]
+    cents_v = cents_note_avg[valid]
+    notes_v = np.array(note_names)[valid]
+
+    midi_ticks = list(range(MIDI_MIN_DISPLAY, MIDI_MAX_DISPLAY + 1))
+    midi_labels = [librosa.midi_to_note(m, octave=True) for m in midi_ticks]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.set_title("Sung Pitch vs Nearest Note")
+    ax.set_ylabel("Note")
+    ax.set_xlabel("Time (s)")
+
+    # Note lanes
+    for m in midi_ticks:
+        ax.axhline(m, linestyle=":", linewidth=0.5, alpha=0.3)
+
+    # ---------- Nearest-note line: only for real held notes ----------
+    nearest_line = np.full_like(midi_nearest_v, np.nan, dtype=float)
+    n = len(midi_nearest_v)
+    min_note_frames = 4 # require at least this many frames to count as a note
+
+    i = 0
+    while i < n:
+        # must have a valid nearest note AND a valid sung pitch
+        if np.isnan(midi_nearest_v[i]) or np.isnan(midi_v[i]):
+            i += 1
+            continue
+
+        note = midi_nearest_v[i]
+        start = i
+        j = i + 1
+        while (
+            j < n
+            and not np.isnan(midi_nearest_v[j])
+            and not np.isnan(midi_v[j])
+            and midi_nearest_v[j] == note
+        ):
+            j += 1
+
+        seg_len = j - start
+        if seg_len >= min_note_frames:
+            # draw a flat line for this note segment
+            nearest_line[start:j] = note
+            # break at boundaries so segments don't connect
+            nearest_line[start] = np.nan
+            nearest_line[j - 1] = np.nan
+
+        i = j
+
+    ax.plot(
+        times_v,
+        nearest_line,
+        "-",
+        linewidth=2.0,
+        color="orange",
+        label="Nearest note",
+    )
+
+    # ---------- Sung pitch line, broken between notes ----------
+    midi_line = midi_v.copy()
+    for i in range(1, len(midi_line)):
+        if (
+            np.isnan(midi_nearest_v[i])
+            or np.isnan(midi_nearest_v[i - 1])
+            or midi_nearest_v[i] != midi_nearest_v[i - 1]
+        ):
+            midi_line[i] = np.nan
+            midi_line[i - 1] = np.nan
+
+    ax.plot(
+        times_v,
+        midi_line,
+        "-",
+        linewidth=1.5,
+        label="Sung pitch (MIDI)",
+    )
+
+    # Invisible scatter just for hover picking
+    scatter = ax.scatter(times_v, midi_v, s=10, alpha=0.0)
+
+    ax.set_yticks(midi_ticks)
+    ax.set_yticklabels(midi_labels)
+    ax.set_ylim(MIDI_MIN_DISPLAY, MIDI_MAX_DISPLAY)
+    ax.legend(loc="upper right")
+
+    # Hover: per-note-averaged cents
+    cursor = mplcursors.cursor(scatter, hover=True)
+
+    @cursor.connect("add")
+    def on_add(sel):
+        i = sel.index
+        t = times_v[i]
+        note = notes_v[i]
+        cents = cents_v[i]
+        sel.annotation.set_text(
+            f"t = {t:.2f} s\n{note}\n{cents:+.1f} cents (avg)"
+        )
+
+    plt.tight_layout()
+    plt.show()
+
+# ---------- Main ----------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Track how on-pitch your singing is and graph it."
+    )
+    parser.add_argument("--duration", type=float, default=15.0)
+    parser.add_argument("--sr", type=int, default=44100)
+    parser.add_argument("--fmin", type=float, default=80.0)
+    parser.add_argument("--fmax", type=float, default=1000.0)
+    args = parser.parse_args()
+
+    audio = record_audio(duration=args.duration, sr=args.sr)
+    times, f0_hz = analyze_pitch(audio, sr=args.sr, fmin=args.fmin, fmax=args.fmax)
+
+    midi_float, midi_nearest, note_names, cents_raw = hz_to_note_and_cents(f0_hz)
+    cents_note_avg_per_frame, cents_per_note = average_cents_per_note(
+        midi_nearest, cents_raw
+    )
+
+    print("Example frames (hover uses NOTE-averaged cents):")
+    step = max(1, len(times) // 10)
+    for t, hz, name, cents in list(
+        zip(times, f0_hz, note_names, cents_note_avg_per_frame)
+    )[::step]:
+        if np.isnan(hz):
+            continue
+        print(f"  t={t:5.2f}s  {hz:7.1f} Hz  → {name:4s}  ({cents:+5.1f} cents avg)")
+    print()
+
+    summary_stats(cents_per_note)
+    plot_results(times, midi_float, midi_nearest, cents_note_avg_per_frame, note_names)
+
+
+if __name__ == "__main__":
+    main()

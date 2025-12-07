@@ -1,0 +1,5 @@
+sounddevice 
+librosa 
+matplotlib 
+numpy
+mplcursors
