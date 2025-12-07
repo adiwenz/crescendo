@@ -27,6 +27,7 @@ block_queue = queue.Queue()
 times = []
 midi_vals = []
 midi_nearest_vals = []
+midi_smoothed_vals = []
 
 start_time = None
 
@@ -79,9 +80,10 @@ def main():
 
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 5))
-    line_pitch, = ax.plot([], [], "-", label="Sung pitch (MIDI)")
-    scatter_nearest = ax.plot([], [], "-", color="orange", markersize=1,
-                              label="Nearest note")[0]
+    line_pitch, = ax.plot([], [], "-", linewidth=4,
+                          label="Sung pitch (MIDI, smoothed)")
+    scatter_nearest = ax.plot([], [], "-", linewidth=1.5, color="orange",
+                              markersize=1, label="Nearest note")[0]
     # scatter_nearest = ax.plot([], [], "o", color="orange", markersize=1,
     #                           label="Nearest note")[0]
 
@@ -128,6 +130,11 @@ def main():
                 if is_valid_pitch:
                     print(f"{t_now:.2f}s: VALID pitch  f0={f0_val:.1f} Hz, midi={midi:.2f}")
                     midi_vals.append(midi)
+                    prev_smooth = midi_smoothed_vals[-1] if midi_smoothed_vals else np.nan
+                    if np.isnan(prev_smooth):
+                        midi_smoothed_vals.append(midi)
+                    else:
+                        midi_smoothed_vals.append(0.35 * midi + 0.65 * prev_smooth)
                     midi_nearest_vals.append(midi_nearest)
                 else:
                     # This is where we BREAK the line: we append NaN
@@ -135,16 +142,18 @@ def main():
                         f"{t_now:.2f}s: SILENCE/INVALID  f0={f0_val:.1f} Hz, midi={midi:.2f} -> NaN"
                     )
                     midi_vals.append(np.nan)
+                    midi_smoothed_vals.append(np.nan)
                     midi_nearest_vals.append(np.nan)
 
                 # Keep only the last WINDOW_SECONDS of data
                 while times and (t_now - times[0]) > WINDOW_SECONDS:
                     times.pop(0)
                     midi_vals.pop(0)
+                    midi_smoothed_vals.pop(0)
                     midi_nearest_vals.pop(0)
 
                 # Update plot data – this is where the line is actually drawn
-                line_pitch.set_data(times, midi_vals)
+                line_pitch.set_data(times, midi_smoothed_vals)
                 scatter_nearest.set_data(times, midi_nearest_vals)
 
                 ax.set_xlim(max(0, t_now - WINDOW_SECONDS), t_now)
