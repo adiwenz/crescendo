@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Vocal Pitch Timeline</title>
+    <title>Vocal Note Timeline (Melodyne Style)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -42,8 +42,7 @@
             margin-top: 1rem;
             width: 100%;
             max-width: 1000px;
-            height: 350px;
-            /* smaller, fixed height */
+            height: 380px;
         }
 
         canvas {
@@ -57,8 +56,8 @@
 </head>
 
 <body>
-    <h1>Vocal Pitch Timeline</h1>
-    <p>Timeline of notes with cents error highlighted by color.</p>
+    <h1>Vocal Note Timeline</h1>
+    <p>Notes over time (like Melodyne), colored by cents off.</p>
 
     <div class="controls">
         <label for="takeSelect">Take:</label>
@@ -80,6 +79,18 @@
         let allData = [];
         let chartInstance = null;
 
+        function hzToMidi(freq) {
+            return 69 + 12 * Math.log2(freq / 440.0);
+        }
+
+        function midiToNoteName(midi) {
+            const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const m = Math.round(midi);
+            const name = names[m % 12];
+            const octave = Math.floor(m / 12) - 1;
+            return `${name}${octave}`;
+        }
+
         async function loadCSV(path) {
             const resp = await fetch(path);
             const text = await resp.text();
@@ -93,7 +104,6 @@
                 header.forEach((h, i) => {
                     obj[h] = cols[i];
                 });
-                // Cast numeric fields
                 obj.note_index = parseInt(obj.note_index, 10);
                 obj.start_time = parseFloat(obj.start_time);
                 obj.end_time = parseFloat(obj.end_time);
@@ -101,6 +111,9 @@
                 obj.measured_hz = parseFloat(obj.measured_hz);
                 obj.target_hz = parseFloat(obj.target_hz);
                 obj.cents_error = parseFloat(obj.cents_error);
+
+                // for Melodyne-style Y axis: convert sung pitch to MIDI
+                obj.midi = hzToMidi(obj.measured_hz);
                 return obj;
             });
         }
@@ -131,7 +144,6 @@
             const avgSigned = cents.reduce((a, c) => a + c, 0) / cents.length;
             const avgAbs = absCents.reduce((a, c) => a + c, 0) / absCents.length;
 
-            // simple stdev just for extra info
             const mean = avgSigned;
             const variance = cents.reduce((acc, c) => acc + Math.pow(c - mean, 2), 0) / cents.length;
             const stdDev = Math.sqrt(variance);
@@ -169,29 +181,32 @@
         }
 
         function colorForCents(absCents, maxAbs) {
-            // Map 0 → green (120°), maxAbs → red (0°)
+            // 0 cents → green, maxAbs → red
             const clamped = Math.min(absCents / maxAbs, 1.0);
-            const hue = 120 - 120 * clamped; // 120 = green, 0 = red
+            const hue = 120 - 120 * clamped; // 120=green, 0=red
             return `hsl(${hue}, 100%, 50%)`;
         }
 
         function plotTake(rows, takeName) {
             const ctx = document.getElementById('timelineChart').getContext('2d');
 
-            // mid-time of each note for X axis
             const maxAbs = rows.reduce(
                 (m, r) => Math.max(m, Math.abs(r.cents_error)),
                 1
             );
 
             const dataPoints = rows.map(r => ({
-                x: (r.start_time + r.end_time) / 2.0,
-                y: r.cents_error,
+                x: r.start_time,       // show at note start time
+                y: r.midi,             // actual pitch (MIDI)
                 note: r.note_name,
                 start: r.start_time,
                 end: r.end_time,
                 cents: r.cents_error,
             }));
+
+            const midiValues = rows.map(r => r.midi);
+            const minMidi = Math.min(...midiValues) - 1;
+            const maxMidi = Math.max(...midiValues) + 1;
 
             if (chartInstance) {
                 chartInstance.destroy();
@@ -201,12 +216,11 @@
                 type: 'scatter',
                 data: {
                     datasets: [{
-                        label: `Cents error over time (${takeName})`,
+                        label: `Notes over time (${takeName})`,
                         data: dataPoints,
                         pointRadius: ctx => {
                             const v = Math.abs(ctx.raw.cents);
-                            // bigger points for more out-of-tune notes
-                            return 3 + 5 * Math.min(v / maxAbs, 1.0);
+                            return 4 + 4 * Math.min(v / maxAbs, 1.0); // bigger when more off
                         },
                         pointBackgroundColor: ctx => {
                             const v = Math.abs(ctx.raw.cents);
@@ -225,10 +239,11 @@
                             callbacks: {
                                 label: (ctx) => {
                                     const r = ctx.raw;
-                                    return [
+                                    const label = [
                                         `${r.note}  (${r.cents.toFixed(2)} cents)`,
-                                        `Time: ${r.start.toFixed(2)}–${r.end.toFixed(2)} s`,
+                                        `Time: ${r.start.toFixed(2)}–${r.end.toFixed(2)} s`
                                     ];
+                                    return label;
                                 }
                             }
                         }
@@ -245,12 +260,19 @@
                             grid: { color: 'rgba(255,255,255,0.1)' }
                         },
                         y: {
+                            type: 'linear',
+                            min: minMidi,
+                            max: maxMidi,
                             title: {
                                 display: true,
-                                text: 'Cents error (0 = in tune)',
+                                text: 'Pitch (note lanes)',
                                 color: '#eee'
                             },
-                            ticks: { color: '#ccc' },
+                            ticks: {
+                                stepSize: 1,
+                                color: '#ccc',
+                                callback: value => midiToNoteName(value)
+                            },
                             grid: { color: 'rgba(255,255,255,0.1)' }
                         }
                     }
@@ -271,7 +293,6 @@
                         if (chartInstance) chartInstance.destroy();
                         return;
                     }
-
                     const rows = allData.filter(d => d.take === take);
                     const stats = computeStats(rows);
                     updateSummary(stats, take);
