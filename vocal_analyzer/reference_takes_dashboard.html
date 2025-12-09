@@ -111,6 +111,10 @@
 
     const resolveUrl = (path, base) => {
       if (!path) return "";
+      // Normalize common relative prefixes to avoid double-folders
+      if (path.startsWith("http://") || path.startsWith("https://")) return path;
+      if (path.startsWith("vocal_analyzer/")) path = "/" + path; // treat as root-relative
+      if (path.startsWith("./")) path = path.slice(2);
       try { return new URL(path, base || window.location.href).href; } catch { return path; }
     };
 
