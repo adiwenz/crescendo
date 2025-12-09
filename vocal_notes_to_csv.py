@@ -26,6 +26,8 @@ CSV columns:
     measured_hz   - average frequency over the note
     target_hz     - nearest note frequency (Hz)
     cents_error   - signed cents (positive = sharp, negative = flat)
+    frame_times   - semicolon-separated timestamps (s) for each voiced frame in the note
+    frame_hz      - semicolon-separated f0 estimates (Hz) matching frame_times
 """
 
 import argparse
@@ -150,6 +152,10 @@ def analyze_take(path: str,
         end_time = float(note_times[-1])
         duration_sec = end_time - start_time
 
+        # Keep the raw contour so the UI can draw the curvy performance line
+        frame_times = [float(t) for t in note_times.tolist()]
+        frame_hz = [float(hz) for hz in note_f0.tolist()]
+
         notes_data.append({
             "note_index": note_idx,
             "start_time": start_time,
@@ -159,6 +165,8 @@ def analyze_take(path: str,
             "measured_hz": mean_f0,
             "target_hz": target_hz,
             "cents_error": cents_err,
+            "frame_times": frame_times,
+            "frame_hz": frame_hz,
         })
 
     # Print quick summary
@@ -216,6 +224,8 @@ def main():
         "measured_hz",
         "target_hz",
         "cents_error",
+        "frame_times",
+        "frame_hz",
     ]
 
     print(f"\nWriting {len(all_rows)} notes to {args.output_csv}")
@@ -223,6 +233,12 @@ def main():
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in all_rows:
+            # Convert arrays to compact semicolon-separated strings for CSV
+            row_out = {
+                **row,
+                "frame_times": ";".join(f"{t:.4f}" for t in row["frame_times"]),
+                "frame_hz": ";".join(f"{hz:.3f}" for hz in row["frame_hz"]),
+            }
             writer.writerow(row)
 
 

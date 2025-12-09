@@ -84,6 +84,31 @@
     </div>
 
     <script>
+        // Simple helper to parse float arrays stored either as semicolon strings, JSON-ish lists,
+        // and optionally wrapped in quotes
+        const parseFloatArray = (val) => {
+            if (val === undefined || val === null) return [];
+            if (Array.isArray(val)) return val.map(Number).filter(v => !Number.isNaN(v));
+            let trimmed = String(val).trim();
+            if (!trimmed) return [];
+            // strip wrapping quotes if present
+            if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                trimmed = trimmed.slice(1, -1);
+            }
+            // JSON/list style "[1.0, 2.0, 3.0]"
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                    return JSON.parse(trimmed).map(Number).filter(v => !Number.isNaN(v));
+                } catch (e) {
+                    // fall through to semicolon parsing
+                }
+            }
+            // semicolon-separated "1.0;2.0;3.0"
+            return trimmed.split(';')
+                .map(x => parseFloat(x))
+                .filter(v => !Number.isNaN(v));
+        };
+
         const CSV_PATH = 'vocal_notes_stats.csv';
         const AUDIO_EXTENSION = '.wav';   // change to '.mp3' / '.m4a' if needed
 
@@ -94,6 +119,7 @@
         let dataTimeMax = 0;
         const PLAYBACK_WINDOW = 4.0;  // seconds around playhead
         let isDraggingPlayhead = false;
+        const PLAYHEAD_LABEL = 'Playhead';
 
         function hzToMidi(freq) {
             return 69 + 12 * Math.log2(freq / 440.0);
@@ -107,6 +133,13 @@
             return `${name}${octave}`;
         }
 
+        function splitCsvLine(line) {
+            // Keeps bracketed arrays and quoted strings together as one field
+            const regex = /\"[^\"]*\"|\[[^\]]*\]|[^,]+/g;
+            const matches = line.match(regex);
+            return matches ? matches.map(s => s.trim()) : [];
+        }
+
         async function loadCSV(path) {
             const resp = await fetch(path);
             const text = await resp.text();
@@ -115,7 +148,10 @@
             const header = lines[0].split(',');
 
             return lines.slice(1).map(line => {
-                const cols = line.split(',');
+                const cols = splitCsvLine(line);
+                if (cols.length !== header.length) {
+                    console.warn('CSV row length mismatch', { line, cols, expected: header.length });
+                }
                 const obj = {};
                 header.forEach((h, i) => {
                     obj[h] = cols[i];
@@ -128,6 +164,8 @@
                 obj.target_hz = parseFloat(obj.target_hz);
                 obj.cents_error = parseFloat(obj.cents_error);
                 obj.midi = hzToMidi(obj.measured_hz);
+                obj.frame_times = parseFloatArray(obj.frame_times || '');
+                obj.frame_hz = parseFloatArray(obj.frame_hz || '');
                 return obj;
             });
         }
@@ -205,6 +243,7 @@
 
             // Line data: horizontal segments per note (start -> end)
             const lineData = [];
+            const curveData = [];
             rows.forEach(r => {
                 // skip totally zero-length notes if you want:
                 // if (r.duration <= 0) return;
@@ -227,6 +266,21 @@
                 });
                 // NaN break so Chart.js stops connecting to next note
                 lineData.push({ x: NaN, y: NaN });
+
+                // Frame-level contour for curvy performance line
+                if (Array.isArray(r.frame_times) && Array.isArray(r.frame_hz) && r.frame_times.length) {
+                    for (let i = 0; i < r.frame_times.length; i++) {
+                        const ft = r.frame_times[i];
+                        const fhz = r.frame_hz[i];
+                        if (!Number.isFinite(ft) || !Number.isFinite(fhz)) continue;
+                        curveData.push({
+                            x: ft,
+                            y: hzToMidi(fhz)
+                        });
+                    }
+                    // break between notes
+                    curveData.push({ x: NaN, y: NaN });
+                }
             });
 
             // Center points for tooltips
@@ -240,8 +294,10 @@
             }));
 
             const midiValues = rows.map(r => r.midi);
-            const minMidi = Math.min(...midiValues) - 1;
-            const maxMidi = Math.max(...midiValues) + 1;
+            const curveMidi = curveData.filter(p => Number.isFinite(p.y)).map(p => p.y);
+            const allMidi = midiValues.concat(curveMidi);
+            const minMidi = Math.min(...allMidi) - 1;
+            const maxMidi = Math.max(...allMidi) + 1;
 
             dataTimeMin = Math.min(...rows.map(r => r.start_time));
             dataTimeMax = Math.max(...rows.map(r => r.end_time));
@@ -284,8 +340,31 @@
                             }
                         },
                         {
+                            // curvy performance line (frame-by-frame)
+                            label: 'Performance curve',
+                            type: 'scatter',
+                            data: curveData,
+                            showLine: true,
+                            borderColor: 'rgba(94, 234, 212, 0.8)',
+                            backgroundColor: 'rgba(94, 234, 212, 0.2)',
+                            borderWidth: 1.5,
+                            fill: false,
+                            tension: 0.35,
+                            pointRadius: 0,
+                            spanGaps: false,
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const t = ctx.raw.x;
+                                        const midi = ctx.raw.y;
+                                        return `Time: ${t.toFixed(2)} s  Pitch: ${midiToNoteName(midi)} (${midi.toFixed(2)} MIDI)`;
+                                    }
+                                }
+                            }
+                        },
+                        {
                             // playhead line
-                            label: 'Playhead',
+                            label: PLAYHEAD_LABEL,
                             type: 'scatter',
                             data: [
                                 { x: dataTimeMin, y: minMidi },
@@ -360,6 +439,11 @@
             const audio = document.getElementById('audioPlayer');
             const canvas = document.getElementById('timelineChart');
 
+            const getPlayheadDataset = () => {
+                if (!chartInstance) return null;
+                return chartInstance.data.datasets.find(ds => ds.label === PLAYHEAD_LABEL) || null;
+            };
+
             function cancelAnimation() {
                 if (animationId !== null) {
                     cancelAnimationFrame(animationId);
@@ -369,7 +453,8 @@
 
             function applyPlayhead(t) {
                 if (!chartInstance) return;
-                const ds = chartInstance.data.datasets[2]; // playhead dataset
+                const ds = getPlayheadDataset();
+                if (!ds) return;
                 const yMin = chartInstance.options.scales.y.min;
                 const yMax = chartInstance.options.scales.y.max;
 
