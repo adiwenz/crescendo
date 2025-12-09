@@ -42,6 +42,8 @@ def run_analyze(vocal: Path, reference: Path, tmp_out: Path):
         cmd += ["--rms_gate_ratio", str(args_global.rms_gate_ratio)]
     if args_global.jump_gate_cents is not None:
         cmd += ["--jump_gate_cents", str(args_global.jump_gate_cents)]
+    if args_global.score_max_abs_cents is not None:
+        cmd += ["--score_max_abs_cents", str(args_global.score_max_abs_cents)]
     subprocess.run(cmd, check=True, cwd=ROOT)
 
 
@@ -94,6 +96,7 @@ def parse_args():
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
     ap.add_argument("--rms_gate_ratio", type=float, default=None, help="Ignore frames with RMS below ratio * max RMS")
     ap.add_argument("--jump_gate_cents", type=float, default=None, help="Ignore frames with |delta| above this cents")
+    ap.add_argument("--score_max_abs_cents", type=float, default=None, help="Ignore frames beyond this |cents| for scoring (0 disables)")
     return ap.parse_args()
 
 

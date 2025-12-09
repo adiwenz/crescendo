@@ -73,8 +73,10 @@ def align_arrays(a, b):
     return a[:n], b[:n]
 
 
-def summarize_errors(cents):
+def summarize_errors(cents, max_abs=None):
     valid = ~np.isnan(cents)
+    if max_abs is not None:
+        valid = valid & (np.abs(cents) <= max_abs)
     if not np.any(valid):
         return {
             "mean_abs_cents": None,
@@ -107,6 +109,7 @@ def parse_args():
     ap.add_argument("--rms_gate_ratio", type=float, default=0.0, help="Ignore frames with RMS < ratio * max RMS (0 disables)")
     ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start of both files")
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
+    ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (keeps chart data intact)")
     return ap.parse_args()
 
 
@@ -199,7 +202,7 @@ def main():
     vocal_f0 = np.where(keep_mask, vocal_f0, np.nan)
 
     ce = cents_error(vocal_f0, ref_target_hz)
-    summary = summarize_errors(ce)
+    summary = summarize_errors(ce, max_abs=args.score_max_abs_cents if args.score_max_abs_cents > 0 else None)
 
     print("\nSimilarity Summary:")
     print(summary)

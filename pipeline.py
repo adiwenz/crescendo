@@ -65,7 +65,7 @@ def rebuild_takes_index(threshold: float = 25.0, output: Path = TAKES_INDEX_JSON
     return data
 
 
-def run_similarity(vocal: Path, reference: Path, take: str, trim_start: float, trim_end: float, rms_gate: float, jump_gate: float):
+def run_similarity(vocal: Path, reference: Path, take: str, trim_start: float, trim_end: float, rms_gate: float, jump_gate: float, score_cap: float):
     cmd = [
         "python3",
         str(ROOT / "vocal_analyzer" / "update_analysis_similarity.py"),
@@ -83,6 +83,8 @@ def run_similarity(vocal: Path, reference: Path, take: str, trim_start: float, t
         str(rms_gate),
         "--jump_gate_cents",
         str(jump_gate),
+        "--score_max_abs_cents",
+        str(score_cap),
     ]
     subprocess.run(cmd, check=True, cwd=ROOT)
 
@@ -99,6 +101,7 @@ def main():
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end for similarity")
     ap.add_argument("--rms_gate_ratio", type=float, default=0.0, help="RMS gate ratio for similarity (0 disables gating)")
     ap.add_argument("--jump_gate_cents", type=float, default=0.0, help="Jump gate for similarity (0 disables gating)")
+    ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (0 disables)")
     ap.add_argument("--takes_threshold", type=float, default=25.0, help="Cents threshold for takes_index.json")
     args = ap.parse_args()
 
@@ -147,7 +150,7 @@ def main():
                 ref_path = alt
             else:
                 raise FileNotFoundError(f"Reference not found: {args.reference}")
-        run_similarity(vocal_wav, ref_path, args.take_name, args.trim_start, args.trim_end, args.rms_gate_ratio, args.jump_gate_cents)
+        run_similarity(vocal_wav, ref_path, args.take_name, args.trim_start, args.trim_end, args.rms_gate_ratio, args.jump_gate_cents, args.score_max_abs_cents)
 
     print("✅ Pipeline complete.")
 

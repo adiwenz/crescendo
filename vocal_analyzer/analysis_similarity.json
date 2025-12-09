@@ -98598,11 +98598,11 @@
         "jump_gate_cents": 0.0
       },
       "summary": {
-        "mean_abs_cents": 285.1018456952125,
-        "pct_within_25": 35.42926239419589,
-        "pct_within_50": 43.53083434099154,
-        "pct_within_100": 51.75332527206772,
-        "valid_frames": 827
+        "mean_abs_cents": 24.64391416163055,
+        "pct_within_25": 68.45794392523365,
+        "pct_within_50": 84.11214953271028,
+        "pct_within_100": 100.0,
+        "valid_frames": 428
       },
       "frames": [
         {
