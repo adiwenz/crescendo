@@ -48,6 +48,8 @@ def main():
     ap.add_argument("--frame_length", type=int, default=2048)
     ap.add_argument("--hop_length", type=int, default=256)
     ap.add_argument("--median_win", type=int, default=3)
+    ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
+    ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
     args = ap.parse_args()
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,7 +111,7 @@ def main():
 
     # Similarity if reference provided
     if ref_f0 is not None:
-        summary, frames = compute_similarity(
+        summary, frames, offset_info = compute_similarity(
             vocal_y=vocal_y,
             vocal_sr=vocal_sr,
             vocal_f0_raw=vocal_f0_raw,
@@ -122,6 +124,8 @@ def main():
             jump_gate_cents=args.jump_gate_cents,
             score_max_abs_cents=args.score_max_abs_cents,
             ignore_short_outliers_ms=args.ignore_short_outliers_ms,
+            max_delay_ms=args.max_delay_ms,
+            penalize_late=args.penalize_late_notes,
         )
         run = {
             "metadata": {
@@ -141,6 +145,10 @@ def main():
                 "jump_gate_cents": args.jump_gate_cents,
                 "score_max_abs_cents": args.score_max_abs_cents,
                 "ignore_short_outliers_ms": args.ignore_short_outliers_ms,
+                "alignment_offset_frames": offset_info["offset_frames"],
+                "alignment_offset_ms": offset_info["offset_ms"],
+                "max_delay_ms": args.max_delay_ms,
+                "penalize_late_notes": args.penalize_late_notes,
             },
             "summary": summary,
             "frames": frames,

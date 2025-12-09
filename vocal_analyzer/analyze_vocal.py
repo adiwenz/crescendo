@@ -37,6 +37,8 @@ def parse_args():
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
     ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (keeps chart data intact)")
     ap.add_argument("--ignore_short_outliers_ms", type=float, default=120.0, help="If score_max_abs_cents is set, ignore outlier runs shorter than this duration (ms). Set 0 to disable.")
+    ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
+    ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
     return ap.parse_args()
 
 
@@ -72,7 +74,7 @@ def main():
         median_win=args.median_win,
     )
 
-    summary, frames = compute_similarity(
+    summary, frames, offset_info = compute_similarity(
         vocal_y=vocal_y,
         vocal_sr=vocal_sr,
         vocal_f0_raw=vocal_f0,
@@ -85,6 +87,8 @@ def main():
         jump_gate_cents=args.jump_gate_cents,
         score_max_abs_cents=args.score_max_abs_cents,
         ignore_short_outliers_ms=args.ignore_short_outliers_ms,
+        max_delay_ms=args.max_delay_ms,
+        penalize_late=args.penalize_late_notes,
     )
 
     print("\nSimilarity Summary:")
@@ -106,6 +110,10 @@ def main():
             "trim_end": args.trim_end,
             "rms_gate_ratio": args.rms_gate_ratio,
             "jump_gate_cents": args.jump_gate_cents,
+            "alignment_offset_frames": offset_info["offset_frames"],
+            "alignment_offset_ms": offset_info["offset_ms"],
+            "max_delay_ms": args.max_delay_ms,
+            "penalize_late_notes": args.penalize_late_notes,
         },
         "summary": summary,
         "frames": frames,

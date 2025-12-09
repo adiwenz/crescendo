@@ -145,42 +145,90 @@ def compute_similarity(
     jump_gate_cents=0.0,
     score_max_abs_cents=0.0,
     ignore_short_outliers_ms=0.0,
-):
+    max_delay_ms: float = 0.0,
+    penalize_late: bool = False,
+) -> Tuple[dict, list, dict]:
     """
     Compute vocal vs reference similarity summary and per-frame data.
-    Returns (summary, frames).
+    Returns (summary, frames, offset_info).
     """
-    vocal_f0, ref_f0 = align_arrays(vocal_f0_raw, ref_f0)
-    vocal_times, ref_times = align_arrays(vocal_times, ref_times)
-    ref_midi_nearest = np.round(hz_to_midi_safe(ref_f0))
-    ref_target_hz = pretty_midi.note_number_to_hz(ref_midi_nearest)
     vocal_rms = librosa.feature.rms(y=vocal_y, frame_length=frame_length, hop_length=hop_length, center=True)[0]
     keep_mask = gate_frames(
-        vocal_f0,
+        vocal_f0_raw,
         vocal_rms,
         rms_gate_ratio=rms_gate_ratio,
         jump_gate_cents=jump_gate_cents,
     )
-    vocal_f0 = np.where(keep_mask, vocal_f0, np.nan)
-    ce = cents_error(vocal_f0, ref_target_hz)
+    gated_vocal_f0 = np.where(keep_mask, vocal_f0_raw, np.nan)
     frame_duration = hop_length / float(vocal_sr)
-    summary = summarize_errors(
-        ce,
-        frame_duration=frame_duration,
-        max_abs=score_max_abs_cents if score_max_abs_cents > 0 else None,
-        ignore_short_ms=ignore_short_outliers_ms,
-    )
-    frames = []
-    for i, (t, vh, rh) in enumerate(zip(vocal_times, vocal_f0, ref_target_hz)):
-        ref_midi_val = ref_midi_nearest[i] if i < len(ref_midi_nearest) else np.nan
-        frames.append(
-            {
-                "time": float(t),
-                "vocal_hz": none_if_nan(vh),
-                "vocal_midi": none_if_nan(hz_to_midi_safe(vh)),
-                "ref_hz": none_if_nan(rh),
-                "ref_midi": int(ref_midi_val) if not np.isnan(ref_midi_val) else None,
-                "cents_error": none_if_nan(ce[i]),
-            }
+
+    max_offset_frames = int(round(max_delay_ms / 1000.0 / frame_duration)) if max_delay_ms > 0 else 0
+    if max_offset_frames > 0:
+        max_offset_frames = min(
+            max_offset_frames,
+            max(len(vocal_times) - 1, 0),
+            max(len(ref_times) - 1, 0),
         )
-    return summary, frames
+    offsets_to_try = [0]
+    if max_offset_frames > 0 and not penalize_late:
+        offsets_to_try = list(range(-max_offset_frames, max_offset_frames + 1))
+
+    def build_for_offset(offset_frames: int):
+        vf0, rf0, vtimes, rtimes = _apply_offset(gated_vocal_f0, ref_f0, vocal_times, ref_times, offset_frames)
+        vf0, rf0 = align_arrays(vf0, rf0)
+        vtimes, _ = align_arrays(vtimes, rtimes)
+        ref_midi_nearest = np.round(hz_to_midi_safe(rf0))
+        ref_target_hz = pretty_midi.note_number_to_hz(ref_midi_nearest)
+        ce = cents_error(vf0, ref_target_hz)
+        summary = summarize_errors(
+            ce,
+            frame_duration=frame_duration,
+            max_abs=score_max_abs_cents if score_max_abs_cents > 0 else None,
+            ignore_short_ms=ignore_short_outliers_ms,
+        )
+        frames = []
+        for i, (t, vh, rh) in enumerate(zip(vtimes, vf0, ref_target_hz)):
+            ref_midi_val = ref_midi_nearest[i] if i < len(ref_midi_nearest) else np.nan
+            frames.append(
+                {
+                    "time": float(t),
+                    "vocal_hz": none_if_nan(vh),
+                    "vocal_midi": none_if_nan(hz_to_midi_safe(vh)),
+                    "ref_hz": none_if_nan(rh),
+                    "ref_midi": int(ref_midi_val) if not np.isnan(ref_midi_val) else None,
+                    "cents_error": none_if_nan(ce[i]),
+                }
+            )
+        return summary, frames
+
+    best_summary = None
+    best_frames = None
+    best_offset = 0
+    best_score = float("inf")
+    for off in offsets_to_try:
+        summary, frames = build_for_offset(off)
+        score = summary["mean_abs_cents"] if summary["mean_abs_cents"] is not None else float("inf")
+        if score < best_score:
+            best_score = score
+            best_summary = summary
+            best_frames = frames
+            best_offset = off
+
+    summary = best_summary if best_summary is not None else {"mean_abs_cents": None, "pct_within_25": None, "pct_within_50": None, "pct_within_100": None, "valid_frames": 0}
+    frames = best_frames if best_frames is not None else []
+    offset_info = {
+        "offset_frames": best_offset,
+        "offset_ms": best_offset * frame_duration * 1000.0,
+    }
+    return summary, frames, offset_info
+
+
+def _apply_offset(vf0, rf0, vtimes, rtimes, offset_frames: int):
+    """Shift vocal vs reference by offset_frames (vocal delayed if positive)."""
+    if offset_frames > 0:
+        vf0 = vf0[offset_frames:]
+        vtimes = vtimes[offset_frames:]
+    elif offset_frames < 0:
+        rf0 = rf0[-offset_frames:]
+        rtimes = rtimes[-offset_frames:]
+    return vf0, rf0, vtimes, rtimes
