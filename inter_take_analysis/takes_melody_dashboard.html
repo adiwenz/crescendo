@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vocal Takes Melody & Scores</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --panel: #141417;
+      --card: #1a1a1f;
+      --text: #f5f5f5;
+      --muted: #b3b3b7;
+      --accent: #f97316;
+      --accent2: #22c55e;
+      --border: #2d2d34;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    h1 { margin: 0 0 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+    p { margin: 0 0 14px; color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 14px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .panel h3 { margin: 0 0 10px; }
+    .take-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .take-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.1s ease;
+    }
+    .take-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .take-btn.active { border-color: var(--accent); box-shadow: 0 6px 16px rgba(0,0,0,0.35); }
+    .take-btn span { color: var(--muted); font-size: 0.92rem; }
+    audio { width: 100%; margin-top: 10px; }
+    .summary { margin: 10px 0 0; color: var(--muted); font-size: 0.95rem; }
+    #melodyWrapper { height: 480px; margin-top: 10px; }
+    #scoresWrapper { height: 280px; margin-top: 10px; }
+    canvas { background: #18181c; border-radius: 12px; padding: 8px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+    .card h4 { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
+    .card .val { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+  </style>
+</head>
+<body>
+  <h1>Vocal Takes Melody & Scores</h1>
+  <p>Select a take to view its Melodyne-style lanes and listen. Scores for all takes stay visible below.</p>
+
+  <div class="layout">
+    <div class="panel" id="leftPanel">
+      <h3>Takes</h3>
+      <ul class="take-list" id="takeList"></ul>
+      <audio id="takeAudio" controls preload="none"></audio>
+    </div>
+
+    <div class="panel" id="melodyPanel">
+      <div class="cards">
+        <div class="card"><h4>Take</h4><div class="val" id="statTake">—</div></div>
+        <div class="card"><h4>Notes</h4><div class="val" id="statCount">0</div></div>
+        <div class="card"><h4>Avg |Cents|</h4><div class="val" id="statAbs">—</div></div>
+        <div class="card"><h4>Avg Cents</h4><div class="val" id="statSigned">—</div></div>
+        <div class="card"><h4>Spread</h4><div class="val" id="statSpread">—</div></div>
+      </div>
+      <div id="melodyWrapper"><canvas id="melodyChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <h3>Take Accuracy</h3>
+    <div id="scoresWrapper"><canvas id="scoresChart"></canvas></div>
+  </div>
+
+  <script>
+    const CSV_PATH = '../vocal_notes/vocal_notes_stats.csv';
+    const AUDIO_BASE = '../audio_files/';
+    const AUDIO_EXT = '.wav';
+    const PLAYHEAD_PLUGIN_ID = 'playheadLine';
+
+    let noteRows = [];
+    let takesIndex = { labels: [], scores: [], threshold_cents: 25 };
+    let selectedTake = null;
+    let melodyChart = null;
+    let scoresChart = null;
+    let playheadTime = 0;
+
+    const midiNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const midiToNote = (m) => {
+      const n = Math.round(m);
+      return `${midiNames[n % 12]}${Math.floor(n / 12) - 1}`;
+    };
+
+    const parseFloatArray = (val) => {
+      if (val === undefined || val === null) return [];
+      if (Array.isArray(val)) return val.map(Number).filter(v => !Number.isNaN(v));
+      let t = String(val).trim();
+      if (!t) return [];
+      if (t.startsWith('"') && t.endsWith('"')) t = t.slice(1, -1);
+      if (t.startsWith('[') && t.endsWith(']')) {
+        try { return JSON.parse(t).map(Number).filter(v => !Number.isNaN(v)); }
+        catch { /* fall through */ }
+      }
+      return t.split(';').map(Number).filter(v => !Number.isNaN(v));
+    };
+
+    const splitCsvLine = (line) => {
+      const regex = /\"[^\"]*\"|\[[^\]]*\]|[^,]+/g;
+      const matches = line.match(regex);
+      return matches ? matches.map(s => s.trim()) : [];
+    };
+
+    async function loadCsv() {
+      const resp = await fetch(CSV_PATH);
+      const text = await resp.text();
+      const lines = text.trim().split(/\r?\n/);
+      const header = lines[0].split(',');
+      return lines.slice(1).map(line => {
+        const cols = splitCsvLine(line);
+        const o = {};
+        header.forEach((h, i) => { o[h] = cols[i]; });
+        o.note_index = parseInt(o.note_index, 10);
+        o.start_time = parseFloat(o.start_time);
+        o.end_time = parseFloat(o.end_time);
+        o.duration = parseFloat(o.duration);
+        o.measured_hz = parseFloat(o.measured_hz);
+        o.target_hz = parseFloat(o.target_hz);
+        o.cents_error = parseFloat(o.cents_error);
+        o.midi = 69 + 12 * Math.log2(o.measured_hz / 440);
+        o.frame_times = parseFloatArray(o.frame_times || '');
+        o.frame_hz = parseFloatArray(o.frame_hz || '');
+        return o;
+      });
+    }
+
+    async function loadIndex() {
+      const resp = await fetch('takes_index.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!resp.ok) throw new Error('Could not load takes_index.json');
+      return resp.json();
+    }
+
+    function computeStats(rows) {
+      if (!rows.length) return null;
+      const cents = rows.map(r => r.cents_error);
+      const abs = cents.map(c => Math.abs(c));
+      const avgSigned = cents.reduce((a, c) => a + c, 0) / cents.length;
+      const avgAbs = abs.reduce((a, c) => a + c, 0) / abs.length;
+      const mean = avgSigned;
+      const variance = cents.reduce((acc, c) => acc + Math.pow(c - mean, 2), 0) / cents.length;
+      return {
+        count: rows.length,
+        avgAbs,
+        avgSigned,
+        spread: Math.sqrt(variance)
+      };
+    }
+
+    const playheadPlugin = {
+      id: PLAYHEAD_PLUGIN_ID,
+      afterDatasetsDraw(chart) {
+        if (!Number.isFinite(playheadTime)) return;
+        const xScale = chart.scales.x;
+        if (!xScale) return;
+        const x = xScale.getPixelForValue(playheadTime);
+        if (Number.isNaN(x)) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, chart.chartArea.top);
+        ctx.lineTo(x, chart.chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(playheadPlugin);
+
+    function renderTakeList(labels) {
+      const ul = document.getElementById('takeList');
+      ul.innerHTML = '';
+      labels.forEach(label => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.className = 'take-btn';
+        btn.type = 'button';
+        btn.dataset.take = label;
+        btn.innerHTML = `<div>${label}</div><span>click to load</span>`;
+        btn.addEventListener('click', () => selectTake(label));
+        li.appendChild(btn);
+        ul.appendChild(li);
+      });
+    }
+
+    function updateTakeListActive() {
+      document.querySelectorAll('.take-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.take === selectedTake);
+      });
+    }
+
+    function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+
+    function renderMelody(take) {
+      const rows = noteRows.filter(r => r.take === take);
+      const audio = document.getElementById('takeAudio');
+      audio.src = `${AUDIO_BASE}${take}${AUDIO_EXT}`;
+      playheadTime = 0;
+      if (!rows.length) {
+        if (melodyChart) melodyChart.destroy();
+        document.getElementById('statTake').textContent = take;
+        document.getElementById('statCount').textContent = '0';
+        document.getElementById('statAbs').textContent = '—';
+        document.getElementById('statSigned').textContent = '—';
+        document.getElementById('statSpread').textContent = '—';
+        return;
+      }
+
+      const stats = computeStats(rows);
+      document.getElementById('statTake').textContent = take;
+      document.getElementById('statCount').textContent = stats.count;
+      document.getElementById('statAbs').textContent = stats.avgAbs.toFixed(2);
+      document.getElementById('statSigned').textContent = stats.avgSigned.toFixed(2);
+      document.getElementById('statSpread').textContent = stats.spread.toFixed(2);
+
+      const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.cents_error)), 1);
+      const colorFor = (v) => {
+        const hue = 120 - 120 * Math.min(Math.abs(v) / maxAbs, 1);
+        return `hsl(${hue}, 100%, 50%)`;
+      };
+
+      const lineData = [];
+      const curveData = [];
+      rows.forEach(r => {
+        lineData.push({ x: r.start_time, y: r.midi, cents: r.cents_error, note: r.note_name, start: r.start_time, end: r.end_time });
+        lineData.push({ x: r.end_time, y: r.midi, cents: r.cents_error, note: r.note_name, start: r.start_time, end: r.end_time });
+        lineData.push({ x: NaN, y: NaN });
+        if (Array.isArray(r.frame_times) && Array.isArray(r.frame_hz)) {
+          for (let i = 0; i < r.frame_times.length; i++) {
+            const ft = r.frame_times[i];
+            const fhz = r.frame_hz[i];
+            if (!Number.isFinite(ft) || !Number.isFinite(fhz)) continue;
+            curveData.push({ x: ft, y: 69 + 12 * Math.log2(fhz / 440) });
+          }
+          curveData.push({ x: NaN, y: NaN });
+        }
+      });
+      const centers = rows.map(r => ({
+        x: (r.start_time + r.end_time) / 2,
+        y: r.midi,
+        cents: r.cents_error,
+        note: r.note_name,
+        start: r.start_time,
+        end: r.end_time
+      }));
+      const midiVals = rows.map(r => r.midi);
+      const curveMidi = curveData.filter(p => Number.isFinite(p.y)).map(p => p.y);
+      const allMidi = midiVals.concat(curveMidi);
+      const minMidi = Math.min(...allMidi) - 1;
+      const maxMidi = Math.max(...allMidi) + 1;
+      const timeMin = Math.min(...rows.map(r => r.start_time));
+      const timeMax = Math.max(...rows.map(r => r.end_time));
+
+      if (melodyChart) melodyChart.destroy();
+      const ctx = document.getElementById('melodyChart').getContext('2d');
+      melodyChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: 'Notes',
+              data: lineData,
+              type: 'scatter',
+              showLine: true,
+              pointRadius: 0,
+              borderWidth: 4,
+              spanGaps: false,
+              segment: {
+                borderColor: ctx => {
+                  const raw = ctx.p0?.raw;
+                  if (!raw || Number.isNaN(raw.x)) return 'transparent';
+                  return colorFor(raw.cents || 0);
+                }
+              },
+              tooltip: { enabled: false }
+            },
+            {
+              label: 'Pitch centers',
+              data: centers,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointBackgroundColor: ctx => colorFor(ctx.raw.cents || 0)
+            },
+            {
+              label: 'Performance curve',
+              data: curveData,
+              showLine: true,
+              borderColor: 'rgba(94, 234, 212, 0.8)',
+              backgroundColor: 'rgba(94, 234, 212, 0.2)',
+              borderWidth: 1.5,
+              tension: 0.35,
+              pointRadius: 0,
+              spanGaps: false,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#fff' } },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const r = ctx.raw;
+                  if (!r || r.note === undefined) return '';
+                  return [`${r.note} (${(r.cents || 0).toFixed(1)} cents)`, `Time ${r.start?.toFixed(2)}–${r.end?.toFixed(2)}s`];
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              min: timeMin - 0.05,
+              max: timeMax + 0.05,
+              title: { display: true, text: 'Time (s)', color: '#fff' },
+              ticks: { color: '#fff' },
+              grid: { color: 'rgba(255,255,255,0.1)' }
+            },
+            y: {
+              min: minMidi,
+              max: maxMidi,
+              title: { display: true, text: 'Pitch (note lanes)', color: '#fff' },
+              ticks: { stepSize: 1, color: '#fff', callback: v => midiToNote(v) },
+              grid: { color: 'rgba(255,255,255,0.1)' }
+            }
+          }
+        }
+      });
+
+      melodyChart.canvas.onclick = (evt) => {
+        const x = melodyChart.scales.x.getValueForPixel(evt.offsetX);
+        const newTime = clamp(x, timeMin, timeMax);
+        playheadTime = newTime;
+        document.getElementById('takeAudio').currentTime = newTime;
+        melodyChart.update('none');
+      };
+
+      const audioEl = document.getElementById('takeAudio');
+      audioEl.ontimeupdate = () => {
+        playheadTime = audioEl.currentTime;
+        if (melodyChart) melodyChart.update('none');
+      };
+    }
+
+    function renderScores() {
+      const ctx = document.getElementById('scoresChart').getContext('2d');
+      const { labels, scores } = takesIndex;
+      const dataPoints = scores.map((y, i) => ({ x: labels[i], y }));
+      if (scoresChart) scoresChart.destroy();
+      scoresChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: 'Pitch Accuracy (%)',
+            data: dataPoints,
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            backgroundColor: dataPoints.map(p => p.x === selectedTake ? '#f97316' : '#60a5fa')
+          }]
+        },
+        options: {
+          responsive: true,
+          parsing: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              title: { display: true, text: 'Accuracy (%)', color: '#fff', font: { weight: 'bold' } },
+              ticks: { color: '#fff', font: { weight: 'bold' } },
+              grid: { color: 'rgba(255,255,255,0.1)' }
+            },
+            x: {
+              type: 'category',
+              labels,
+              title: { display: true, text: 'Vocal Takes', color: '#fff', font: { weight: 'bold' } },
+              ticks: { color: '#fff', font: { weight: 'bold' } },
+              grid: { color: 'rgba(255,255,255,0.05)' }
+            }
+          },
+          plugins: { legend: { display: false } },
+          onClick: (_, elements) => {
+            if (!elements?.length) return;
+            const idx = elements[0].index;
+            const take = labels[idx];
+            selectTake(take);
+          }
+        }
+      });
+    }
+
+    async function init() {
+      try {
+        [noteRows, takesIndex] = await Promise.all([loadCsv(), loadIndex()]);
+        renderTakeList(takesIndex.labels);
+        selectedTake = takesIndex.labels[0] || null;
+        if (selectedTake) {
+          renderMelody(selectedTake);
+          updateTakeListActive();
+          renderScores();
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('leftPanel').insertAdjacentHTML('beforeend', `<p style="color:#f97373;">${err.message}</p>`);
+      }
+    }
+
+    function selectTake(take) {
+      selectedTake = take;
+      updateTakeListActive();
+      renderMelody(take);
+      renderScores();
+    }
+
+    init();
+  </script>
+</body>
+</html>
