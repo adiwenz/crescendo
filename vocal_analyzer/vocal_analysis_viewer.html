@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Vocal Analysis Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --card: #1f2937;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #38bdf8;
+            --accent-2: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #374151;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        h1 {
+            margin: 0 0 0.25rem;
+        }
+
+        p {
+            margin: 0.25rem 0 1rem;
+            color: var(--muted);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .card h3 {
+            margin: 0 0 0.35rem;
+            font-size: 0.95rem;
+            color: var(--muted);
+        }
+
+        .card .value {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.92rem;
+        }
+
+        th, td {
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        tr:nth-child(every) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            color: #0b1220;
+            background: var(--accent);
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .meta span {
+            background: var(--card);
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        .status {
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Vocal Analysis Viewer</h1>
+    <p>Load results from <code>analysis_results.json</code> (produced by <code>analyze_vocal.py</code> with a JSON export).</p>
+
+    <div class="panel">
+        <div class="meta" id="metaInfo"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Summaries</h2>
+        <div class="cards" id="summaryCards"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Pitch Details (per note)</h2>
+        <table id="pitchTable">
+            <thead>
+                <tr>
+                    <th>Note</th>
+                    <th>Start (s)</th>
+                    <th>End (s)</th>
+                    <th>Mean Cents</th>
+                    <th>Std Cents</th>
+                    <th>Within ±50c (%)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Rhythm Details (per note)</h2>
+        <table id="rhythmTable">
+            <thead>
+                <tr>
+                    <th>Note</th>
+                    <th>Start (s)</th>
+                    <th>End (s)</th>
+                    <th>Timing Error (ms)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                const resp = await fetch("analysis_results.json");
+                if (!resp.ok) throw new Error("fetch failed");
+                return await resp.json();
+            } catch (err) {
+                console.warn("Falling back to sample data because fetch failed:", err);
+                return getSampleData();
+            }
+        }
+
+        function fmt(num, digits = 2) {
+            return num === null || num === undefined || Number.isNaN(num)
+                ? "—"
+                : Number(num).toFixed(digits);
+        }
+
+        function renderMeta(meta = {}) {
+            const el = document.getElementById("metaInfo");
+            const parts = [];
+            if (meta.audio_path) parts.push(`Audio: ${meta.audio_path}`);
+            if (meta.reference_path) parts.push(`Reference: ${meta.reference_path} (${meta.reference_type || "unknown"})`);
+            if (meta.duration) parts.push(`Duration: ${fmt(meta.duration, 2)}s`);
+            if (meta.sr) parts.push(`SR: ${meta.sr} Hz`);
+            el.innerHTML = parts.map(p => `<span>${p}</span>`).join("");
+        }
+
+        function renderSummaries(data) {
+            const cardsEl = document.getElementById("summaryCards");
+            const pitch = data.pitch_summary || {};
+            const rhythm = data.rhythm_summary || {};
+
+            const cards = [
+                {
+                    title: "Mean Abs Cents Error",
+                    value: fmt(pitch.mean_absolute_cents_error, 2) + " c",
+                    color: "var(--accent)"
+                },
+                {
+                    title: "Avg % Within ±50c",
+                    value: fmt(pitch.avg_percent_within_50_cents, 1) + "%",
+                    color: "var(--accent-2)"
+                },
+                {
+                    title: "Mean Abs Timing Err",
+                    value: rhythm.mean_abs_timing_error_ms == null ? "—" : fmt(rhythm.mean_abs_timing_error_ms, 1) + " ms",
+                    color: "var(--warning)"
+                },
+                {
+                    title: "Early Fraction",
+                    value: rhythm.early_fraction == null ? "—" : fmt(rhythm.early_fraction * 100, 1) + "%",
+                    color: "var(--warning)"
+                }
+            ];
+
+            cardsEl.innerHTML = cards.map(c => `
+                <div class="card">
+                    <h3>${c.title}</h3>
+                    <div class="value" style="color:${c.color}">${c.value}</div>
+                </div>
+            `).join("");
+        }
+
+        function renderPitchTable(rows = []) {
+            const tbody = document.querySelector("#pitchTable tbody");
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td>${r.note_name || "?"}</td>
+                    <td>${fmt(r.start, 2)}</td>
+                    <td>${fmt(r.end, 2)}</td>
+                    <td>${fmt(r.mean_cents_error, 1)}</td>
+                    <td>${fmt(r.std_cents_error, 1)}</td>
+                    <td>${fmt(r.percent_within_50_cents, 1)}</td>
+                </tr>
+            `).join("");
+        }
+
+        function renderRhythmTable(rows = []) {
+            const tbody = document.querySelector("#rhythmTable tbody");
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td>${r.note_name || "?"}</td>
+                    <td>${fmt(r.start, 2)}</td>
+                    <td>${fmt(r.end, 2)}</td>
+                    <td>${r.timing_error_ms == null ? "—" : fmt(r.timing_error_ms, 1)}</td>
+                </tr>
+            `).join("");
+        }
+
+        function getSampleData() {
+            return {
+                metadata: {
+                    audio_path: "audio/vocal.wav",
+                    reference_type: "midi",
+                    reference_path: "audio/reference.mid",
+                    duration: 10.2,
+                    sr: 44100
+                },
+                pitch_summary: {
+                    mean_absolute_cents_error: 18.5,
+                    avg_percent_within_50_cents: 82.3
+                },
+                rhythm_summary: {
+                    mean_abs_timing_error_ms: 42.1,
+                    early_fraction: 0.35
+                },
+                pitch_stats: [
+                    { note_name: "C4", start: 0.0, end: 0.8, mean_cents_error: -12.3, std_cents_error: 8.2, percent_within_50_cents: 93.1 },
+                    { note_name: "E4", start: 0.8, end: 1.6, mean_cents_error: 5.5, std_cents_error: 6.0, percent_within_50_cents: 97.0 },
+                    { note_name: "G4", start: 1.6, end: 2.3, mean_cents_error: 28.0, std_cents_error: 10.1, percent_within_50_cents: 65.0 }
+                ],
+                rhythm_stats: [
+                    { note_name: "C4", start: 0.0, end: 0.8, timing_error_ms: -25.0 },
+                    { note_name: "E4", start: 0.8, end: 1.6, timing_error_ms: 15.0 },
+                    { note_name: "G4", start: 1.6, end: 2.3, timing_error_ms: null }
+                ]
+            };
+        }
+
+        async function init() {
+            const data = await loadData();
+            renderMeta(data.metadata || {});
+            renderSummaries(data);
+            renderPitchTable(data.pitch_stats || []);
+            renderRhythmTable(data.rhythm_stats || []);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

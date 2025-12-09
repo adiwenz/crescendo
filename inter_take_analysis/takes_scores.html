@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Vocal Take Accuracy</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 40px;
+            background: #020617;
+            color: #e5e7eb;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #9ca3af;
+            margin-top: 0;
+            margin-bottom: 24px;
+        }
+
+        #chart-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        #error {
+            text-align: center;
+            color: #f97373;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Vocal Take Pitch Accuracy</h1>
+    <h2 id="subtitle"></h2>
+    <div id="chart-container">
+        <canvas id="takesChart"></canvas>
+    </div>
+    <div id="error"></div>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        async function loadData() {
+            try {
+                const response = await fetch('takes_index.json');
+                if (!response.ok) {
+                    throw new Error('Could not load takes_index.json');
+                }
+                const json = await response.json();
+                return json;
+            } catch (err) {
+                document.getElementById('error').textContent =
+                    'Error loading data: ' + err.message;
+                throw err;
+            }
+        }
+
+        function renderChart(labels, scores, thresholdCents) {
+            const ctx = document.getElementById('takesChart').getContext('2d');
+
+            // subtitle
+            const subtitle = document.getElementById('subtitle');
+            subtitle.textContent =
+                'Accuracy = % of notes within \u00B1' + thresholdCents + ' cents';
+
+            new Chart(ctx, {
+                type: 'bar', // change to 'line' if you want a line graph instead
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Pitch Accuracy (%)',
+                        data: scores,
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Accuracy (%)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Vocal Takes'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    const value = context.parsed.y;
+                                    return value.toFixed(2) + '% accuracy';
+                                }
+                            }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        (async () => {
+            const data = await loadData();
+            renderChart(data.labels, data.scores, data.threshold_cents);
+        })();
+    </script>
+</body>
+
+</html>

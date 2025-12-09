@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Vocal Similarity Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --card: #1f2937;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #38bdf8;
+            --accent2: #22c55e;
+            --danger: #ef4444;
+            --border: #374151;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        h1 {
+            margin: 0 0 0.25rem;
+        }
+
+        p {
+            margin: 0.25rem 0 1rem;
+            color: var(--muted);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .card h3 {
+            margin: 0 0 0.35rem;
+            font-size: 0.95rem;
+            color: var(--muted);
+        }
+
+        .card .value {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .meta span {
+            background: var(--card);
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        #chartWrapper {
+            margin-top: 12px;
+            height: 420px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Vocal Similarity Viewer</h1>
+    <p>Load results from <code>analysis_similarity.json</code> (emitted by <code>analyze_vocal.py</code>).</p>
+
+    <div class="panel">
+        <div class="meta" id="metaInfo"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Summary</h2>
+        <div class="cards" id="summaryCards"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Pitch Comparison</h2>
+        <div id="chartWrapper">
+            <canvas id="pitchChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                const resp = await fetch("analysis_similarity.json");
+                if (!resp.ok) throw new Error("fetch failed");
+                return await resp.json();
+            } catch (err) {
+                alert("Could not load analysis_similarity.json. Run analyze_vocal.py first.");
+                throw err;
+            }
+        }
+
+        function fmt(num, digits = 2) {
+            return num === null || num === undefined || Number.isNaN(num)
+                ? "—"
+                : Number(num).toFixed(digits);
+        }
+
+        function renderMeta(meta) {
+            const el = document.getElementById("metaInfo");
+            const parts = [];
+            if (meta.vocal_path) parts.push(`Vocal: ${meta.vocal_path}`);
+            if (meta.reference_path) parts.push(`Reference: ${meta.reference_path}`);
+            if (meta.sample_rate) parts.push(`SR: ${meta.sample_rate} Hz`);
+            if (meta.frame_length) parts.push(`Frame: ${meta.frame_length}`);
+            if (meta.hop_length) parts.push(`Hop: ${meta.hop_length}`);
+            el.innerHTML = parts.map(p => `<span>${p}</span>`).join("");
+        }
+
+        function renderSummary(summary) {
+            const cardsEl = document.getElementById("summaryCards");
+            const cards = [
+                { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents, 1) + " c", color: "var(--accent)" },
+                { title: "Within ±25c", value: fmt(summary.pct_within_25, 1) + "%", color: "var(--accent2)" },
+                { title: "Within ±50c", value: fmt(summary.pct_within_50, 1) + "%", color: "var(--accent2)" },
+                { title: "Within ±100c", value: fmt(summary.pct_within_100, 1) + "%", color: "var(--accent2)" },
+                { title: "Valid Frames", value: summary.valid_frames ?? 0, color: "var(--muted)" },
+            ];
+            cardsEl.innerHTML = cards.map(c => `
+                <div class="card">
+                    <h3>${c.title}</h3>
+                    <div class="value" style="color:${c.color}">${c.value}</div>
+                </div>
+            `).join("");
+        }
+
+        function renderChart(frames) {
+            const ctx = document.getElementById("pitchChart").getContext("2d");
+            const times = frames.map(f => f.time);
+            const vocalMidi = frames.map(f => f.vocal_midi);
+            const refMidi = frames.map(f => f.ref_midi);
+            const cents = frames.map(f => f.cents_error);
+
+            new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: times,
+                    datasets: [
+                        {
+                            label: "Vocal (MIDI)",
+                            data: vocalMidi,
+                            borderColor: "rgba(56, 189, 248, 0.9)",
+                            backgroundColor: "rgba(56, 189, 248, 0.2)",
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            spanGaps: false,
+                            yAxisID: "y",
+                        },
+                        {
+                            label: "Reference (MIDI)",
+                            data: refMidi,
+                            borderColor: "rgba(34, 197, 94, 0.9)",
+                            backgroundColor: "rgba(34, 197, 94, 0.2)",
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            spanGaps: false,
+                            yAxisID: "y",
+                        },
+                        {
+                            label: "Cents Error",
+                            data: cents,
+                            borderColor: "rgba(239, 68, 68, 0.9)",
+                            backgroundColor: "rgba(239, 68, 68, 0.15)",
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            spanGaps: false,
+                            yAxisID: "y1",
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    scales: {
+                        y: {
+                            type: "linear",
+                            position: "left",
+                            title: { display: true, text: "MIDI" },
+                            grid: { color: "rgba(255,255,255,0.08)" },
+                            ticks: { color: "var(--muted)" }
+                        },
+                        y1: {
+                            type: "linear",
+                            position: "right",
+                            title: { display: true, text: "Cents Error" },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: "var(--muted)" }
+                        },
+                        x: {
+                            title: { display: true, text: "Time (s)" },
+                            ticks: { color: "var(--muted)" },
+                            grid: { color: "rgba(255,255,255,0.05)" }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: "var(--text)" } },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y, 2)}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function init() {
+            const data = await loadData();
+            renderMeta(data.metadata || {});
+            renderSummary(data.summary || {});
+            renderChart(data.frames || []);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

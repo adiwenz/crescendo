@@ -4,6 +4,7 @@ def generate_c_major_scale(
     output_path="c_major_scale.mid",
     start_time=0.0,
     note_length=0.6,
+    gap=0.05,
     velocity=90
 ):
     # C major scale: C D E F G A B C
@@ -29,7 +30,7 @@ def generate_c_major_scale(
             end=time + note_length
         )
         instrument.notes.append(note)
-        time += note_length
+        time += note_length + gap
 
     pm.instruments.append(instrument)
     pm.write(output_path)

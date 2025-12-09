@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vocal Similarity Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent2: #22c55e;
+      --danger: #ef4444;
+      --border: #374151;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    h1 { margin: 0 0 4px; }
+    p { margin: 0 0 12px; color: var(--muted); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .meta span {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .card h3 { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
+    .card .value { font-size: 1.3rem; font-weight: 600; }
+    #pitchWrapper { height: 420px; margin-top: 10px; }
+    #barWrapper { height: 240px; margin-top: 10px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  </style>
+</head>
+<body>
+  <h1>Vocal Similarity Dashboard</h1>
+  <p>Loads <code>analysis_results.json</code> (or drop/select other JSONs). Shows reference vs vocal MIDI over time and cents/percent error on hover.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <button id="loadDefault">Load analysis_results.json</button>
+      <label>
+        Load JSON(s):
+        <input type="file" id="fileInput" multiple accept=".json">
+      </label>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Summary</h2>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Pitch & Cents</h2>
+    <div id="pitchWrapper"><canvas id="pitchChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Runs (Mean Abs Cents)</h2>
+    <div id="barWrapper"><canvas id="barChart"></canvas></div>
+  </div>
+
+  <script>
+    let pitchChart, barChart;
+    const runs = []; // store {label, meanAbsCents}
+
+    const midiToNote = (m) => {
+      if (m === null || m === undefined || Number.isNaN(m)) return "—";
+      const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+      const n = Math.round(m);
+      return `${names[n % 12]}${Math.floor(n/12) - 1}`;
+    };
+
+    const fmt = (v, d=2) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
+
+    async function loadJsonFile(fileOrPath) {
+      if (typeof fileOrPath === "string") {
+        const resp = await fetch(fileOrPath);
+        if (!resp.ok) throw new Error("fetch failed");
+        return await resp.json();
+      } else {
+        return JSON.parse(await fileOrPath.text());
+      }
+    }
+
+    function renderMeta(meta={}) {
+      const el = document.getElementById("meta");
+      const parts = [];
+      if (meta.vocal_path) parts.push(`Vocal: ${meta.vocal_path}`);
+      if (meta.reference_path) parts.push(`Reference: ${meta.reference_path}`);
+      if (meta.sample_rate) parts.push(`SR: ${meta.sample_rate} Hz`);
+      if (meta.duration_vocal) parts.push(`Vocal dur: ${fmt(meta.duration_vocal,2)} s`);
+      if (meta.duration_reference) parts.push(`Ref dur: ${fmt(meta.duration_reference,2)} s`);
+      el.innerHTML = parts.map(p => `<span>${p}</span>`).join("");
+    }
+
+    function renderCards(summary={}) {
+      const cardsEl = document.getElementById("cards");
+      const cards = [
+        { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color: "var(--accent)" },
+        { title: "Within ±25c", value: fmt(summary.pct_within_25,1)+"%", color: "var(--accent2)" },
+        { title: "Within ±50c", value: fmt(summary.pct_within_50,1)+"%", color: "var(--accent2)" },
+        { title: "Within ±100c", value: fmt(summary.pct_within_100,1)+"%", color: "var(--accent2)" },
+        { title: "Valid Frames", value: summary.valid_frames ?? 0, color: "var(--muted)" },
+      ];
+      cardsEl.innerHTML = cards.map(c => `
+        <div class="card">
+          <h3>${c.title}</h3>
+          <div class="value" style="color:${c.color}">${c.value}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderPitchChart(frames=[]) {
+      const ctx = document.getElementById("pitchChart").getContext("2d");
+      const times = frames.map(f => f.time);
+      const vocalMidi = frames.map(f => f.vocal_midi ?? null);
+      const refMidi = frames.map(f => f.ref_midi ?? null);
+      const cents = frames.map(f => f.cents_error ?? null);
+      const pctOff = frames.map(f => {
+        if (f.ref_hz && f.ref_hz > 0 && f.vocal_hz && f.vocal_hz > 0) {
+          return ((f.vocal_hz - f.ref_hz) / f.ref_hz) * 100;
+        }
+        return null;
+      });
+
+      if (pitchChart) pitchChart.destroy();
+      pitchChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: times,
+          datasets: [
+            {
+              label: "Vocal (MIDI)",
+              data: vocalMidi,
+              borderColor: "rgba(56, 189, 248, 0.9)",
+              backgroundColor: "rgba(56, 189, 248, 0.2)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y",
+            },
+            {
+              label: "Reference (MIDI)",
+              data: refMidi,
+              borderColor: "rgba(34, 197, 94, 0.9)",
+              backgroundColor: "rgba(34, 197, 94, 0.2)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y",
+            },
+            {
+              label: "Cents Error",
+              data: cents,
+              borderColor: "rgba(239, 68, 68, 0.9)",
+              backgroundColor: "rgba(239, 68, 68, 0.15)",
+              borderWidth: 1.2,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y1",
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "var(--text)" } },
+            tooltip: {
+              callbacks: {
+                title: (items) => `t=${fmt(items[0].parsed.x || items[0].label, 2)} s`,
+                label: (ctx) => {
+                  const f = frames[ctx.dataIndex];
+                  const lines = [];
+                  if (ctx.dataset.label.includes("Cents")) {
+                    lines.push(`Cents error: ${fmt(f.cents_error,1)} c`);
+                    const pct = pctOff[ctx.dataIndex];
+                    lines.push(`% off: ${fmt(pct,2)}%`);
+                  } else if (ctx.dataset.label.includes("Vocal")) {
+                    lines.push(`Vocal: ${midiToNote(f.vocal_midi)} (${fmt(f.vocal_midi,2)} MIDI)`);
+                    lines.push(`Hz: ${fmt(f.vocal_hz,2)}`);
+                  } else {
+                    lines.push(`Ref: ${midiToNote(f.ref_midi)} (${fmt(f.ref_midi,2)} MIDI)`);
+                    lines.push(`Hz: ${fmt(f.ref_hz,2)}`);
+                  }
+                  return lines;
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              type: "linear",
+              position: "left",
+              title: { display: true, text: "MIDI" },
+              ticks: { color: "var(--muted)" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            y1: {
+              type: "linear",
+              position: "right",
+              title: { display: true, text: "Cents Error" },
+              ticks: { color: "var(--muted)" },
+              grid: { drawOnChartArea: false }
+            },
+            x: {
+              title: { display: true, text: "Time (s)" },
+              ticks: { color: "var(--muted)" },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            }
+          }
+        }
+      });
+    }
+
+    function renderBars() {
+      const ctx = document.getElementById("barChart").getContext("2d");
+      if (barChart) barChart.destroy();
+      barChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: runs.map(r => r.label),
+          datasets: [{
+            label: "Mean Abs Cents",
+            data: runs.map(r => r.meanAbsCents),
+            backgroundColor: "rgba(56, 189, 248, 0.6)",
+            borderColor: "rgba(56, 189, 248, 1)",
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: "var(--muted)" }, grid: { color: "rgba(255,255,255,0.05)" } },
+            y: { ticks: { color: "var(--muted)" }, grid: { color: "rgba(255,255,255,0.08)" }, title: { display: true, text: "Cents" } }
+          },
+          plugins: { legend: { labels: { color: "var(--text)" } } }
+        }
+      });
+    }
+
+    function labelForMeta(meta) {
+      const base = meta && meta.vocal_path ? meta.vocal_path.split("/").pop() : "run";
+      const ref = meta && meta.reference_path ? meta.reference_path.split("/").pop() : "";
+      return ref ? `${base} vs ${ref}` : base;
+    }
+
+    async function handleDataLoad(data) {
+      renderMeta(data.metadata || {});
+      renderCards(data.summary || {});
+      renderPitchChart(data.frames || []);
+      // track run for bar chart
+      if (data.summary && data.summary.mean_abs_cents !== undefined) {
+        runs.push({
+          label: labelForMeta(data.metadata || {}),
+          meanAbsCents: data.summary.mean_abs_cents
+        });
+        renderBars();
+      }
+    }
+
+    document.getElementById("loadDefault").addEventListener("click", async () => {
+      try {
+        const data = await loadJsonFile("analysis_results.json");
+        await handleDataLoad(data);
+      } catch (e) {
+        alert("Could not load analysis_results.json");
+        console.error(e);
+      }
+    });
+
+    document.getElementById("fileInput").addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      for (const f of files) {
+        try {
+          const data = await loadJsonFile(f);
+          await handleDataLoad(data);
+        } catch (err) {
+          console.error("Failed to load file", f.name, err);
+        }
+      }
+    });
+
+    // Auto-load default if available
+    (async () => {
+      try {
+        const data = await loadJsonFile("analysis_results.json");
+        await handleDataLoad(data);
+      } catch (e) {
+        console.info("analysis_results.json not auto-loaded:", e);
+      }
+    })();
+  </script>
+</body>
+</html>
