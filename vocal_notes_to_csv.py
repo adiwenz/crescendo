@@ -26,13 +26,14 @@ CSV columns:
     measured_hz   - average frequency over the note
     target_hz     - nearest note frequency (Hz)
     cents_error   - signed cents (positive = sharp, negative = flat)
-    frame_times   - semicolon-separated timestamps (s) for each voiced frame in the note
-    frame_hz      - semicolon-separated f0 estimates (Hz) matching frame_times
+    frame_times   - JSON array of timestamps (s) for each voiced frame in the note
+    frame_hz      - JSON array of f0 estimates (Hz) matching frame_times
 """
 
 import argparse
 import csv
 import os
+import json
 from typing import List, Dict, Any
 
 import numpy as np
@@ -230,16 +231,49 @@ def main():
 
     print(f"\nWriting {len(all_rows)} notes to {args.output_csv}")
     with open(args.output_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
+        # write header
+        f.write(",".join(fieldnames) + "\n")
+
+        def as_list(v):
+            if v is None:
+                return []
+            if isinstance(v, (list, tuple)):
+                return list(v)
+            try:
+                import numpy as np  # local import to avoid top-level dependency here
+                if isinstance(v, np.ndarray):
+                    v = v.tolist()
+            except Exception:
+                pass
+            if isinstance(v, (float, int)):
+                return [v]
+            return list(v) if isinstance(v, (set, dict)) is False else list(v)
+
+        def fmt_scalar(val):
+            if isinstance(val, bool):
+                return "1" if val else "0"
+            if isinstance(val, int):
+                return str(val)
+            if isinstance(val, float):
+                return f"{val}"
+            return str(val)
+
         for row in all_rows:
-            # Convert arrays to compact semicolon-separated strings for CSV
-            row_out = {
-                **row,
-                "frame_times": ";".join(f"{t:.4f}" for t in row["frame_times"]),
-                "frame_hz": ";".join(f"{hz:.3f}" for hz in row["frame_hz"]),
-            }
-            writer.writerow(row)
+            frame_times = [float(x) for x in as_list(row.get("frame_times"))]
+            frame_hz = [float(x) for x in as_list(row.get("frame_hz"))]
+
+            ft_str = json.dumps(frame_times)
+            fh_str = json.dumps(frame_hz)
+
+            parts = []
+            for fn in fieldnames:
+                if fn == "frame_times":
+                    parts.append(f"\"{ft_str}\"")
+                elif fn == "frame_hz":
+                    parts.append(f"\"{fh_str}\"")
+                else:
+                    parts.append(fmt_scalar(row[fn]))
+            f.write(",".join(parts) + "\n")
 
 
 if __name__ == "__main__":
