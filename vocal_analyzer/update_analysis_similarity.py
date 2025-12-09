@@ -49,8 +49,22 @@ def load_existing(path: Path):
     return {"runs": [data]}
 
 
-def upsert_run(data: dict, take: str, run: dict):
+def rel_to_dashboard(path: Path) -> str:
+    # Dashboard lives in vocal_analyzer/, so go up one to repo root then into audio_files
+    try:
+        return f"../audio_files/{path.name}"
+    except Exception:
+        return str(path)
+
+
+def upsert_run(data: dict, take: str, run: dict, vocal_path: Path, ref_path: Path):
     run["take"] = take
+    # normalize metadata paths relative to dashboard location (vocal_analyzer/)
+    meta = run.get("metadata", {})
+    meta["vocal_path"] = rel_to_dashboard(vocal_path)
+    meta["reference_path"] = rel_to_dashboard(ref_path)
+    run["metadata"] = meta
+
     runs = data.get("runs", [])
     for i, existing in enumerate(runs):
         if existing.get("take") == take:
@@ -87,7 +101,7 @@ def main():
         run = json.load(f)
 
     data = load_existing(out_path)
-    data = upsert_run(data, args.take_name, run)
+    data = upsert_run(data, args.take_name, run, vocal, reference)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:

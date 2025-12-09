@@ -2,8 +2,8 @@
   "runs": [
     {
       "metadata": {
-        "vocal_path": "audio/vocal.wav",
-        "reference_path": "audio/reference.wav",
+        "vocal_path": "../audio_files/vocal.wav",
+        "reference_path": "../audio_files/reference.wav",
         "sample_rate": 44100,
         "duration_vocal": 5.349909297052154,
         "duration_reference": 4.8,
@@ -6641,8 +6641,8 @@
     },
     {
       "metadata": {
-        "vocal_path": "vocal_analyzer/audio/vocal.wav",
-        "reference_path": "vocal_analyzer/audio/reference.wav",
+        "vocal_path": "../audio_files/vocal.wav",
+        "reference_path": "../audio_files/reference.wav",
         "sample_rate": 44100,
         "duration_vocal": 5.349909297052154,
         "duration_reference": 4.8,
@@ -13281,8 +13281,8 @@
     },
     {
       "metadata": {
-        "vocal_path": "/Users/adriannawenz/code/singquest/audio_files/NEW_C_SCALE.wav",
-        "reference_path": "vocal_analyzer/audio/reference.wav",
+        "vocal_path": "../audio_files/NEW_C_SCALE.wav",
+        "reference_path": "../audio_files/reference.wav",
         "sample_rate": 44100,
         "duration_vocal": 4.8,
         "duration_reference": 4.8,
