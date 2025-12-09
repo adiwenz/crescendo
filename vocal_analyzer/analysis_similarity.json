@@ -105227,7 +105227,7 @@
     {
       "metadata": {
         "vocal_path": "../audio_files/NEW.wav",
-        "reference_path": "../audio_files/reference.wav",
+        "reference_path": "audio_files/reference.wav",
         "sample_rate": 44100,
         "duration_vocal": 4.8,
         "duration_reference": 4.8,
@@ -105239,14 +105239,16 @@
         "trim_start": 0.0,
         "trim_end": 0.0,
         "rms_gate_ratio": 0.0,
-        "jump_gate_cents": 0.0
+        "jump_gate_cents": 0.0,
+        "score_max_abs_cents": 100.0,
+        "ignore_short_outliers_ms": 400.0
       },
       "summary": {
-        "mean_abs_cents": 32.1873750170934,
-        "pct_within_25": 51.05820105820106,
-        "pct_within_50": 76.98412698412699,
-        "pct_within_100": 100.0,
-        "valid_frames": 378
+        "mean_abs_cents": 133.33994185241892,
+        "pct_within_25": 37.33075435203095,
+        "pct_within_50": 56.2862669245648,
+        "pct_within_100": 73.11411992263056,
+        "valid_frames": 517
       },
       "frames": [
         {

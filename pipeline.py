@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
 """
-Unified pipeline to:
-1) Record a take (optional, press SPACE to stop; or play a reference while recording)
-2) Append note stats to vocal_notes/vocal_notes_stats.csv
-3) Generate per-take CSV (inter_take_analysis/takes/<take>.csv)
-4) Rebuild takes_index.json
-5) (Optional) Run similarity vs reference and update analysis_similarity.json
-
-This replaces the chained shell scripts with one entry point.
+Unified pipeline without subprocesses:
+ - Record (optional), with or without reference playback
+ - Estimate pitch once and reuse for notes CSV, take CSV, and similarity JSON
+ - Rebuild takes_index.json
 """
 import argparse
 import json
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 import soundfile as sf
 
-# Local imports
-from inter_take_analysis import generate_take
-from inter_take_analysis import build_takes_index
-from inter_take_analysis import record_and_process
+from inter_take_analysis import build_takes_index, record_and_process
+from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
+from vocal_analyzer.pitch_utils import (
+    estimate_pitch,
+    write_notes_csv,
+    write_take_csv,
+    upsert_similarity,
+)
 
 ROOT = Path(__file__).resolve().parent
 AUDIO_DIR = ROOT / "audio_files"
@@ -31,68 +28,8 @@ TAKES_INDEX_JSON = ROOT / "inter_take_analysis" / "takes_index.json"
 SIM_JSON = ROOT / "vocal_analyzer" / "analysis_similarity.json"
 
 
-def append_vocal_notes(wav_path: Path):
-    """Run vocal_notes_to_csv on a single file and append rows to the main CSV."""
-    tmp = Path(tempfile.mktemp(suffix=".csv"))
-    try:
-        subprocess.run(
-            [
-                "python3",
-                str(ROOT / "vocal_notes" / "vocal_notes_to_csv.py"),
-                str(wav_path),
-                "--output_csv",
-                str(tmp),
-            ],
-            check=True,
-            cwd=ROOT,
-        )
-        if NOTES_CSV.exists():
-            with NOTES_CSV.open("a") as dest, tmp.open("r") as src:
-                lines = src.readlines()
-                if lines:
-                    dest.writelines(lines[1:])  # skip header
-        else:
-            shutil.move(str(tmp), str(NOTES_CSV))
-    finally:
-        if tmp.exists():
-            tmp.unlink()
-
-
-def rebuild_takes_index(threshold: float = 25.0, output: Path = TAKES_INDEX_JSON):
-    labels, scores = build_takes_index.build_index(str(TAKES_DIR), threshold)
-    data = {"labels": labels, "scores": scores, "threshold_cents": threshold}
-    output.write_text(json.dumps(data, indent=2))
-    return data
-
-
-def run_similarity(vocal: Path, reference: Path, take: str, trim_start: float, trim_end: float, rms_gate: float, jump_gate: float, score_cap: float, ignore_short_ms: float):
-    cmd = [
-        "python3",
-        str(ROOT / "vocal_analyzer" / "update_analysis_similarity.py"),
-        "--vocal",
-        str(vocal),
-        "--reference",
-        str(reference),
-        "--take_name",
-        take,
-        "--trim_start",
-        str(trim_start),
-        "--trim_end",
-        str(trim_end),
-        "--rms_gate_ratio",
-        str(rms_gate),
-        "--jump_gate_cents",
-        str(jump_gate),
-        "--score_max_abs_cents",
-        str(score_cap),
-        "--ignore_short_outliers_ms",
-        str(ignore_short_ms),
-    ]
-    subprocess.run(cmd, check=True, cwd=ROOT)
-
-
 def main():
-    ap = argparse.ArgumentParser(description="Unified record/analyze pipeline.")
+    ap = argparse.ArgumentParser(description="Unified record/analyze pipeline (no subprocess).")
     ap.add_argument("--take_name", required=True, help="Name for the take")
     ap.add_argument("--reference", help="Reference WAV (optional). If provided, will be played during recording and used for similarity.")
     ap.add_argument("--no_record", action="store_true", help="Skip recording and reuse existing audio_files/<take_name>.wav")
@@ -106,14 +43,20 @@ def main():
     ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (0 disables)")
     ap.add_argument("--ignore_short_outliers_ms", type=float, default=120.0, help="If score_max_abs_cents is set, ignore outlier runs shorter than this duration (ms). Set 0 to disable.")
     ap.add_argument("--takes_threshold", type=float, default=25.0, help="Cents threshold for takes_index.json")
+    ap.add_argument("--fmin", type=float, default=80.0)
+    ap.add_argument("--fmax", type=float, default=1000.0)
+    ap.add_argument("--frame_length", type=int, default=2048)
+    ap.add_argument("--hop_length", type=int, default=256)
+    ap.add_argument("--median_win", type=int, default=3)
     args = ap.parse_args()
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     TAKES_DIR.mkdir(parents=True, exist_ok=True)
+    NOTES_CSV.parent.mkdir(parents=True, exist_ok=True)
 
     vocal_wav = AUDIO_DIR / f"{args.take_name}.wav"
 
-    # 1) Record if requested
+    # Record
     if not args.no_record:
         if args.reference and not args.no_play_reference:
             audio, sr = record_and_process.record_with_reference(Path(args.reference), channels=args.channels)
@@ -125,45 +68,92 @@ def main():
     else:
         if not vocal_wav.exists():
             raise FileNotFoundError(f"{vocal_wav} not found and --no_record set.")
+        sr = args.samplerate  # assume
 
-    # 2) Append note stats (single-take) to CSV
-    append_vocal_notes(vocal_wav)
-
-    # 3) Generate per-take CSV
-    generate_take.analyze_audio_to_take(
-        audio_path=str(vocal_wav),
-        take_name=args.take_name,
-        output_csv=str(TAKES_DIR / f"{args.take_name}.csv"),
-        fmin="C2",
-        fmax="C7",
-        frame_length=2048,
-        hop_length=256,
+    # Load audio
+    vocal_y, vocal_sr, ref_y, ref_sr, ref_path = load_audio_pair(
+        vocal_path=vocal_wav,
+        reference_path=Path(args.reference) if args.reference else None,
+        alt_ref_dir=AUDIO_DIR,
     )
 
-    # 4) Rebuild takes_index.json
-    rebuild_takes_index(args.takes_threshold, TAKES_INDEX_JSON)
+    # Trim
+    if args.trim_start > 0 or args.trim_end > 0:
+        vocal_y = trim_audio(vocal_y, vocal_sr, args.trim_start, args.trim_end)
+        if ref_y is not None:
+            ref_y = trim_audio(ref_y, ref_sr, args.trim_start, args.trim_end)
 
-    # 5) Similarity (optional)
-    if args.reference:
-        ref_path = Path(args.reference)
-        if not ref_path.exists():
-            # try under audio_files
-            alt = AUDIO_DIR / ref_path.name
-            if alt.exists():
-                ref_path = alt
-            else:
-                raise FileNotFoundError(f"Reference not found: {args.reference}")
-        run_similarity(
-            vocal_wav,
-            ref_path,
-            args.take_name,
-            args.trim_start,
-            args.trim_end,
-            args.rms_gate_ratio,
-            args.jump_gate_cents,
-            args.score_max_abs_cents,
-            args.ignore_short_outliers_ms,
+    # Pitch once
+    vocal_f0_raw, vocal_times = estimate_pitch(
+        vocal_y,
+        vocal_sr,
+        fmin=args.fmin,
+        fmax=args.fmax,
+        frame_length=args.frame_length,
+        hop_length=args.hop_length,
+        median_win=args.median_win,
+    )
+
+    ref_f0 = None
+    ref_times = None
+    if ref_y is not None:
+        ref_f0, ref_times = estimate_pitch(
+            ref_y,
+            ref_sr,
+            fmin=args.fmin,
+            fmax=args.fmax,
+            frame_length=args.frame_length,
+            hop_length=args.hop_length,
+            median_win=args.median_win,
         )
+
+    # Similarity if reference provided
+    if ref_f0 is not None:
+        summary, frames = compute_similarity(
+            vocal_y=vocal_y,
+            vocal_sr=vocal_sr,
+            vocal_f0_raw=vocal_f0_raw,
+            vocal_times=vocal_times,
+            ref_f0=ref_f0,
+            ref_times=ref_times,
+            frame_length=args.frame_length,
+            hop_length=args.hop_length,
+            rms_gate_ratio=args.rms_gate_ratio,
+            jump_gate_cents=args.jump_gate_cents,
+            score_max_abs_cents=args.score_max_abs_cents,
+            ignore_short_outliers_ms=args.ignore_short_outliers_ms,
+        )
+        run = {
+            "metadata": {
+                "vocal_path": f"../audio_files/{vocal_wav.name}",
+                "reference_path": f"../audio_files/{ref_path.name}" if ref_path and ref_path.parent == AUDIO_DIR else (str(ref_path) if ref_path else None),
+                "sample_rate": vocal_sr,
+                "duration_vocal": len(vocal_y) / vocal_sr,
+                "duration_reference": len(ref_y) / ref_sr if ref_y is not None else None,
+                "frame_length": args.frame_length,
+                "hop_length": args.hop_length,
+                "fmin": args.fmin,
+                "fmax": args.fmax,
+                "median_win": args.median_win,
+                "trim_start": args.trim_start,
+                "trim_end": args.trim_end,
+                "rms_gate_ratio": args.rms_gate_ratio,
+                "jump_gate_cents": args.jump_gate_cents,
+                "score_max_abs_cents": args.score_max_abs_cents,
+                "ignore_short_outliers_ms": args.ignore_short_outliers_ms,
+            },
+            "summary": summary,
+            "frames": frames,
+        }
+        upsert_similarity(run, args.take_name, SIM_JSON)
+
+    # Notes/take CSVs using raw pitch
+    write_notes_csv(args.take_name, vocal_times, vocal_f0_raw, NOTES_CSV)
+    write_take_csv(args.take_name, vocal_times, vocal_f0_raw, TAKES_DIR / f"{args.take_name}.csv")
+
+    # Rebuild takes index
+    labels, scores = build_takes_index.build_index(str(TAKES_DIR), args.takes_threshold)
+    TAKES_INDEX_JSON.write_text(json.dumps({"labels": labels, "scores": scores, "threshold_cents": args.takes_threshold}, indent=2))
 
     print("✅ Pipeline complete.")
 

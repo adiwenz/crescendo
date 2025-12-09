@@ -6,6 +6,14 @@ from typing import List, Dict
 
 import numpy as np
 import librosa
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+try:
+    from vocal_analyzer.pitch_utils import estimate_pitch
+except ImportError:
+    estimate_pitch = None
 
 
 def hz_to_cents_error(measured_hz: float, target_hz: float) -> float:
@@ -131,13 +139,24 @@ def analyze_audio_to_take(
     y, sr = librosa.load(audio_path, sr=None, mono=True)
 
     print("Estimating pitch (YIN)...")
-    f0 = librosa.yin(
-        y,
-        fmin=librosa.note_to_hz(fmin),
-        fmax=librosa.note_to_hz(fmax),
-        frame_length=frame_length,
-        hop_length=hop_length,
-    )
+    if estimate_pitch:
+        f0, _ = estimate_pitch(
+            y,
+            sr,
+            fmin=librosa.note_to_hz(fmin),
+            fmax=librosa.note_to_hz(fmax),
+            frame_length=frame_length,
+            hop_length=hop_length,
+            median_win=3,
+        )
+    else:
+        f0 = librosa.yin(
+            y,
+            fmin=librosa.note_to_hz(fmin),
+            fmax=librosa.note_to_hz(fmax),
+            frame_length=frame_length,
+            hop_length=hop_length,
+        )
 
     # YIN returns frequency for each frame; get corresponding times
     times = librosa.frames_to_time(
