@@ -191,10 +191,10 @@
     function renderCards(summary={}, takeName="") {
       const cards = [
         { title:"Take", value: takeName || "—", color:"var(--text)" },
-        { title:"Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color:"var(--accent)" },
-        { title:"Within ±25c", value: fmt(summary.pct_within_25,1)+"%", color:"var(--accent2)" },
-        { title:"Within ±50c", value: fmt(summary.pct_within_50,1)+"%", color:"var(--accent2)" },
-        { title:"Within ±100c", value: fmt(summary.pct_within_100,1)+"%", color:"var(--accent2)" },
+        { title:"Accuracy (±50c)", value: fmt(summary.pct_within_50,1)+"%", color:"var(--accent2)" },
+        { title:"Accuracy (±25c)", value: fmt(summary.pct_within_25,1)+"%", color:"var(--accent2)" },
+        { title:"Accuracy (±100c)", value: fmt(summary.pct_within_100,1)+"%", color:"var(--accent2)" },
+        { title:"Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color:"var(--muted)" },
         { title:"Valid Frames", value: summary.valid_frames ?? 0, color:"var(--muted)" },
       ];
       document.getElementById("cards").innerHTML = cards.map(c=>`
@@ -250,17 +250,17 @@
 
     function renderScores() {
       const labels = runs.map(r=>r.take);
-      const scores = runs.map(r=>r.summary?.mean_abs_cents ?? null); // mean abs cents (original metric)
+      const scores = runs.map(r=>r.summary?.pct_within_50 ?? null); // accuracy within ±50c
       const ctx = document.getElementById("scoresChart").getContext("2d");
       if (scoresChart) scoresChart.destroy();
       scoresChart = new Chart(ctx,{
         type:"bar",
-        data:{ labels, datasets:[{ label:"Mean Abs Cents", data:scores, backgroundColor: labels.map(l=> l===selected ? "#f97316" : "#60a5fa") }]},
+        data:{ labels, datasets:[{ label:"Accuracy (±50c %)", data:scores, backgroundColor: labels.map(l=> l===selected ? "#f97316" : "#60a5fa") }]},
         options:{
           responsive:true,
           maintainAspectRatio:false,
           scales:{
-            y:{ title:{ display:true, text:"Mean Abs Cents", color:"#fff" }, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } },
+            y:{ beginAtZero:true, max:100, title:{ display:true, text:"Accuracy (within ±50c %)", color:"#fff" }, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } },
             x:{ ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.05)" } }
           },
           plugins:{ legend:{ display:false } },
