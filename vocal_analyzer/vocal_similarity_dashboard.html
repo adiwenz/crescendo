@@ -59,6 +59,36 @@
     #pitchWrapper { height: 420px; margin-top: 10px; }
     #barWrapper { height: 240px; margin-top: 10px; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .player {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+    }
+    .player-meta { margin-top: 8px; color: var(--muted); font-size: 0.9rem; }
+    .play-btn {
+      background: var(--accent);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 999px;
+      width: 42px;
+      height: 42px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    .play-btn:hover { transform: scale(1.05); }
+    .seek {
+      flex: 1;
+      min-width: 180px;
+      accent-color: var(--accent);
+    }
+    .time { min-width: 110px; text-align: right; color: var(--muted); }
+    .toggles { display: flex; gap: 12px; color: var(--muted); font-size: 0.95rem; }
   </style>
 </head>
 <body>
@@ -74,6 +104,20 @@
       </label>
     </div>
     <div class="meta" id="meta"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Playback</h2>
+    <div class="player">
+      <button class="play-btn" id="playPause" aria-label="Play/Pause">▶</button>
+      <div class="toggles">
+        <label><input type="checkbox" id="vocalToggle" checked> Vocal</label>
+        <label><input type="checkbox" id="refToggle" checked> Reference</label>
+      </div>
+      <input type="range" id="seek" min="0" max="1" value="0" step="0.001" class="seek">
+      <div class="time" id="timeLabel">0:00 / 0:00</div>
+    </div>
+    <div class="player-meta" id="playerMeta"></div>
   </div>
 
   <div class="panel">
@@ -95,6 +139,18 @@
     let pitchChart, barChart;
     const runs = []; // store {label, meanAbsCents}
 
+    const audioEls = {
+      vocal: new Audio(),
+      ref: new Audio()
+    };
+    audioEls.vocal.preload = "auto";
+    audioEls.ref.preload = "auto";
+    let playheadTime = 0;
+    let combinedDuration = 0;
+    let rafId = null;
+    let lastMetaDurations = { vocal: null, ref: null };
+    let lastBaseUrl = window.location.href;
+
     const midiToNote = (m) => {
       if (m === null || m === undefined || Number.isNaN(m)) return "—";
       const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -103,14 +159,44 @@
     };
 
     const fmt = (v, d=2) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
+    const secondsLabel = (t) => {
+      if (!Number.isFinite(t)) return "0:00";
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60).toString().padStart(2, "0");
+      return `${m}:${s}`;
+    };
+
+    const playheadPlugin = {
+      id: "playheadLine",
+      afterDatasetsDraw(chart) {
+        if (!Number.isFinite(playheadTime) || !chart?.scales?.x) return;
+        const xScale = chart.scales.x;
+        const x = xScale.getPixelForValue(playheadTime);
+        if (Number.isNaN(x)) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, chart.chartArea.top);
+        ctx.lineTo(x, chart.chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(playheadPlugin);
 
     async function loadJsonFile(fileOrPath) {
       if (typeof fileOrPath === "string") {
-        const resp = await fetch(fileOrPath);
+        const url = new URL(fileOrPath, window.location.href);
+        const resp = await fetch(url);
         if (!resp.ok) throw new Error("fetch failed");
-        return await resp.json();
+        const data = await resp.json();
+        const baseUrl = url.href.slice(0, url.href.lastIndexOf("/") + 1);
+        return { data, baseUrl };
       } else {
-        return JSON.parse(await fileOrPath.text());
+        const data = JSON.parse(await fileOrPath.text());
+        return { data, baseUrl: window.location.href };
       }
     }
 
@@ -142,6 +228,129 @@
       `).join("");
     }
 
+    function resolveAudioUrl(path, baseUrl) {
+      if (!path) return "";
+      try {
+        return new URL(path, baseUrl || lastBaseUrl || window.location.href).href;
+      } catch (e) {
+        return path;
+      }
+    }
+
+    function updatePlayerMeta(meta={}) {
+      const el = document.getElementById("playerMeta");
+      const parts = [];
+      if (meta.vocal_path) parts.push(`Vocal: ${meta.vocal_path}`);
+      if (meta.reference_path) parts.push(`Reference: ${meta.reference_path}`);
+      el.textContent = parts.join(" • ");
+    }
+
+    function refreshDuration() {
+      const durations = [
+        audioEls.vocal.duration,
+        audioEls.ref.duration,
+        lastMetaDurations.vocal,
+        lastMetaDurations.ref
+      ].filter(Number.isFinite);
+      combinedDuration = durations.length ? Math.max(...durations) : 0;
+      const seek = document.getElementById("seek");
+      seek.max = combinedDuration || 1;
+      updateTimeLabel();
+    }
+
+    function setPlayhead(time, updateSlider=true) {
+      playheadTime = Math.max(0, Math.min(time, combinedDuration || time));
+      if (updateSlider) {
+        document.getElementById("seek").value = playheadTime;
+      }
+      updateTimeLabel(playheadTime);
+      if (pitchChart) pitchChart.draw();
+    }
+
+    function updateTimeLabel(current = playheadTime) {
+      const total = combinedDuration || 0;
+      document.getElementById("timeLabel").textContent = `${secondsLabel(current)} / ${secondsLabel(total)}`;
+    }
+
+    function syncCurrentTime(time) {
+      ["vocal","ref"].forEach(key => {
+        const a = audioEls[key];
+        if (!a || !a.src) return;
+        if (Math.abs((a.currentTime || 0) - time) > 0.03) {
+          a.currentTime = Math.min(time, a.duration || combinedDuration || time);
+        }
+      });
+    }
+
+    function audioEnabled(key) {
+      return document.getElementById(`${key}Toggle`).checked && !!audioEls[key].src;
+    }
+
+    let isPlaying = false;
+    function applyPlayState(play) {
+      const shouldPlay = play ?? !isPlaying;
+      isPlaying = shouldPlay && (audioEnabled("vocal") || audioEnabled("ref"));
+      syncCurrentTime(playheadTime);
+      ["vocal","ref"].forEach(key => {
+        const a = audioEls[key];
+        if (!a || !a.src) return;
+        if (audioEnabled(key) && isPlaying) {
+          a.play().catch(()=>{});
+        } else {
+          a.pause();
+        }
+      });
+      document.getElementById("playPause").textContent = isPlaying ? "❚❚" : "▶";
+      tickPlayhead();
+    }
+
+    function tickPlayhead() {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (!isPlaying) return;
+      const step = () => {
+        const master = audioEnabled("vocal") ? audioEls.vocal : audioEnabled("ref") ? audioEls.ref : null;
+        const t = master ? master.currentTime : playheadTime;
+        setPlayhead(t);
+        if (audioEnabled("vocal") && audioEnabled("ref")) {
+          if (Math.abs(audioEls.vocal.currentTime - audioEls.ref.currentTime) > 0.05) {
+            audioEls.ref.currentTime = audioEls.vocal.currentTime;
+          }
+        }
+        if (isPlaying) rafId = requestAnimationFrame(step);
+      };
+      rafId = requestAnimationFrame(step);
+    }
+
+    function attachAudioEvents() {
+      ["vocal","ref"].forEach(key => {
+        audioEls[key].addEventListener("loadedmetadata", refreshDuration);
+        audioEls[key].addEventListener("ended", () => {
+          if (audioEnabled("vocal") && !audioEls.vocal.paused) return;
+          if (audioEnabled("ref") && !audioEls.ref.paused) return;
+          isPlaying = false;
+          document.getElementById("playPause").textContent = "▶";
+        });
+      });
+    }
+
+    attachAudioEvents();
+
+    function setAudioSources(meta={}, baseUrl) {
+      lastBaseUrl = baseUrl || lastBaseUrl || window.location.href;
+      lastMetaDurations = {
+        vocal: Number.isFinite(meta.duration_vocal) ? meta.duration_vocal : null,
+        ref: Number.isFinite(meta.duration_reference) ? meta.duration_reference : null
+      };
+      const vocalSrc = resolveAudioUrl(meta.vocal_path, baseUrl);
+      const refSrc = resolveAudioUrl(meta.reference_path, baseUrl);
+      audioEls.vocal.src = vocalSrc;
+      audioEls.ref.src = refSrc;
+      if (vocalSrc) audioEls.vocal.load();
+      if (refSrc) audioEls.ref.load();
+      setPlayhead(0);
+      refreshDuration();
+      updatePlayerMeta(meta);
+    }
     function renderPitchChart(frames=[]) {
       const ctx = document.getElementById("pitchChart").getContext("2d");
       const times = frames.map(f => f.time);
@@ -279,10 +488,11 @@
       return ref ? `${base} vs ${ref}` : base;
     }
 
-    async function handleDataLoad(data) {
+    async function handleDataLoad(data, baseUrl) {
       renderMeta(data.metadata || {});
       renderCards(data.summary || {});
       renderPitchChart(data.frames || []);
+      setAudioSources(data.metadata || {}, baseUrl);
       // track run for bar chart
       if (data.summary && data.summary.mean_abs_cents !== undefined) {
         runs.push({
@@ -295,8 +505,8 @@
 
     document.getElementById("loadDefault").addEventListener("click", async () => {
       try {
-        const data = await loadJsonFile("analysis_results.json");
-        await handleDataLoad(data);
+        const { data, baseUrl } = await loadJsonFile("analysis_results.json");
+        await handleDataLoad(data, baseUrl);
       } catch (e) {
         alert("Could not load analysis_results.json");
         console.error(e);
@@ -307,19 +517,28 @@
       const files = Array.from(e.target.files || []);
       for (const f of files) {
         try {
-          const data = await loadJsonFile(f);
-          await handleDataLoad(data);
+          const { data, baseUrl } = await loadJsonFile(f);
+          await handleDataLoad(data, baseUrl);
         } catch (err) {
           console.error("Failed to load file", f.name, err);
         }
       }
     });
 
+    document.getElementById("playPause").addEventListener("click", () => applyPlayState(!isPlaying));
+    document.getElementById("seek").addEventListener("input", (e) => {
+      const t = Number(e.target.value);
+      setPlayhead(t, false);
+      syncCurrentTime(t);
+    });
+    document.getElementById("vocalToggle").addEventListener("change", () => applyPlayState(isPlaying));
+    document.getElementById("refToggle").addEventListener("change", () => applyPlayState(isPlaying));
+
     // Auto-load default if available
     (async () => {
       try {
-        const data = await loadJsonFile("analysis_results.json");
-        await handleDataLoad(data);
+        const { data, baseUrl } = await loadJsonFile("analysis_results.json");
+        await handleDataLoad(data, baseUrl);
       } catch (e) {
         console.info("analysis_results.json not auto-loaded:", e);
       }
