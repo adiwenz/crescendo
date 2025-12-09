@@ -59,6 +59,27 @@
             max-width: 600px;
             margin-top: 0.5rem;
         }
+
+        .scrubber {
+            margin-top: 0.5rem;
+            max-width: 600px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .scrubber input[type="range"] {
+            flex: 1;
+            accent-color: #06b6d4;
+        }
+
+        .time-label {
+            font-variant-numeric: tabular-nums;
+            min-width: 110px;
+            text-align: right;
+            color: #ccc;
+        }
     </style>
 </head>
 
@@ -75,6 +96,10 @@
     </div>
 
     <audio id="audioPlayer" controls></audio>
+    <div class="scrubber">
+        <input type="range" id="timeScrubber" min="0" value="0" step="0.01" />
+        <span class="time-label" id="timeLabel">0:00 / 0:00</span>
+    </div>
 
     <div class="summary" id="summary"></div>
 
@@ -92,6 +117,7 @@
         let dataTimeMin = 0;
         let dataTimeMax = 0;
         const PLAYBACK_WINDOW = 4.0;  // seconds around playhead
+        let isScrubbing = false;
 
         function hzToMidi(freq) {
             return 69 + 12 * Math.log2(freq / 440.0);
@@ -356,6 +382,8 @@
 
         function attachAudioHandlers() {
             const audio = document.getElementById('audioPlayer');
+            const scrubber = document.getElementById('timeScrubber');
+            const timeLabel = document.getElementById('timeLabel');
 
             function cancelAnimation() {
                 if (animationId !== null) {
@@ -364,10 +392,32 @@
                 }
             }
 
-            function updatePlayhead() {
-                if (!chartInstance) return;
+            function formatTime(secs) {
+                if (!isFinite(secs)) return '0:00';
+                const m = Math.floor(secs / 60);
+                const s = Math.floor(secs % 60);
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            }
 
-                const t = audio.currentTime;
+            function updateTimeLabel() {
+                const cur = formatTime(audio.currentTime || 0);
+                const total = formatTime(audio.duration || 0);
+                timeLabel.textContent = `${cur} / ${total}`;
+            }
+
+            function syncScrubber() {
+                if (!scrubber) return;
+                if (audio.duration) {
+                    scrubber.max = audio.duration;
+                }
+                if (!isScrubbing) {
+                    scrubber.value = audio.currentTime || 0;
+                }
+                updateTimeLabel();
+            }
+
+            function applyPlayhead(t) {
+                if (!chartInstance) return;
                 const ds = chartInstance.data.datasets[2]; // playhead dataset
                 const yMin = chartInstance.options.scales.y.min;
                 const yMax = chartInstance.options.scales.y.max;
@@ -392,6 +442,13 @@
                 chartInstance.options.scales.x.max = maxX;
 
                 chartInstance.update('none');
+            }
+
+            function updatePlayhead() {
+                if (!chartInstance) return;
+
+                const t = audio.currentTime;
+                applyPlayhead(t);
                 animationId = requestAnimationFrame(updatePlayhead);
             }
 
@@ -401,16 +458,30 @@
             });
             audio.addEventListener('pause', cancelAnimation);
             audio.addEventListener('ended', cancelAnimation);
+            audio.addEventListener('timeupdate', syncScrubber);
+            audio.addEventListener('loadedmetadata', syncScrubber);
             audio.addEventListener('seeking', () => {
-                if (!chartInstance) return;
-                const t = audio.currentTime;
-                const ds = chartInstance.data.datasets[2];
-                const yMin = chartInstance.options.scales.y.min;
-                const yMax = chartInstance.options.scales.y.max;
-                ds.data[0].x = t; ds.data[0].y = yMin;
-                ds.data[1].x = t; ds.data[1].y = yMax;
-                chartInstance.update('none');
+                if (chartInstance) applyPlayhead(audio.currentTime);
+                syncScrubber();
             });
+
+            // Scrubber interactions
+            if (scrubber) {
+                const startScrub = () => { isScrubbing = true; };
+                const endScrub = () => { isScrubbing = false; };
+
+                scrubber.addEventListener('input', (e) => {
+                    const newTime = parseFloat(e.target.value) || 0;
+                    audio.currentTime = newTime;
+                    syncScrubber();
+                    if (chartInstance) applyPlayhead(newTime);
+                });
+                scrubber.addEventListener('mousedown', startScrub);
+                scrubber.addEventListener('touchstart', startScrub);
+                scrubber.addEventListener('mouseup', endScrub);
+                scrubber.addEventListener('touchend', endScrub);
+                scrubber.addEventListener('mouseleave', endScrub);
+            }
         }
 
         async function init() {
