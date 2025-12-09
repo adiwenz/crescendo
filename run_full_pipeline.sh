@@ -34,7 +34,10 @@ if [[ -n "$REFERENCE_WAV" ]]; then
   python3 "$ROOT/vocal_analyzer/update_analysis_similarity.py" \
     --vocal "$ROOT/audio_files/${TAKE_NAME}.wav" \
     --reference "$REFERENCE_WAV" \
-    --take_name "$TAKE_NAME"
+    --take_name "$TAKE_NAME" \
+    --trim_start 0.5 \
+    --rms_gate_ratio 0.001 \
+    --jump_gate_cents 300
 fi
 
 echo "✅ Pipeline complete."

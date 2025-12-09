@@ -103,7 +103,49 @@ def parse_args():
     ap.add_argument("--frame_length", type=int, default=2048)
     ap.add_argument("--hop_length", type=int, default=256)
     ap.add_argument("--median_win", type=int, default=3, help="Median filter window (frames)")
+    ap.add_argument("--jump_gate_cents", type=float, default=200.0, help="Ignore frames with > this cents jump vs previous voiced frame")
+    ap.add_argument("--rms_gate_ratio", type=float, default=0.02, help="Ignore frames with RMS < ratio * max RMS")
+    ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start of both files")
+    ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
     return ap.parse_args()
+
+
+def trim_audio(y, sr, trim_start=0.0, trim_end=0.0):
+    """Trim leading/trailing seconds; non-destructive if values are 0 or negative."""
+    n = len(y)
+    start_samp = int(max(0.0, trim_start) * sr)
+    end_samp = n - int(max(0.0, trim_end) * sr)
+    end_samp = max(start_samp, end_samp)
+    return y[start_samp:end_samp]
+
+
+def gate_frames(f0, rms, rms_gate_ratio=0.02, jump_gate_cents=200.0):
+    """Return a mask of frames to keep based on RMS and jump gating."""
+    import numpy as np
+    keep = np.ones_like(f0, dtype=bool)
+    if rms is not None:
+        max_rms = np.max(rms) if rms.size else 0
+        if max_rms > 0:
+            keep &= rms >= (rms_gate_ratio * max_rms)
+    prev = None
+    for i, v in enumerate(f0):
+        if np.isnan(v) or v <= 0:
+            keep[i] = False
+            continue
+        if prev is not None and np.isfinite(prev):
+            jump = 1200 * np.log2(v / prev)
+            if abs(jump) > jump_gate_cents:
+                keep[i] = False
+                continue
+        prev = v
+    return keep
+
+
+def none_if_nan(x):
+    try:
+        return None if np.isnan(x) else float(x)
+    except Exception:
+        return float(x) if x is not None else None
 
 
 def main():
@@ -117,6 +159,11 @@ def main():
     if vocal_sr != ref_sr:
         raise ValueError(f"Sample rate mismatch (vocal {vocal_sr}, reference {ref_sr}); please resample.")
 
+    # Optional trimming to drop noisy sections (e.g., intake breaths/clicks)
+    if args.trim_start > 0 or args.trim_end > 0:
+        vocal_y = trim_audio(vocal_y, vocal_sr, args.trim_start, args.trim_end)
+        ref_y = trim_audio(ref_y, ref_sr, args.trim_start, args.trim_end)
+
     print("Extracting vocal pitch...")
     vocal_f0, vocal_times = extract_pitch(
         vocal_y,
@@ -127,6 +174,7 @@ def main():
         hop_length=args.hop_length,
         median_win=args.median_win,
     )
+    vocal_rms = librosa.feature.rms(y=vocal_y, frame_length=args.frame_length, hop_length=args.hop_length, center=True)[0]
 
     print("Extracting reference pitch...")
     ref_f0, ref_times = extract_pitch(
@@ -146,6 +194,10 @@ def main():
     ref_midi_nearest = np.round(hz_to_midi_safe(ref_f0))
     ref_target_hz = pretty_midi.note_number_to_hz(ref_midi_nearest)
 
+    # Apply gating to remove outlier / low-RMS frames
+    keep_mask = gate_frames(vocal_f0, vocal_rms, rms_gate_ratio=args.rms_gate_ratio, jump_gate_cents=args.jump_gate_cents)
+    vocal_f0 = np.where(keep_mask, vocal_f0, np.nan)
+
     ce = cents_error(vocal_f0, ref_target_hz)
     summary = summarize_errors(ce)
 
@@ -164,16 +216,20 @@ def main():
             "fmin": args.fmin,
             "fmax": args.fmax,
             "median_win": args.median_win,
+            "trim_start": args.trim_start,
+            "trim_end": args.trim_end,
+            "rms_gate_ratio": args.rms_gate_ratio,
+            "jump_gate_cents": args.jump_gate_cents,
         },
         "summary": summary,
         "frames": [
             {
                 "time": float(t),
-                "vocal_hz": float(vh),
-                "vocal_midi": float(vm) if not np.isnan(vm := hz_to_midi_safe(vh)) else None,
-                "ref_hz": float(rh),
+                "vocal_hz": none_if_nan(vh),
+                "vocal_midi": none_if_nan(hz_to_midi_safe(vh)),
+                "ref_hz": none_if_nan(rh),
                 "ref_midi": int(rm) if not np.isnan(rm := ref_midi_nearest[i]) else None,
-                "cents_error": float(ce[i]) if not np.isnan(ce[i]) else None,
+                "cents_error": none_if_nan(ce[i]),
             }
             for i, (t, vh, rh) in enumerate(zip(vocal_times, vocal_f0, ref_target_hz))
         ],
@@ -181,7 +237,7 @@ def main():
 
     if args.output_json:
         with open(args.output_json, "w") as f:
-            json.dump(result, f, indent=2)
+            json.dump(result, f, indent=2, allow_nan=False)
         print(f"\nWrote JSON to {args.output_json}")
 
 

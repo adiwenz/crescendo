@@ -34,6 +34,14 @@ def run_analyze(vocal: Path, reference: Path, tmp_out: Path):
         "--output_json",
         str(tmp_out),
     ]
+    if args_global.trim_start:
+        cmd += ["--trim_start", str(args_global.trim_start)]
+    if args_global.trim_end:
+        cmd += ["--trim_end", str(args_global.trim_end)]
+    if args_global.rms_gate_ratio is not None:
+        cmd += ["--rms_gate_ratio", str(args_global.rms_gate_ratio)]
+    if args_global.jump_gate_cents is not None:
+        cmd += ["--jump_gate_cents", str(args_global.jump_gate_cents)]
     subprocess.run(cmd, check=True, cwd=ROOT)
 
 
@@ -82,14 +90,19 @@ def parse_args():
     ap.add_argument("--reference", required=True, help="Path to reference WAV")
     ap.add_argument("--take_name", required=True, help="Name for this take entry")
     ap.add_argument("--json_out", default=str(ROOT / "vocal_analyzer" / "analysis_similarity.json"))
+    ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start of both files")
+    ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
+    ap.add_argument("--rms_gate_ratio", type=float, default=None, help="Ignore frames with RMS below ratio * max RMS")
+    ap.add_argument("--jump_gate_cents", type=float, default=None, help="Ignore frames with |delta| above this cents")
     return ap.parse_args()
 
 
 def main():
-    args = parse_args()
-    vocal = Path(args.vocal)
-    reference = Path(args.reference)
-    out_path = Path(args.json_out)
+    global args_global
+    args_global = parse_args()
+    vocal = Path(args_global.vocal)
+    reference = Path(args_global.reference)
+    out_path = Path(args_global.json_out)
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
     tmp_path = Path(tmp.name)
@@ -101,13 +114,13 @@ def main():
         run = json.load(f)
 
     data = load_existing(out_path)
-    data = upsert_run(data, args.take_name, run, vocal, reference)
+    data = upsert_run(data, args_global.take_name, run, vocal, reference)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    print(f"Updated {out_path} with take '{args.take_name}'")
+    print(f"Updated {out_path} with take '{args_global.take_name}'")
 
 
 if __name__ == "__main__":

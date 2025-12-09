@@ -4,14 +4,32 @@
     "LV35_02",
     "LV35_03",
     "LV35_04",
-    "NEW_C_SCALE"
+    "NEW_C_SCALE",
+    "NO_OUTLIERS",
+    "NO_OUTLIERS_1",
+    "TRIMMED",
+    "TRIMMED_1",
+    "TRIMMED_2",
+    "TRIMMED_3",
+    "TRIMMED_4",
+    "TRIMMED_5",
+    "TRIMMED_6"
   ],
   "scores": [
     43.14,
     44.9,
     53.77,
     54.11,
-    56.67
+    56.67,
+    53.33,
+    77.27,
+    67.86,
+    48.57,
+    72.22,
+    56.25,
+    59.09,
+    92.86,
+    75.0
   ],
   "threshold_cents": 25.0
 }
