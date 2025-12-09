@@ -14,6 +14,7 @@ import soundfile as sf
 from inter_take_analysis import build_takes_index, record_and_process
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
 from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
+from vocal_analyzer.tone_analysis_utils import analyze_tone
 from vocal_analyzer.pitch_utils import (
     estimate_pitch,
     write_notes_csv,
@@ -51,6 +52,9 @@ def main():
     ap.add_argument("--median_win", type=int, default=3)
     ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
     ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
+    ap.add_argument("--tone_metrics", default="smoothness,spectral,jitter", help="Comma-separated tone metrics to compute (smoothness,spectral,jitter).")
+    ap.add_argument("--tone_smooth_win", type=int, default=5, help="Window for tone smoothness smoothing (frames).")
+    ap.add_argument("--tone_smooth_tol_cents", type=float, default=20.0, help="Tolerance (cents per step) for tone smoothness percent metric.")
     args = ap.parse_args()
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -118,6 +122,19 @@ def main():
         hop_length=args.hop_length,
     )
 
+    tone_metrics = [m.strip() for m in args.tone_metrics.split(",") if m.strip()]
+    tone_summary, tone_frames = analyze_tone(
+        vocal_y,
+        vocal_sr,
+        vocal_f0_raw,
+        vocal_times,
+        frame_length=args.frame_length,
+        hop_length=args.hop_length,
+        metrics=tone_metrics,
+        smooth_win=args.tone_smooth_win,
+        smooth_tolerance_cents=args.tone_smooth_tol_cents,
+    )
+
     # Similarity if reference provided
     if ref_f0 is not None:
         summary, frames, offset_info = compute_similarity(
@@ -164,6 +181,11 @@ def main():
             "volume": {
                 "summary": volume_summary,
                 "frames": volume_frames,
+            },
+            "tone": {
+                "summary": tone_summary,
+                "frames": tone_frames,
+                "metrics": tone_metrics,
             },
         }
         upsert_similarity(run, args.take_name, SIM_JSON)

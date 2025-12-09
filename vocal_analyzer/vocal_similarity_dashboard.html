@@ -67,6 +67,8 @@
     .card .value { font-size: 1.3rem; font-weight: 600; }
     #pitchWrapper { height: 420px; margin-top: 10px; }
     #volumeWrapper { height: 260px; margin-top: 10px; }
+    #toneWrapper { height: 260px; margin-top: 10px; }
+    #toneSpectralWrapper { height: 260px; margin-top: 10px; }
     #barWrapper { height: 240px; margin-top: 10px; }
     #noteWrapper { height: 260px; margin-top: 10px; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -173,6 +175,16 @@
   </div>
 
   <div class="panel">
+    <h2>Tone Smoothness</h2>
+    <div id="toneWrapper"><canvas id="toneChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Tone Spectral</h2>
+    <div id="toneSpectralWrapper"><canvas id="toneSpectralChart"></canvas></div>
+  </div>
+
+  <div class="panel">
     <h2>Runs (Mean Abs Cents)</h2>
     <div id="barWrapper"><canvas id="barChart"></canvas></div>
   </div>
@@ -183,7 +195,7 @@
   </div>
 
   <script>
-    let pitchChart, volumeChart, barChart, noteChart;
+    let pitchChart, volumeChart, toneChart, toneSpectralChart, barChart, noteChart;
     let runs = []; // store {label, meanAbsCents, raw}
     let currentRun = null;
 
@@ -261,7 +273,7 @@
       el.innerHTML = parts.map(p => `<span>${p}</span>`).join("");
     }
 
-    function renderCards(summary={}, volumeSummary=null) {
+    function renderCards(summary={}, volumeSummary=null, toneSummary=null) {
       const cardsEl = document.getElementById("cards");
       const cards = [
         { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color: "var(--accent)" },
@@ -274,6 +286,13 @@
         cards.push(
           { title: "Volume std", value: fmt(volumeSummary.std_db,1)+" dB", color: "var(--accent)" },
           { title: `Vol within ±${fmt(volumeSummary.tolerance_db,1)}dB`, value: fmt(volumeSummary.pct_within_tolerance,1)+"%", color: "var(--accent2)" },
+        );
+      }
+      if (toneSummary) {
+        cards.push(
+          { title: "Tone mean |Δ|", value: fmt(toneSummary.mean_abs_delta_cents,1)+" c", color: "var(--accent)" },
+          { title: "Tone median |Δ|", value: fmt(toneSummary.median_abs_delta_cents,1)+" c", color: "var(--accent)" },
+          { title: `Tone within ±${fmt(toneSummary.tolerance_cents_per_step,0)}c`, value: fmt(toneSummary.pct_within_tolerance,1)+"%", color: "var(--accent2)" },
         );
       }
       cardsEl.innerHTML = cards.map(c => `
@@ -382,6 +401,8 @@
       updateTimeLabel(playheadTime);
       if (pitchChart) pitchChart.draw();
       if (volumeChart) volumeChart.draw();
+      if (toneChart) toneChart.draw();
+      if (toneSpectralChart) toneSpectralChart.draw();
     }
 
     function updateTimeLabel(current = playheadTime) {
@@ -536,6 +557,179 @@
       });
     }
 
+    function renderToneChart(frames=[]) {
+      const ctx = document.getElementById("toneChart").getContext("2d");
+      if (!frames.length) {
+        if (toneChart) toneChart.destroy();
+        toneChart = null;
+        return;
+      }
+      const smoothed = frames.map(f => ({ x: f.time, y: f.smoothed_midi ?? null })).filter(p => p.y !== null);
+      const deltas = frames.map(f => ({ x: f.time, y: f.delta_cents ?? null })).filter(p => p.y !== null);
+      const timeMin = Math.min(...frames.map(f => f.time), 0);
+      const timeMax = Math.max(...frames.map(f => f.time), 0);
+      if (toneChart) toneChart.destroy();
+      toneChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            {
+              label: "Smoothed MIDI",
+              data: smoothed,
+              parsing: false,
+              borderColor: "rgba(56, 189, 248, 0.9)",
+              backgroundColor: "rgba(56, 189, 248, 0.2)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y",
+            },
+            {
+              label: "Δ cents",
+              data: deltas,
+              parsing: false,
+              borderColor: "rgba(249, 115, 22, 0.9)",
+              backgroundColor: "rgba(249, 115, 22, 0.2)",
+              borderWidth: 1.5,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y2",
+            },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
+              min: timeMin,
+              max: timeMax,
+              title: { display: true, text: "Seconds" },
+              ticks: { color: "#fff", stepSize: 0.5 },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            },
+            y: {
+              position: "left",
+              title: { display: true, text: "Smoothed MIDI" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            y2: {
+              position: "right",
+              title: { display: true, text: "Δ cents/frame" },
+              ticks: { color: "#fff" },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+
+    function renderToneSpectralChart(frames=[]) {
+      const ctx = document.getElementById("toneSpectralChart").getContext("2d");
+      if (!frames.length) {
+        if (toneSpectralChart) toneSpectralChart.destroy();
+        toneSpectralChart = null;
+        return;
+      }
+      const centroid = frames.map(f => ({ x: f.time, y: f.centroid_hz ?? null })).filter(p => p.y !== null);
+      const flatness = frames.map(f => ({ x: f.time, y: f.flatness ?? null })).filter(p => p.y !== null);
+      const jitter = frames.map(f => ({ x: f.time, y: f.jitter ?? null })).filter(p => p.y !== null);
+      const shimmer = frames.map(f => ({ x: f.time, y: f.shimmer ?? null })).filter(p => p.y !== null);
+      const timeMin = Math.min(...frames.map(f => f.time), 0);
+      const timeMax = Math.max(...frames.map(f => f.time), 0);
+      if (toneSpectralChart) toneSpectralChart.destroy();
+      toneSpectralChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            {
+              label: "Centroid (Hz)",
+              data: centroid,
+              parsing: false,
+              borderColor: "rgba(56, 189, 248, 0.9)",
+              backgroundColor: "rgba(56, 189, 248, 0.2)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y",
+            },
+            {
+              label: "Flatness",
+              data: flatness,
+              parsing: false,
+              borderColor: "rgba(34, 197, 94, 0.85)",
+              backgroundColor: "rgba(34, 197, 94, 0.15)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: true,
+              yAxisID: "y2",
+            },
+            {
+              label: "Jitter",
+              data: jitter,
+              parsing: false,
+              borderColor: "rgba(249, 115, 22, 0.8)",
+              backgroundColor: "rgba(249, 115, 22, 0.15)",
+              borderWidth: 1.5,
+              pointRadius: 0,
+              spanGaps: true,
+              yAxisID: "y3",
+            },
+            {
+              label: "Shimmer",
+              data: shimmer,
+              parsing: false,
+              borderColor: "rgba(94, 234, 212, 0.8)",
+              backgroundColor: "rgba(94, 234, 212, 0.15)",
+              borderWidth: 1.5,
+              pointRadius: 0,
+              spanGaps: true,
+              yAxisID: "y3",
+            },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
+              min: timeMin,
+              max: timeMax,
+              title: { display: true, text: "Seconds" },
+              ticks: { color: "#fff", stepSize: 0.5 },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            },
+            y: {
+              position: "left",
+              title: { display: true, text: "Centroid (Hz)" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            y2: {
+              position: "right",
+              title: { display: true, text: "Flatness" },
+              ticks: { color: "#fff" },
+              grid: { display: false }
+            },
+            y3: {
+              position: "right",
+              title: { display: true, text: "Jitter/Shimmer" },
+              ticks: { color: "#fff" },
+              grid: { display: false },
+              offset: true,
+            }
+          }
+        }
+      });
+    }
+
     function renderBars() {
       const ctx = document.getElementById("barChart").getContext("2d");
       if (barChart) barChart.destroy();
@@ -606,9 +800,11 @@
     function applyRun(run, baseUrl) {
       currentRun = run;
       renderMeta(run.metadata || {});
-      renderCards(run.summary || {}, run.volume?.summary);
+      renderCards(run.summary || {}, run.volume?.summary, run.tone?.summary?.smoothness || run.tone?.summary);
       renderPitchChart(run.frames || []);
       renderVolumeChart(run.volume?.frames || []);
+      renderToneChart(run.tone?.frames || []);
+      renderToneSpectralChart(run.tone?.frames || []);
       renderNoteStats(run.frames || []);
       setAudioSources(run.metadata || {}, baseUrl);
     }
