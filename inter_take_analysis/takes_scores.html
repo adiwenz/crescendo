@@ -47,6 +47,7 @@
 <body>
     <h1>Vocal Take Pitch Accuracy</h1>
     <h2 id="subtitle"></h2>
+    <div id="player-container"></div>
     <div id="chart-container">
         <canvas id="takesChart"></canvas>
     </div>
@@ -135,9 +136,34 @@
             });
         }
 
+        function renderPlayers(labels) {
+            const container = document.getElementById('player-container');
+            container.innerHTML = '';
+            labels.forEach(label => {
+                const wrap = document.createElement('div');
+                wrap.style.display = 'flex';
+                wrap.style.alignItems = 'center';
+                wrap.style.gap = '8px';
+                wrap.style.marginBottom = '8px';
+                const title = document.createElement('div');
+                title.textContent = label;
+                title.style.width = '120px';
+                title.style.fontWeight = '600';
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.style.flex = '1';
+                audio.src = `audio_files/${label}.wav`;
+                audio.preload = 'none';
+                wrap.appendChild(title);
+                wrap.appendChild(audio);
+                container.appendChild(wrap);
+            });
+        }
+
         (async () => {
             const data = await loadData();
             renderChart(data.labels, data.scores, data.threshold_cents);
+            renderPlayers(data.labels);
         })();
     </script>
 </body>
