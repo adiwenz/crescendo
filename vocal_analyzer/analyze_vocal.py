@@ -103,8 +103,8 @@ def parse_args():
     ap.add_argument("--frame_length", type=int, default=2048)
     ap.add_argument("--hop_length", type=int, default=256)
     ap.add_argument("--median_win", type=int, default=3, help="Median filter window (frames)")
-    ap.add_argument("--jump_gate_cents", type=float, default=1200.0, help="Ignore frames with > this cents jump vs previous voiced frame")
-    ap.add_argument("--rms_gate_ratio", type=float, default=0.001, help="Ignore frames with RMS < ratio * max RMS")
+    ap.add_argument("--jump_gate_cents", type=float, default=0.0, help="Ignore frames with > this cents jump vs previous voiced frame (0 disables)")
+    ap.add_argument("--rms_gate_ratio", type=float, default=0.0, help="Ignore frames with RMS < ratio * max RMS (0 disables)")
     ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start of both files")
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
     return ap.parse_args()
@@ -123,7 +123,7 @@ def gate_frames(f0, rms, rms_gate_ratio=0.02, jump_gate_cents=200.0):
     """Return a mask of frames to keep based on RMS and jump gating."""
     import numpy as np
     keep = np.ones_like(f0, dtype=bool)
-    if rms is not None:
+    if rms is not None and rms_gate_ratio and rms_gate_ratio > 0:
         max_rms = np.max(rms) if rms.size else 0
         if max_rms > 0:
             keep &= rms >= (rms_gate_ratio * max_rms)
@@ -132,7 +132,7 @@ def gate_frames(f0, rms, rms_gate_ratio=0.02, jump_gate_cents=200.0):
         if np.isnan(v) or v <= 0:
             keep[i] = False
             continue
-        if prev is not None and np.isfinite(prev):
+        if prev is not None and np.isfinite(prev) and jump_gate_cents and jump_gate_cents > 0:
             jump = 1200 * np.log2(v / prev)
             if abs(jump) > jump_gate_cents:
                 keep[i] = False
