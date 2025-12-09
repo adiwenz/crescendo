@@ -28,20 +28,24 @@ def detect_notes_from_f0(
     """
     Group contiguous voiced frames into "notes".
 
+    A new note starts when:
+    - frame is unvoiced (flush), or
+    - quantized MIDI changes (rounded semitone hop)
+
     f0: array of fundamental frequency per frame (Hz, np.nan for unvoiced)
     times: array of times (seconds) per frame
-    sr: sample rate
-    hop_length: hop length used for analysis
-    min_note_len_frames: minimum frames to consider a valid note
     """
     notes = []
 
     current_idxs = []
+    current_midi = None
+    midi_all = librosa.hz_to_midi(f0)
 
     def flush_current():
-        nonlocal current_idxs
+        nonlocal current_idxs, current_midi
         if len(current_idxs) < min_note_len_frames:
             current_idxs = []
+            current_midi = None
             return
 
         idxs = np.array(current_idxs)
@@ -51,11 +55,12 @@ def detect_notes_from_f0(
         # Use median to be robust against outliers
         measured_hz = float(np.median(f0_vals))
 
-        # Map to nearest MIDI note
-        midi = float(librosa.hz_to_midi(measured_hz))
-        midi_rounded = int(round(midi))
+        # Map to nearest MIDI note (use median MIDI for stability)
+        midi_vals = midi_all[idxs]
+        midi_med = float(np.median(midi_vals))
+        midi_rounded = int(round(midi_med))
         target_hz = float(librosa.midi_to_hz(midi_rounded))
-        note_name = librosa.midi_to_note(midi_rounded)
+        note_name = librosa.midi_to_note(midi_rounded, unicode=False)
 
         start_time = float(time_vals[0])
         end_time = float(time_vals[-1])
@@ -74,6 +79,7 @@ def detect_notes_from_f0(
         }
         notes.append(note)
         current_idxs = []
+        current_midi = None
 
     for i, freq in enumerate(f0):
         if np.isnan(freq) or freq <= 0:
@@ -82,11 +88,20 @@ def detect_notes_from_f0(
                 flush_current()
             continue
 
-        # voiced
+        midi_r = int(round(midi_all[i]))
+
+        # start or continue
         if not current_idxs:
             current_idxs = [i]
+            current_midi = midi_r
+            continue
+
+        # detect MIDI change -> flush and start new note
+        if midi_r != current_midi:
+            flush_current()
+            current_idxs = [i]
+            current_midi = midi_r
         else:
-            # continue current note
             current_idxs.append(i)
 
     # flush tail
@@ -104,6 +119,7 @@ def analyze_audio_to_take(
     fmax: str = "C7",
     frame_length: int = 2048,
     hop_length: int = 256,
+    rms_silence_thresh: float = 0.03,
 ):
     """
     - Loads audio file
@@ -130,6 +146,17 @@ def analyze_audio_to_take(
 
     # YIN sometimes outputs out-of-range / zero; treat negatives as unvoiced
     f0 = np.where(f0 > 0, f0, np.nan)
+
+    # Silence gate via RMS to break phrases / rests
+    rms = librosa.feature.rms(
+        y=y, frame_length=frame_length, hop_length=hop_length, center=True
+    )[0]
+    max_rms = float(np.max(rms)) if np.max(rms) > 0 else 1.0
+    silence_mask = rms < (rms_silence_thresh * max_rms)
+    if silence_mask.shape[0] < f0.shape[0]:
+        pad = f0.shape[0] - silence_mask.shape[0]
+        silence_mask = np.pad(silence_mask, (0, pad), constant_values=True)
+    f0[silence_mask] = np.nan
 
     print("Grouping frames into notes...")
     notes = detect_notes_from_f0(f0, times, sr, hop_length)
@@ -196,6 +223,24 @@ def main():
         default="C7",
         help="Maximum note for pitch detection (default: C7)",
     )
+    parser.add_argument(
+        "--frame_length",
+        type=int,
+        default=2048,
+        help="Frame length for YIN/RMS (default: 2048)",
+    )
+    parser.add_argument(
+        "--hop_length",
+        type=int,
+        default=256,
+        help="Hop length for YIN/RMS (default: 256)",
+    )
+    parser.add_argument(
+        "--rms_silence_thresh",
+        type=float,
+        default=0.03,
+        help="Frames below this fraction of max RMS are treated as silence (default: 0.03)",
+    )
     args = parser.parse_args()
 
     import os
@@ -215,6 +260,9 @@ def main():
         output_csv=output_csv,
         fmin=args.fmin,
         fmax=args.fmax,
+        frame_length=args.frame_length,
+        hop_length=args.hop_length,
+        rms_silence_thresh=args.rms_silence_thresh,
     )
 
 

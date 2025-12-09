@@ -36,6 +36,11 @@
             color: #f97373;
             margin-top: 20px;
         }
+        canvas {
+            background: #0b1224;
+            border-radius: 12px;
+            padding: 12px;
+        }
     </style>
 </head>
 
@@ -52,7 +57,7 @@
     <script>
         async function loadData() {
             try {
-                const response = await fetch('takes_index.json');
+                const response = await fetch('takes_index.json?ts=' + Date.now(), { cache: 'no-store' });
                 if (!response.ok) {
                     throw new Error('Could not load takes_index.json');
                 }
@@ -74,15 +79,18 @@
                 'Accuracy = % of notes within \u00B1' + thresholdCents + ' cents';
 
             new Chart(ctx, {
-                type: 'bar', // change to 'line' if you want a line graph instead
+                type: 'scatter',
                 data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Pitch Accuracy (%)',
-                        data: scores,
-                        borderWidth: 2,
-                        fill: false
-                    }]
+                    datasets: [
+                        {
+                            label: 'Pitch Accuracy (%)',
+                            data: scores.map((y, i) => ({ x: labels[i], y })),
+                            borderWidth: 0,
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            backgroundColor: '#60a5fa'
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -92,14 +100,24 @@
                             max: 100,
                             title: {
                                 display: true,
-                                text: 'Accuracy (%)'
-                            }
+                                text: 'Accuracy (%)',
+                                color: '#fff',
+                                font: { weight: 'bold' }
+                            },
+                            ticks: { color: '#fff', font: { weight: 'bold' } },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
                         },
                         x: {
+                            type: 'category',
+                            labels: labels,
                             title: {
                                 display: true,
-                                text: 'Vocal Takes'
-                            }
+                                text: 'Vocal Takes',
+                                color: '#fff',
+                                font: { weight: 'bold' }
+                            },
+                            ticks: { color: '#fff', font: { weight: 'bold' } },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
                         }
                     },
                     plugins: {
@@ -111,9 +129,7 @@
                                 }
                             }
                         },
-                        legend: {
-                            display: false
-                        }
+                        legend: { display: false }
                     }
                 }
             });

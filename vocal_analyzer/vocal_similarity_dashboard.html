@@ -7,32 +7,33 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --card: #1f2937;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --accent: #38bdf8;
+      --bg: #0d0d0f;
+      --panel: #141417;
+      --card: #1a1a1f;
+      --text: #f5f5f5;
+      --muted: #b3b3b7;
+      --accent: #f97316;
       --accent2: #22c55e;
       --danger: #ef4444;
-      --border: #374151;
+      --border: #2d2d34;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 16px;
+      padding: 20px;
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    h1 { margin: 0 0 4px; }
+    h1 { margin: 0 0 4px; font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
     p { margin: 0 0 12px; color: var(--muted); }
     .panel {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 14px;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
     .meta { display: flex; flex-wrap: wrap; gap: 8px; }
     .meta span {
@@ -42,6 +43,14 @@
       padding: 6px 8px;
       color: var(--muted);
       font-size: 0.9rem;
+    }
+    label { color: var(--muted); }
+    select {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
     }
     .cards {
       display: grid;
@@ -58,7 +67,26 @@
     .card .value { font-size: 1.3rem; font-weight: 600; }
     #pitchWrapper { height: 420px; margin-top: 10px; }
     #barWrapper { height: 240px; margin-top: 10px; }
+    #noteWrapper { height: 260px; margin-top: 10px; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .controls button, .controls input[type="file"]::-webkit-file-upload-button {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.1s ease;
+    }
+    .controls button:hover, .controls input[type="file"]::-webkit-file-upload-button:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    canvas {
+      background: #18181c;
+      border-radius: 12px;
+      padding: 8px;
+    }
     .player {
       display: flex;
       align-items: center;
@@ -89,15 +117,19 @@
     }
     .time { min-width: 110px; text-align: right; color: var(--muted); }
     .toggles { display: flex; gap: 12px; color: var(--muted); font-size: 0.95rem; }
+    .table { width: 100%; overflow-x: auto; }
+    .table table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .table th { color: #fff; font-weight: 600; }
   </style>
 </head>
 <body>
   <h1>Vocal Similarity Dashboard</h1>
-  <p>Loads <code>analysis_results.json</code> (or drop/select other JSONs). Shows reference vs vocal MIDI over time and cents/percent error on hover.</p>
+  <p>Loads <code>analysis_similarity.json</code> (or drop/select other JSONs). Shows reference vs vocal MIDI over time and cents/percent error on hover.</p>
 
   <div class="panel">
     <div class="controls">
-      <button id="loadDefault">Load analysis_results.json</button>
+      <button id="loadDefault">Load analysis_similarity.json</button>
       <label>
         Load JSON(s):
         <input type="file" id="fileInput" multiple accept=".json">
@@ -135,8 +167,13 @@
     <div id="barWrapper"><canvas id="barChart"></canvas></div>
   </div>
 
+  <div class="panel">
+    <h2>Per-Note Cents Error</h2>
+    <div id="noteWrapper"><canvas id="noteChart"></canvas></div>
+  </div>
+
   <script>
-    let pitchChart, barChart;
+    let pitchChart, barChart, noteChart;
     const runs = []; // store {label, meanAbsCents}
 
     const audioEls = {
@@ -150,6 +187,8 @@
     let rafId = null;
     let lastMetaDurations = { vocal: null, ref: null };
     let lastBaseUrl = window.location.href;
+    let isPlaying = false;
+    let isScrubbing = false;
 
     const midiToNote = (m) => {
       if (m === null || m === undefined || Number.isNaN(m)) return "—";
@@ -255,6 +294,7 @@
       combinedDuration = durations.length ? Math.max(...durations) : 0;
       const seek = document.getElementById("seek");
       seek.max = combinedDuration || 1;
+      seek.step = "0.001";
       updateTimeLabel();
     }
 
@@ -286,7 +326,6 @@
       return document.getElementById(`${key}Toggle`).checked && !!audioEls[key].src;
     }
 
-    let isPlaying = false;
     function applyPlayState(play) {
       const shouldPlay = play ?? !isPlaying;
       isPlaying = shouldPlay && (audioEnabled("vocal") || audioEnabled("ref"));
@@ -324,6 +363,16 @@
     function attachAudioEvents() {
       ["vocal","ref"].forEach(key => {
         audioEls[key].addEventListener("loadedmetadata", refreshDuration);
+        audioEls[key].addEventListener("timeupdate", () => {
+          if (isScrubbing) return;
+          setPlayhead(audioEls[key].currentTime);
+          if (audioEnabled("vocal") && audioEnabled("ref")) {
+            if (Math.abs(audioEls.vocal.currentTime - audioEls.ref.currentTime) > 0.05) {
+              audioEls.ref.currentTime = audioEls.vocal.currentTime;
+            }
+          }
+        });
+        audioEls[key].addEventListener("play", () => { isPlaying = true; tickPlayhead(); });
         audioEls[key].addEventListener("ended", () => {
           if (audioEnabled("vocal") && !audioEls.vocal.paused) return;
           if (audioEnabled("ref") && !audioEls.ref.paused) return;
@@ -356,13 +405,6 @@
       const times = frames.map(f => f.time);
       const vocalMidi = frames.map(f => f.vocal_midi ?? null);
       const refMidi = frames.map(f => f.ref_midi ?? null);
-      const cents = frames.map(f => f.cents_error ?? null);
-      const pctOff = frames.map(f => {
-        if (f.ref_hz && f.ref_hz > 0 && f.vocal_hz && f.vocal_hz > 0) {
-          return ((f.vocal_hz - f.ref_hz) / f.ref_hz) * 100;
-        }
-        return null;
-      });
 
       if (pitchChart) pitchChart.destroy();
       pitchChart = new Chart(ctx, {
@@ -389,16 +431,6 @@
               pointRadius: 0,
               spanGaps: false,
               yAxisID: "y",
-            },
-            {
-              label: "Cents Error",
-              data: cents,
-              borderColor: "rgba(239, 68, 68, 0.9)",
-              backgroundColor: "rgba(239, 68, 68, 0.15)",
-              borderWidth: 1.2,
-              pointRadius: 0,
-              spanGaps: false,
-              yAxisID: "y1",
             }
           ]
         },
@@ -407,47 +439,19 @@
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
           plugins: {
-            legend: { labels: { color: "var(--text)" } },
-            tooltip: {
-              callbacks: {
-                title: (items) => `t=${fmt(items[0].parsed.x || items[0].label, 2)} s`,
-                label: (ctx) => {
-                  const f = frames[ctx.dataIndex];
-                  const lines = [];
-                  if (ctx.dataset.label.includes("Cents")) {
-                    lines.push(`Cents error: ${fmt(f.cents_error,1)} c`);
-                    const pct = pctOff[ctx.dataIndex];
-                    lines.push(`% off: ${fmt(pct,2)}%`);
-                  } else if (ctx.dataset.label.includes("Vocal")) {
-                    lines.push(`Vocal: ${midiToNote(f.vocal_midi)} (${fmt(f.vocal_midi,2)} MIDI)`);
-                    lines.push(`Hz: ${fmt(f.vocal_hz,2)}`);
-                  } else {
-                    lines.push(`Ref: ${midiToNote(f.ref_midi)} (${fmt(f.ref_midi,2)} MIDI)`);
-                    lines.push(`Hz: ${fmt(f.ref_hz,2)}`);
-                  }
-                  return lines;
-                }
-              }
-            }
+            legend: { labels: { color: "#fff" } }
           },
           scales: {
             y: {
               type: "linear",
               position: "left",
               title: { display: true, text: "MIDI" },
-              ticks: { color: "var(--muted)" },
+              ticks: { color: "#fff" },
               grid: { color: "rgba(255,255,255,0.08)" }
-            },
-            y1: {
-              type: "linear",
-              position: "right",
-              title: { display: true, text: "Cents Error" },
-              ticks: { color: "var(--muted)" },
-              grid: { drawOnChartArea: false }
             },
             x: {
               title: { display: true, text: "Time (s)" },
-              ticks: { color: "var(--muted)" },
+              ticks: { color: "#fff" },
               grid: { color: "rgba(255,255,255,0.05)" }
             }
           }
@@ -474,12 +478,46 @@
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            x: { ticks: { color: "var(--muted)" }, grid: { color: "rgba(255,255,255,0.05)" } },
-            y: { ticks: { color: "var(--muted)" }, grid: { color: "rgba(255,255,255,0.08)" }, title: { display: true, text: "Cents" } }
+            x: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" } },
+            y: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" }, title: { display: true, text: "Cents", color: "#fff" } }
           },
-          plugins: { legend: { labels: { color: "var(--text)" } } }
+          plugins: { legend: { labels: { color: "#fff" } } }
         }
       });
+    }
+
+    function renderNoteStats(frames=[]) {
+      const tableEl = document.getElementById("noteTable");
+      if (!frames.length) {
+        tableEl.textContent = "No data.";
+        return;
+      }
+      const groups = {};
+      frames.forEach(f => {
+        if (f.ref_midi == null || f.cents_error == null) return;
+        const key = Math.round(f.ref_midi);
+        if (!groups[key]) groups[key] = { midi: key, note: midiToNote(key), vals: [] };
+        groups[key].vals.push(f.cents_error);
+      });
+      const rows = Object.values(groups).map(g => {
+        const mean = g.vals.reduce((a,c)=>a+c,0)/g.vals.length;
+        const meanAbs = g.vals.reduce((a,c)=>a+Math.abs(c),0)/g.vals.length;
+        return { midi: g.midi, note: g.note, count: g.vals.length, mean, meanAbs };
+      }).sort((a,b)=>a.midi - b.midi);
+
+      tableEl.innerHTML = `
+        <table>
+          <thead><tr><th>Note</th><th>Frames</th><th>Mean Cents</th><th>Mean |Cents|</th></tr></thead>
+          <tbody>
+            ${rows.map(r => `<tr>
+              <td>${r.note}</td>
+              <td>${r.count}</td>
+              <td>${fmt(r.mean,1)}</td>
+              <td>${fmt(r.meanAbs,1)}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      `;
     }
 
     function labelForMeta(meta) {
@@ -492,6 +530,7 @@
       renderMeta(data.metadata || {});
       renderCards(data.summary || {});
       renderPitchChart(data.frames || []);
+      renderNoteStats(data.frames || []);
       setAudioSources(data.metadata || {}, baseUrl);
       // track run for bar chart
       if (data.summary && data.summary.mean_abs_cents !== undefined) {
@@ -505,10 +544,10 @@
 
     document.getElementById("loadDefault").addEventListener("click", async () => {
       try {
-        const { data, baseUrl } = await loadJsonFile("analysis_results.json");
+        const { data, baseUrl } = await loadJsonFile("analysis_similarity.json");
         await handleDataLoad(data, baseUrl);
       } catch (e) {
-        alert("Could not load analysis_results.json");
+        alert("Could not load analysis_similarity.json");
         console.error(e);
       }
     });
@@ -531,16 +570,18 @@
       setPlayhead(t, false);
       syncCurrentTime(t);
     });
+    document.getElementById("seek").addEventListener("pointerdown", () => { isScrubbing = true; });
+    document.getElementById("seek").addEventListener("pointerup", () => { isScrubbing = false; syncCurrentTime(playheadTime); });
     document.getElementById("vocalToggle").addEventListener("change", () => applyPlayState(isPlaying));
     document.getElementById("refToggle").addEventListener("change", () => applyPlayState(isPlaying));
 
     // Auto-load default if available
     (async () => {
       try {
-        const { data, baseUrl } = await loadJsonFile("analysis_results.json");
+        const { data, baseUrl } = await loadJsonFile("analysis_similarity.json");
         await handleDataLoad(data, baseUrl);
       } catch (e) {
-        console.info("analysis_results.json not auto-loaded:", e);
+        console.info("analysis_similarity.json not auto-loaded:", e);
       }
     })();
   </script>
