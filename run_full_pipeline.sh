@@ -35,9 +35,9 @@ if [[ -n "$REFERENCE_WAV" ]]; then
     --vocal "$ROOT/audio_files/${TAKE_NAME}.wav" \
     --reference "$REFERENCE_WAV" \
     --take_name "$TAKE_NAME" \
-    --trim_start 0.5 \
+    --trim_start 0 \
     --rms_gate_ratio 0.001 \
-    --jump_gate_cents 300
+    --jump_gate_cents 1200
 fi
 
 echo "✅ Pipeline complete."
