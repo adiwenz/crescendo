@@ -110,6 +110,7 @@ def parse_args():
     ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start of both files")
     ap.add_argument("--trim_end", type=float, default=0.0, help="Seconds to trim from end of both files")
     ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (keeps chart data intact)")
+    ap.add_argument("--ignore_short_outliers_ms", type=float, default=120.0, help="If score_max_abs_cents is set, ignore outlier runs shorter than this duration (ms). Set 0 to disable.")
     return ap.parse_args()
 
 
