@@ -73,10 +73,28 @@ def align_arrays(a, b):
     return a[:n], b[:n]
 
 
-def summarize_errors(cents, max_abs=None):
+def summarize_errors(cents, frame_duration, max_abs=None, ignore_short_ms=None):
     valid = ~np.isnan(cents)
-    if max_abs is not None:
-        valid = valid & (np.abs(cents) <= max_abs)
+    if max_abs is not None and max_abs > 0:
+        abs_ce = np.abs(cents)
+        outliers = abs_ce > max_abs
+        if ignore_short_ms and ignore_short_ms > 0 and frame_duration > 0:
+            threshold_frames = max(1, int(ignore_short_ms / 1000.0 / frame_duration))
+            i = 0
+            while i < len(outliers):
+                if not outliers[i]:
+                    i += 1
+                    continue
+                start = i
+                while i < len(outliers) and outliers[i]:
+                    i += 1
+                end = i  # exclusive
+                seg_len = end - start
+                if seg_len < threshold_frames:
+                    valid[start:end] = False  # drop short outlier runs
+            # keep longer outliers counted
+        else:
+            valid = valid & (abs_ce <= max_abs)
     if not np.any(valid):
         return {
             "mean_abs_cents": None,
@@ -203,7 +221,13 @@ def main():
     vocal_f0 = np.where(keep_mask, vocal_f0, np.nan)
 
     ce = cents_error(vocal_f0, ref_target_hz)
-    summary = summarize_errors(ce, max_abs=args.score_max_abs_cents if args.score_max_abs_cents > 0 else None)
+    frame_duration = args.hop_length / float(vocal_sr)
+    summary = summarize_errors(
+        ce,
+        frame_duration=frame_duration,
+        max_abs=args.score_max_abs_cents if args.score_max_abs_cents > 0 else None,
+        ignore_short_ms=args.ignore_short_outliers_ms,
+    )
 
     print("\nSimilarity Summary:")
     print(summary)
