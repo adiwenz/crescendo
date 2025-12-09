@@ -4,3 +4,7 @@ matplotlib
 numpy
 mplcursors
 soundfile
+pretty_midi
+midi2audio
+
+# brew install fluidsynth   # macOS only
