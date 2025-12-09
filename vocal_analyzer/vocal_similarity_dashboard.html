@@ -66,6 +66,7 @@
     .card h3 { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
     .card .value { font-size: 1.3rem; font-weight: 600; }
     #pitchWrapper { height: 420px; margin-top: 10px; }
+    #volumeWrapper { height: 260px; margin-top: 10px; }
     #barWrapper { height: 240px; margin-top: 10px; }
     #noteWrapper { height: 260px; margin-top: 10px; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -167,6 +168,11 @@
   </div>
 
   <div class="panel">
+    <h2>Volume (RMS)</h2>
+    <div id="volumeWrapper"><canvas id="volumeChart"></canvas></div>
+  </div>
+
+  <div class="panel">
     <h2>Runs (Mean Abs Cents)</h2>
     <div id="barWrapper"><canvas id="barChart"></canvas></div>
   </div>
@@ -177,7 +183,7 @@
   </div>
 
   <script>
-    let pitchChart, barChart, noteChart;
+    let pitchChart, volumeChart, barChart, noteChart;
     let runs = []; // store {label, meanAbsCents, raw}
     let currentRun = null;
 
@@ -255,7 +261,7 @@
       el.innerHTML = parts.map(p => `<span>${p}</span>`).join("");
     }
 
-    function renderCards(summary={}) {
+    function renderCards(summary={}, volumeSummary=null) {
       const cardsEl = document.getElementById("cards");
       const cards = [
         { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color: "var(--accent)" },
@@ -264,6 +270,12 @@
         { title: "Within ±100c", value: fmt(summary.pct_within_100,1)+"%", color: "var(--accent2)" },
         { title: "Valid Frames", value: summary.valid_frames ?? 0, color: "var(--muted)" },
       ];
+      if (volumeSummary) {
+        cards.push(
+          { title: "Volume std", value: fmt(volumeSummary.std_db,1)+" dB", color: "var(--accent)" },
+          { title: `Vol within ±${fmt(volumeSummary.tolerance_db,1)}dB`, value: fmt(volumeSummary.pct_within_tolerance,1)+"%", color: "var(--accent2)" },
+        );
+      }
       cardsEl.innerHTML = cards.map(c => `
         <div class="card">
           <h3>${c.title}</h3>
@@ -279,6 +291,65 @@
       } catch (e) {
         return path;
       }
+    }
+
+    function renderVolumeChart(frames=[]) {
+      const ctx = document.getElementById("volumeChart").getContext("2d");
+      const times = frames.map(f => f.time);
+      const rmsDb = frames.map(f => f.rms_db ?? null);
+      const rmsSmooth = frames.map(f => f.rms_db_smooth ?? null);
+
+      if (volumeChart) volumeChart.destroy();
+      volumeChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: times,
+          datasets: [
+            {
+              label: "RMS (dB)",
+              data: rmsDb,
+              borderColor: "rgba(249, 115, 22, 0.75)",
+              backgroundColor: "rgba(249, 115, 22, 0.2)",
+              borderWidth: 1.5,
+              pointRadius: 0,
+              spanGaps: false,
+              yAxisID: "y",
+            },
+            {
+              label: "Smoothed RMS (dB)",
+              data: rmsSmooth,
+              borderColor: "rgba(34, 197, 94, 0.85)",
+              backgroundColor: "rgba(34, 197, 94, 0.15)",
+              borderWidth: 2,
+              pointRadius: 0,
+              spanGaps: true,
+              yAxisID: "y",
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#fff" } }
+          },
+          scales: {
+            y: {
+              type: "linear",
+              position: "left",
+              title: { display: true, text: "Relative Level (dB)" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            x: {
+              title: { display: true, text: "Time (s)" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            }
+          }
+        }
+      });
     }
 
     function updatePlayerMeta(meta={}) {
@@ -310,6 +381,7 @@
       }
       updateTimeLabel(playheadTime);
       if (pitchChart) pitchChart.draw();
+      if (volumeChart) volumeChart.draw();
     }
 
     function updateTimeLabel(current = playheadTime) {
@@ -534,8 +606,9 @@
     function applyRun(run, baseUrl) {
       currentRun = run;
       renderMeta(run.metadata || {});
-      renderCards(run.summary || {});
+      renderCards(run.summary || {}, run.volume?.summary);
       renderPitchChart(run.frames || []);
+      renderVolumeChart(run.volume?.frames || []);
       renderNoteStats(run.frames || []);
       setAudioSources(run.metadata || {}, baseUrl);
     }

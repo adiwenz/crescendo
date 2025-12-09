@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
+from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
 from vocal_analyzer.pitch_utils import estimate_pitch
 
 
@@ -91,6 +92,13 @@ def main():
         penalize_late=args.penalize_late_notes,
     )
 
+    volume_summary, volume_frames = analyze_volume_consistency(
+        vocal_y,
+        vocal_sr,
+        frame_length=args.frame_length,
+        hop_length=args.hop_length,
+    )
+
     print("\nSimilarity Summary:")
     print(summary)
 
@@ -117,6 +125,10 @@ def main():
         },
         "summary": summary,
         "frames": frames,
+        "volume": {
+            "summary": volume_summary,
+            "frames": volume_frames,
+        },
     }
 
     if args.output_json:

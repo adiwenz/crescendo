@@ -13,6 +13,7 @@ import soundfile as sf
 
 from inter_take_analysis import build_takes_index, record_and_process
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
+from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
 from vocal_analyzer.pitch_utils import (
     estimate_pitch,
     write_notes_csv,
@@ -109,6 +110,14 @@ def main():
             median_win=args.median_win,
         )
 
+    # Volume consistency (always computed on vocal take)
+    volume_summary, volume_frames = analyze_volume_consistency(
+        vocal_y,
+        vocal_sr,
+        frame_length=args.frame_length,
+        hop_length=args.hop_length,
+    )
+
     # Similarity if reference provided
     if ref_f0 is not None:
         summary, frames, offset_info = compute_similarity(
@@ -152,6 +161,10 @@ def main():
             },
             "summary": summary,
             "frames": frames,
+            "volume": {
+                "summary": volume_summary,
+                "frames": volume_frames,
+            },
         }
         upsert_similarity(run, args.take_name, SIM_JSON)
 
