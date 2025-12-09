@@ -129,6 +129,7 @@
     let zoomWindow = 4;
     let currentTimeMin = 0;
     let currentTimeMax = 0;
+    let audioDuration = 0;
     let isDraggingChart = false;
 
     const midiNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -259,6 +260,7 @@
       playheadTime = 0;
       currentTimeMin = 0;
       currentTimeMax = 0;
+      audioDuration = 0;
       if (!rows.length) {
         if (melodyChart) melodyChart.destroy();
         document.getElementById('statTake').textContent = take;
@@ -315,7 +317,7 @@
       const timeMax = Math.max(...rows.map(r => r.end_time));
       currentTimeMin = timeMin;
       currentTimeMax = timeMax;
-      const duration = timeMax - timeMin;
+      audioDuration = 0; // will be set on metadata load
       const seek = document.getElementById('seek');
       seek.min = timeMin;
       seek.max = timeMax;
@@ -411,34 +413,37 @@
       const applyView = () => {
         if (!melodyChart) return;
         const xScale = melodyChart.options.scales.x;
+        const clipEnd = Math.max(currentTimeMax, audioDuration || currentTimeMax);
+        const clipStart = currentTimeMin;
         if (zoomWindow > 0) {
           const half = zoomWindow / 2;
           let minX = playheadTime - half;
           let maxX = playheadTime + half;
-          if (minX < timeMin) {
-            minX = timeMin;
-            maxX = Math.min(timeMax, minX + zoomWindow);
+          if (minX < clipStart) {
+            minX = clipStart;
+            maxX = Math.min(clipEnd, minX + zoomWindow);
           }
-          if (maxX > timeMax) {
-            maxX = timeMax;
-            minX = Math.max(timeMin, maxX - zoomWindow);
+          if (maxX > clipEnd) {
+            maxX = clipEnd;
+            minX = Math.max(clipStart, maxX - zoomWindow);
           }
           xScale.min = minX;
           xScale.max = maxX;
         } else {
-          xScale.min = timeMin - 0.05;
-          xScale.max = timeMax + 0.05;
+          xScale.min = clipStart - 0.05;
+          xScale.max = clipEnd + 0.05;
         }
         melodyChart.update('none');
       };
 
       const syncFromChart = (evt) => {
         const x = melodyChart.scales.x.getValueForPixel(evt.offsetX);
-        const newTime = clamp(x, timeMin, timeMax);
+        const clipEnd = Math.max(currentTimeMax, audioDuration || currentTimeMax);
+        const newTime = clamp(x, currentTimeMin, clipEnd);
         playheadTime = newTime;
         audioEl.currentTime = newTime;
         seekEl.value = newTime;
-        document.getElementById('timeLabel').textContent = formatTime(newTime) + ' / ' + formatTime(timeMax);
+        document.getElementById('timeLabel').textContent = formatTime(newTime) + ' / ' + formatTime(clipEnd);
         applyView();
       };
 
@@ -453,17 +458,31 @@
       window.addEventListener('pointerup', () => { isDraggingChart = false; });
 
       seekEl.oninput = (e) => {
-        const t = Number(e.target.value);
+        const clipEnd = Math.max(currentTimeMax, audioDuration || currentTimeMax);
+        const t = clamp(Number(e.target.value), currentTimeMin, clipEnd);
         playheadTime = t;
         audioEl.currentTime = t;
-        document.getElementById('timeLabel').textContent = formatTime(t) + ' / ' + formatTime(timeMax);
+        document.getElementById('timeLabel').textContent = formatTime(t) + ' / ' + formatTime(clipEnd);
+        applyView();
+      };
+
+      audioEl.onloadedmetadata = () => {
+        audioDuration = audioEl.duration || currentTimeMax;
+        const clipEnd = Math.max(currentTimeMax, audioDuration);
+        seekEl.max = clipEnd;
+        seekEl.min = currentTimeMin;
+        if (playheadTime > clipEnd) playheadTime = clipEnd;
+        seekEl.value = playheadTime;
+        audioEl.currentTime = playheadTime;
+        document.getElementById('timeLabel').textContent = formatTime(playheadTime) + ' / ' + formatTime(clipEnd);
         applyView();
       };
 
       audioEl.ontimeupdate = () => {
+        const clipEnd = Math.max(currentTimeMax, audioDuration || currentTimeMax);
         playheadTime = audioEl.currentTime;
         seekEl.value = playheadTime;
-        document.getElementById('timeLabel').textContent = formatTime(playheadTime) + ' / ' + formatTime(timeMax);
+        document.getElementById('timeLabel').textContent = formatTime(playheadTime) + ' / ' + formatTime(clipEnd);
         applyView();
       };
     }
