@@ -92,6 +92,19 @@
         <div class="card"><h4>Avg Cents</h4><div class="val" id="statSigned">—</div></div>
         <div class="card"><h4>Spread</h4><div class="val" id="statSpread">—</div></div>
       </div>
+      <div style="display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap;">
+        <label style="color:var(--muted);">Playhead:</label>
+        <input type="range" id="seek" min="0" max="1" step="0.001" value="0" style="flex:1; min-width:160px;">
+        <div id="timeLabel" style="color:var(--muted); min-width:90px; text-align:right;">0:00</div>
+        <label style="color:var(--muted);">Zoom</label>
+        <select id="zoomSelect">
+          <option value="2">2s</option>
+          <option value="4" selected>4s</option>
+          <option value="6">6s</option>
+          <option value="10">10s</option>
+          <option value="0">Fit</option>
+        </select>
+      </div>
       <div id="melodyWrapper"><canvas id="melodyChart"></canvas></div>
     </div>
   </div>
@@ -113,6 +126,10 @@
     let melodyChart = null;
     let scoresChart = null;
     let playheadTime = 0;
+    let zoomWindow = 4;
+    let currentTimeMin = 0;
+    let currentTimeMax = 0;
+    let isDraggingChart = false;
 
     const midiNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const midiToNote = (m) => {
@@ -228,12 +245,20 @@
     }
 
     function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+    function formatTime(t) {
+      if (!Number.isFinite(t)) return '0:00';
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
 
     function renderMelody(take) {
       const rows = noteRows.filter(r => r.take === take);
       const audio = document.getElementById('takeAudio');
       audio.src = `${AUDIO_BASE}${take}${AUDIO_EXT}`;
       playheadTime = 0;
+      currentTimeMin = 0;
+      currentTimeMax = 0;
       if (!rows.length) {
         if (melodyChart) melodyChart.destroy();
         document.getElementById('statTake').textContent = take;
@@ -288,6 +313,14 @@
       const maxMidi = Math.max(...allMidi) + 1;
       const timeMin = Math.min(...rows.map(r => r.start_time));
       const timeMax = Math.max(...rows.map(r => r.end_time));
+      currentTimeMin = timeMin;
+      currentTimeMax = timeMax;
+      const duration = timeMax - timeMin;
+      const seek = document.getElementById('seek');
+      seek.min = timeMin;
+      seek.max = timeMax;
+      seek.value = timeMin;
+      document.getElementById('timeLabel').textContent = formatTime(timeMin) + ' / ' + formatTime(timeMax);
 
       if (melodyChart) melodyChart.destroy();
       const ctx = document.getElementById('melodyChart').getContext('2d');
@@ -368,18 +401,70 @@
         }
       });
 
-      melodyChart.canvas.onclick = (evt) => {
-        const x = melodyChart.scales.x.getValueForPixel(evt.offsetX);
-        const newTime = clamp(x, timeMin, timeMax);
-        playheadTime = newTime;
-        document.getElementById('takeAudio').currentTime = newTime;
+      const audioEl = document.getElementById('takeAudio');
+      const seekEl = document.getElementById('seek');
+      document.getElementById('zoomSelect').onchange = (e) => {
+        zoomWindow = parseFloat(e.target.value);
+        applyView();
+      };
+
+      const applyView = () => {
+        if (!melodyChart) return;
+        const xScale = melodyChart.options.scales.x;
+        if (zoomWindow > 0) {
+          const half = zoomWindow / 2;
+          let minX = playheadTime - half;
+          let maxX = playheadTime + half;
+          if (minX < timeMin) {
+            minX = timeMin;
+            maxX = Math.min(timeMax, minX + zoomWindow);
+          }
+          if (maxX > timeMax) {
+            maxX = timeMax;
+            minX = Math.max(timeMin, maxX - zoomWindow);
+          }
+          xScale.min = minX;
+          xScale.max = maxX;
+        } else {
+          xScale.min = timeMin - 0.05;
+          xScale.max = timeMax + 0.05;
+        }
         melodyChart.update('none');
       };
 
-      const audioEl = document.getElementById('takeAudio');
+      const syncFromChart = (evt) => {
+        const x = melodyChart.scales.x.getValueForPixel(evt.offsetX);
+        const newTime = clamp(x, timeMin, timeMax);
+        playheadTime = newTime;
+        audioEl.currentTime = newTime;
+        seekEl.value = newTime;
+        document.getElementById('timeLabel').textContent = formatTime(newTime) + ' / ' + formatTime(timeMax);
+        applyView();
+      };
+
+      melodyChart.canvas.addEventListener('pointerdown', (evt) => {
+        isDraggingChart = true;
+        syncFromChart(evt);
+      });
+      melodyChart.canvas.addEventListener('pointermove', (evt) => {
+        if (!isDraggingChart) return;
+        syncFromChart(evt);
+      });
+      window.addEventListener('pointerup', () => { isDraggingChart = false; });
+
+      seekEl.oninput = (e) => {
+        const t = Number(e.target.value);
+        playheadTime = t;
+        audioEl.currentTime = t;
+        document.getElementById('timeLabel').textContent = formatTime(t) + ' / ' + formatTime(timeMax);
+        applyView();
+      };
+
       audioEl.ontimeupdate = () => {
         playheadTime = audioEl.currentTime;
-        if (melodyChart) melodyChart.update('none');
+        seekEl.value = playheadTime;
+        document.getElementById('timeLabel').textContent = formatTime(playheadTime) + ' / ' + formatTime(timeMax);
+        applyView();
       };
     }
 
