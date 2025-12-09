@@ -134,6 +134,10 @@
         Load JSON(s):
         <input type="file" id="fileInput" multiple accept=".json">
       </label>
+      <label id="runSelectWrap" style="display:none;">
+        Take:
+        <select id="runSelect"></select>
+      </label>
     </div>
     <div class="meta" id="meta"></div>
   </div>
@@ -174,7 +178,8 @@
 
   <script>
     let pitchChart, barChart, noteChart;
-    const runs = []; // store {label, meanAbsCents}
+    let runs = []; // store {label, meanAbsCents, raw}
+    let currentRun = null;
 
     const audioEls = {
       vocal: new Audio(),
@@ -526,20 +531,58 @@
       return ref ? `${base} vs ${ref}` : base;
     }
 
-    async function handleDataLoad(data, baseUrl) {
-      renderMeta(data.metadata || {});
-      renderCards(data.summary || {});
-      renderPitchChart(data.frames || []);
-      renderNoteStats(data.frames || []);
-      setAudioSources(data.metadata || {}, baseUrl);
-      // track run for bar chart
-      if (data.summary && data.summary.mean_abs_cents !== undefined) {
-        runs.push({
-          label: labelForMeta(data.metadata || {}),
-          meanAbsCents: data.summary.mean_abs_cents
-        });
-        renderBars();
+    function applyRun(run, baseUrl) {
+      currentRun = run;
+      renderMeta(run.metadata || {});
+      renderCards(run.summary || {});
+      renderPitchChart(run.frames || []);
+      renderNoteStats(run.frames || []);
+      setAudioSources(run.metadata || {}, baseUrl);
+    }
+
+    function updateRunSelect() {
+      const wrap = document.getElementById("runSelectWrap");
+      const sel = document.getElementById("runSelect");
+      if (!runs.length) {
+        wrap.style.display = "none";
+        return;
       }
+      wrap.style.display = "";
+      sel.innerHTML = runs.map((r, i) => `<option value="${i}">${r.label}</option>`).join("");
+      sel.value = "0";
+      sel.onchange = () => {
+        const idx = parseInt(sel.value, 10);
+        const run = runs[idx];
+        if (run) applyRun(run.raw, run.baseUrl);
+      };
+    }
+
+    async function handleDataLoad(data, baseUrl) {
+      // if this is multi-run payload
+      if (Array.isArray(data.runs)) {
+        runs = data.runs.map(run => ({
+          label: labelForMeta(run.metadata || {}),
+          meanAbsCents: run.summary?.mean_abs_cents,
+          raw: run,
+          baseUrl
+        }));
+        renderBars();
+        updateRunSelect();
+        if (runs.length) applyRun(runs[0].raw, baseUrl);
+        return;
+      }
+
+      // single run
+      const entry = {
+        label: labelForMeta(data.metadata || {}),
+        meanAbsCents: data.summary?.mean_abs_cents,
+        raw: data,
+        baseUrl
+      };
+      runs = [entry];
+      renderBars();
+      updateRunSelect();
+      applyRun(data, baseUrl);
     }
 
     document.getElementById("loadDefault").addEventListener("click", async () => {
