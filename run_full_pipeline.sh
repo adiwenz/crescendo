@@ -22,12 +22,16 @@ if [[ -z "$TAKE_NAME" ]]; then
   exit 1
 fi
 
-echo "=== Recording take '$TAKE_NAME' (press SPACE to stop) ==="
-python "$ROOT/inter_take_analysis/record_and_process.py" --take_name "$TAKE_NAME"
+echo "=== Recording take '$TAKE_NAME' (press SPACE to stop; plays ref if provided) ==="
+if [[ -n "$REFERENCE_WAV" ]]; then
+  python3 "$ROOT/inter_take_analysis/record_and_process.py" --take_name "$TAKE_NAME" --play_reference "$REFERENCE_WAV"
+else
+  python3 "$ROOT/inter_take_analysis/record_and_process.py" --take_name "$TAKE_NAME"
+fi
 
 if [[ -n "$REFERENCE_WAV" ]]; then
   echo "=== Running similarity against reference: $REFERENCE_WAV ==="
-  python "$ROOT/vocal_analyzer/update_analysis_similarity.py" \
+  python3 "$ROOT/vocal_analyzer/update_analysis_similarity.py" \
     --vocal "$ROOT/audio_files/${TAKE_NAME}.wav" \
     --reference "$REFERENCE_WAV" \
     --take_name "$TAKE_NAME"

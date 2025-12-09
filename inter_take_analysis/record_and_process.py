@@ -14,6 +14,7 @@ import sys
 import time
 import subprocess
 import tempfile
+import shutil
 import termios
 import tty
 from pathlib import Path
@@ -71,6 +72,23 @@ def record_take(sr: int = 44100, channels: int = 1) -> np.ndarray:
     return audio
 
 
+def record_with_reference(ref_path: Path, channels: int = 1):
+    """Play a reference WAV while recording mic. Records for the full ref duration."""
+    import soundfile as sf
+
+    ref_audio, ref_sr = sf.read(str(ref_path))
+    if ref_audio.ndim > 1:
+        ref_audio = np.mean(ref_audio, axis=1)
+    ref_audio = ref_audio.astype(np.float32)
+    ref_audio = ref_audio.reshape(-1, 1)  # mono playback
+
+    print(f"Playing reference {ref_path} at {ref_sr} Hz while recording…")
+    recording = sd.playrec(ref_audio, samplerate=ref_sr, channels=channels, blocking=True)
+    if recording.size == 0:
+        raise RuntimeError("No audio captured while playing reference.")
+    return recording.squeeze(), ref_sr
+
+
 def run_cmd(cmd: List[str], cwd: Path = ROOT):
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, cwd=cwd)
@@ -81,6 +99,7 @@ def main():
     ap.add_argument("--take_name", help="Name for the take (default: take_<timestamp>)")
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument("--channels", type=int, default=1)
+    ap.add_argument("--play_reference", help="Optional reference WAV to play while recording (records for full ref duration).")
     args = ap.parse_args()
 
     take = args.take_name or f"take_{int(time.time())}"
@@ -88,20 +107,31 @@ def main():
     TAKES_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Take name: {take}")
-    audio = record_take(sr=args.samplerate, channels=args.channels)
+    if args.play_reference:
+        audio, sr_used = record_with_reference(Path(args.play_reference), channels=args.channels)
+    else:
+        audio = record_take(sr=args.samplerate, channels=args.channels)
+        sr_used = args.samplerate
 
     out_path = AUDIO_DIR / f"{take}.wav"
-    sf.write(out_path, audio, args.samplerate)
+    sf.write(out_path, audio, sr_used)
     print(f"Wrote {out_path}")
 
-    # Rebuild vocal_notes_stats.csv from all wavs
-    wavs = sorted(str(p) for p in AUDIO_DIR.glob("*.wav"))
-    if not wavs:
-        print("No wavs in audio_files; skipping analysis.")
-        return
+    # Analyze only the new take; append to vocal_notes_stats.csv
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        tmp_path = Path(tmp.name)
     run_cmd(
-        ["python", str(ROOT / "vocal_notes" / "vocal_notes_to_csv.py"), *wavs, "--output_csv", str(VOCAL_NOTES_CSV)]
+        ["python", str(ROOT / "vocal_notes" / "vocal_notes_to_csv.py"), str(out_path), "--output_csv", str(tmp_path)]
     )
+    if VOCAL_NOTES_CSV.exists():
+        with VOCAL_NOTES_CSV.open("a") as dest, tmp_path.open("r") as src:
+            lines = src.readlines()
+            if lines:
+                # skip header
+                dest.writelines(lines[1:])
+        tmp_path.unlink(missing_ok=True)
+    else:
+        shutil.move(str(tmp_path), str(VOCAL_NOTES_CSV))
 
     # Generate take CSV for this take
     run_cmd(
