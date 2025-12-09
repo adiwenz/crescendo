@@ -41,8 +41,9 @@
         #chartWrapper {
             margin-top: 1rem;
             width: 100%;
-            max-width: 1000px;
-            height: 380px;
+            max-width: 1100px;
+            height: 520px;
+            /* taller so all notes fit */
         }
 
         canvas {
@@ -52,12 +53,18 @@
             border-radius: 8px;
             padding: 8px;
         }
+
+        audio {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 0.5rem;
+        }
     </style>
 </head>
 
 <body>
     <h1>Vocal Note Timeline</h1>
-    <p>Notes over time (like Melodyne), colored by cents off.</p>
+    <p>Melodyne-like note lanes with cents-based coloring and scrolling playhead.</p>
 
     <div class="controls">
         <label for="takeSelect">Take:</label>
@@ -67,6 +74,8 @@
         <span id="noteCount"></span>
     </div>
 
+    <audio id="audioPlayer" controls></audio>
+
     <div class="summary" id="summary"></div>
 
     <div id="chartWrapper">
@@ -75,9 +84,14 @@
 
     <script>
         const CSV_PATH = 'vocal_notes_stats.csv';
+        const AUDIO_EXTENSION = '.wav';   // change to '.mp3' / '.m4a' if needed
 
         let allData = [];
         let chartInstance = null;
+        let animationId = null;
+        let dataTimeMin = 0;
+        let dataTimeMax = 0;
+        const PLAYBACK_WINDOW = 4.0;  // seconds around playhead
 
         function hzToMidi(freq) {
             return 69 + 12 * Math.log2(freq / 440.0);
@@ -111,8 +125,6 @@
                 obj.measured_hz = parseFloat(obj.measured_hz);
                 obj.target_hz = parseFloat(obj.target_hz);
                 obj.cents_error = parseFloat(obj.cents_error);
-
-                // for Melodyne-style Y axis: convert sung pitch to MIDI
                 obj.midi = hzToMidi(obj.measured_hz);
                 return obj;
             });
@@ -148,12 +160,7 @@
             const variance = cents.reduce((acc, c) => acc + Math.pow(c - mean, 2), 0) / cents.length;
             const stdDev = Math.sqrt(variance);
 
-            return {
-                avgSigned,
-                avgAbs,
-                stdDev,
-                count: cents.length,
-            };
+            return { avgSigned, avgAbs, stdDev, count: cents.length };
         }
 
         function updateSummary(stats, takeName) {
@@ -181,7 +188,6 @@
         }
 
         function colorForCents(absCents, maxAbs) {
-            // 0 cents → green, maxAbs → red
             const clamped = Math.min(absCents / maxAbs, 1.0);
             const hue = 120 - 120 * clamped; // 120=green, 0=red
             return `hsl(${hue}, 100%, 50%)`;
@@ -195,18 +201,48 @@
                 1
             );
 
-            const dataPoints = rows.map(r => ({
-                x: r.start_time,       // show at note start time
-                y: r.midi,             // actual pitch (MIDI)
+            // Line data: horizontal segments per note (start -> end)
+            const lineData = [];
+            rows.forEach(r => {
+                // skip totally zero-length notes if you want:
+                // if (r.duration <= 0) return;
+
+                lineData.push({
+                    x: r.start_time,
+                    y: r.midi,
+                    cents: r.cents_error,
+                    note: r.note_name,
+                    start: r.start_time,
+                    end: r.end_time
+                });
+                lineData.push({
+                    x: r.end_time,
+                    y: r.midi,
+                    cents: r.cents_error,
+                    note: r.note_name,
+                    start: r.start_time,
+                    end: r.end_time
+                });
+                // NaN break so Chart.js stops connecting to next note
+                lineData.push({ x: NaN, y: NaN });
+            });
+
+            // Center points for tooltips
+            const centerData = rows.map(r => ({
+                x: (r.start_time + r.end_time) / 2.0,
+                y: r.midi,
+                cents: r.cents_error,
                 note: r.note_name,
                 start: r.start_time,
-                end: r.end_time,
-                cents: r.cents_error,
+                end: r.end_time
             }));
 
             const midiValues = rows.map(r => r.midi);
             const minMidi = Math.min(...midiValues) - 1;
             const maxMidi = Math.max(...midiValues) + 1;
+
+            dataTimeMin = Math.min(...rows.map(r => r.start_time));
+            dataTimeMax = Math.max(...rows.map(r => r.end_time));
 
             if (chartInstance) {
                 chartInstance.destroy();
@@ -215,18 +251,53 @@
             chartInstance = new Chart(ctx, {
                 type: 'scatter',
                 data: {
-                    datasets: [{
-                        label: `Notes over time (${takeName})`,
-                        data: dataPoints,
-                        pointRadius: ctx => {
-                            const v = Math.abs(ctx.raw.cents);
-                            return 4 + 4 * Math.min(v / maxAbs, 1.0); // bigger when more off
+                    datasets: [
+                        {
+                            // sustained note bars
+                            label: 'Notes',
+                            type: 'scatter',
+                            data: lineData,
+                            showLine: true,
+                            pointRadius: 0,
+                            borderWidth: 4,
+                            segment: {
+                                borderColor: ctx => {
+                                    if (!ctx.p0 || !ctx.p0.raw || isNaN(ctx.p0.raw.x)) return 'transparent';
+                                    const v = Math.abs(ctx.p0.raw.cents || 0);
+                                    return colorForCents(v, maxAbs);
+                                }
+                            },
+                            tooltip: { enabled: false } // tooltips handled by center dataset
                         },
-                        pointBackgroundColor: ctx => {
-                            const v = Math.abs(ctx.raw.cents);
-                            return colorForCents(v, maxAbs);
+                        {
+                            // center dots for hover info
+                            label: 'Pitch centers',
+                            type: 'scatter',
+                            data: centerData,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: ctx => {
+                                const v = Math.abs(ctx.raw.cents);
+                                return colorForCents(v, maxAbs);
+                            }
                         },
-                    }]
+                        {
+                            // playhead line
+                            label: 'Playhead',
+                            type: 'scatter',
+                            data: [
+                                { x: dataTimeMin, y: minMidi },
+                                { x: dataTimeMin, y: maxMidi }
+                            ],
+                            showLine: true,
+                            borderColor: 'rgba(255,255,255,0.9)',
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            hitRadius: 0,
+                            hoverRadius: 0,
+                            tooltip: { enabled: false }
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -239,11 +310,11 @@
                             callbacks: {
                                 label: (ctx) => {
                                     const r = ctx.raw;
-                                    const label = [
+                                    if (!r || r.note === undefined) return '';
+                                    return [
                                         `${r.note}  (${r.cents.toFixed(2)} cents)`,
                                         `Time: ${r.start.toFixed(2)}–${r.end.toFixed(2)} s`
                                     ];
-                                    return label;
                                 }
                             }
                         }
@@ -251,6 +322,8 @@
                     scales: {
                         x: {
                             type: 'linear',
+                            min: dataTimeMin,
+                            max: dataTimeMin + PLAYBACK_WINDOW,
                             title: {
                                 display: true,
                                 text: 'Time (s)',
@@ -270,6 +343,7 @@
                             },
                             ticks: {
                                 stepSize: 1,
+                                autoSkip: false,        // <-- show every semitone
                                 color: '#ccc',
                                 callback: value => midiToNoteName(value)
                             },
@@ -280,24 +354,94 @@
             });
         }
 
+        function attachAudioHandlers() {
+            const audio = document.getElementById('audioPlayer');
+
+            function cancelAnimation() {
+                if (animationId !== null) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+            }
+
+            function updatePlayhead() {
+                if (!chartInstance) return;
+
+                const t = audio.currentTime;
+                const ds = chartInstance.data.datasets[2]; // playhead dataset
+                const yMin = chartInstance.options.scales.y.min;
+                const yMax = chartInstance.options.scales.y.max;
+
+                ds.data[0].x = t;
+                ds.data[0].y = yMin;
+                ds.data[1].x = t;
+                ds.data[1].y = yMax;
+
+                const halfWin = PLAYBACK_WINDOW / 2;
+                let minX = t - halfWin;
+                let maxX = t + halfWin;
+                if (minX < dataTimeMin) {
+                    minX = dataTimeMin;
+                    maxX = minX + PLAYBACK_WINDOW;
+                }
+                if (maxX > dataTimeMax) {
+                    maxX = dataTimeMax;
+                    minX = maxX - PLAYBACK_WINDOW;
+                }
+                chartInstance.options.scales.x.min = minX;
+                chartInstance.options.scales.x.max = maxX;
+
+                chartInstance.update('none');
+                animationId = requestAnimationFrame(updatePlayhead);
+            }
+
+            audio.addEventListener('play', () => {
+                cancelAnimation();
+                animationId = requestAnimationFrame(updatePlayhead);
+            });
+            audio.addEventListener('pause', cancelAnimation);
+            audio.addEventListener('ended', cancelAnimation);
+            audio.addEventListener('seeking', () => {
+                if (!chartInstance) return;
+                const t = audio.currentTime;
+                const ds = chartInstance.data.datasets[2];
+                const yMin = chartInstance.options.scales.y.min;
+                const yMax = chartInstance.options.scales.y.max;
+                ds.data[0].x = t; ds.data[0].y = yMin;
+                ds.data[1].x = t; ds.data[1].y = yMax;
+                chartInstance.update('none');
+            });
+        }
+
         async function init() {
             try {
                 allData = await loadCSV(CSV_PATH);
                 populateTakeSelect(allData);
+                attachAudioHandlers();
 
                 const select = document.getElementById('takeSelect');
+                const audio = document.getElementById('audioPlayer');
+
                 select.addEventListener('change', () => {
                     const take = select.value;
                     if (!take) {
                         updateSummary(null, '');
                         if (chartInstance) chartInstance.destroy();
+                        audio.removeAttribute('src');
+                        audio.load();
                         return;
                     }
+
                     const rows = allData.filter(d => d.take === take);
                     const stats = computeStats(rows);
                     updateSummary(stats, take);
                     plotTake(rows, take);
+
+                    const src = `${take}${AUDIO_EXTENSION}`;
+                    audio.src = src;
+                    audio.load();
                 });
+
             } catch (err) {
                 console.error(err);
                 alert('Error loading CSV. Make sure vocal_notes_stats.csv is in the same folder as this HTML.');
