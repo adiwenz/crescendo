@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Reference Takes Dashboard</title>
@@ -16,38 +17,192 @@
       --accent2: #22c55e;
       --border: #2d2d34;
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 18px; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    h1 { margin: 0 0 6px; font-size: 30px; }
-    p { margin: 0 0 12px; color: var(--muted); }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 8px 22px rgba(0,0,0,0.35); }
-    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    select { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
-    .player { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--card); border:1px solid var(--border); border-radius: 12px; padding: 10px; }
-    .play-btn { background: var(--accent); border: none; color: #0a0a0a; border-radius: 10px; padding: 10px 12px; font-weight: 700; cursor: pointer; }
-    .toggles { display: flex; gap: 10px; color: var(--muted); }
-    .seek { flex: 1; min-width: 180px; accent-color: var(--accent); }
-    .time { color: var(--muted); min-width: 110px; text-align: right; }
-    #chartWrapper { height: 420px; margin-top: 10px; }
-    #volumeWrapper { height: 260px; margin-top: 10px; }
-    #toneWrapper { height: 260px; margin-top: 10px; }
-    #toneSpectralWrapper { height: 260px; margin-top: 10px; }
-    canvas { background: #18181c; border-radius: 12px; padding: 8px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 10px; }
-    .card { background: var(--card); border:1px solid var(--border); border-radius: 10px; padding: 10px; }
-    .card h3 { margin:0 0 4px; color: var(--muted); font-size: 0.9rem; }
-    .card .value { font-size: 1.2rem; font-weight: 700; }
-    #scoresWrapper { height: 260px; }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 18px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    select {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+
+    .player {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .play-btn {
+      background: var(--accent);
+      border: none;
+      color: #0a0a0a;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .toggles {
+      display: flex;
+      gap: 10px;
+      color: var(--muted);
+    }
+
+    .seek {
+      flex: 1;
+      min-width: 180px;
+      accent-color: var(--accent);
+    }
+
+    .time {
+      color: var(--muted);
+      min-width: 110px;
+      text-align: right;
+    }
+
+    #chartWrapper {
+      height: 420px;
+      margin-top: 10px;
+    }
+
+    #volumeWrapper {
+      height: 260px;
+      margin-top: 10px;
+    }
+
+    #toneWrapper {
+      height: 260px;
+      margin-top: 10px;
+    }
+
+    #toneSpectralWrapper {
+      height: 260px;
+      margin-top: 10px;
+    }
+
+    #toneProfileWrapper {
+      height: 260px;
+      margin-top: 10px;
+    }
+
+    .tone-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .tone-metric {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 70px;
+    }
+
+    .tone-metric span {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .tone-metric strong {
+      color: var(--accent2);
+      font-size: 1.1rem;
+    }
+
+    canvas {
+      background: #18181c;
+      border-radius: 12px;
+      padding: 8px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .card h3 {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .card .value {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    #scoresWrapper {
+      height: 260px;
+    }
   </style>
 </head>
+
 <body>
   <h1>Reference Takes Dashboard</h1>
-  <p>Compare recorded takes against a reference audio. Select a take, play both tracks together or solo, and view melody vs reference with a shared playhead.</p>
+  <p>Compare recorded takes against a reference audio. Select a take, play both tracks together or solo, and view melody
+    vs reference with a shared playhead.</p>
 
   <div class="panel">
     <div class="controls">
       <label>Take:
-        <select id="takeSelect"><option>Loading…</option></select>
+        <select id="takeSelect">
+          <option>Loading…</option>
+        </select>
       </label>
       <button id="reload">Reload data</button>
     </div>
@@ -83,6 +238,12 @@
   </div>
 
   <div class="panel">
+    <h3>Tone Profile (Averages)</h3>
+    <div id="toneProfileWrapper"><canvas id="toneProfileChart"></canvas></div>
+    <div id="toneMetrics" class="tone-metrics"></div>
+  </div>
+
+  <div class="panel">
     <h3>Take Scores</h3>
     <div id="scoresWrapper"><canvas id="scoresChart"></canvas></div>
   </div>
@@ -95,6 +256,7 @@
     let volumeChart = null;
     let toneChart = null;
     let toneSpectralChart = null;
+    let toneProfileChart = null;
     let scoresChart = null;
     const audioEls = { vocal: new Audio(), ref: new Audio() };
     let isPlaying = false;
@@ -123,10 +285,10 @@
     };
     Chart.register(playheadPlugin);
 
-    const fmt = (v,d=2)=> v==null||Number.isNaN(v) ? "—" : Number(v).toFixed(d);
-    const fmtTime = (t)=> {
+    const fmt = (v, d = 2) => v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
+    const fmtTime = (t) => {
       if (!Number.isFinite(t)) return "0:00";
-      const m=Math.floor(t/60), s=Math.floor(t%60).toString().padStart(2,"0");
+      const m = Math.floor(t / 60), s = Math.floor(t % 60).toString().padStart(2, "0");
       return `${m}:${s}`;
     };
 
@@ -162,32 +324,32 @@
       const timeMax = Math.max(...frames.map(f => f.time), 0);
       if (volumeChart) volumeChart.destroy();
       volumeChart = new Chart(ctx, {
-        type:"line",
-        data:{
-          datasets:[
-            { label:"RMS (dB)", data:rmsPoints, parsing:false, borderColor:"rgba(249,115,22,0.75)", backgroundColor:"rgba(249,115,22,0.2)", borderWidth:1.5, pointRadius:0, spanGaps:false, yAxisID:"y" },
-            { label:"Smoothed RMS (dB)", data:smoothPoints, parsing:false, borderColor:"rgba(34,197,94,0.85)", backgroundColor:"rgba(34,197,94,0.15)", borderWidth:2, pointRadius:0, spanGaps:true, yAxisID:"y" },
+        type: "line",
+        data: {
+          datasets: [
+            { label: "RMS (dB)", data: rmsPoints, parsing: false, borderColor: "rgba(249,115,22,0.75)", backgroundColor: "rgba(249,115,22,0.2)", borderWidth: 1.5, pointRadius: 0, spanGaps: false, yAxisID: "y" },
+            { label: "Smoothed RMS (dB)", data: smoothPoints, parsing: false, borderColor: "rgba(34,197,94,0.85)", backgroundColor: "rgba(34,197,94,0.15)", borderWidth: 2, pointRadius: 0, spanGaps: true, yAxisID: "y" },
           ]
         },
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          interaction:{ mode:"index", intersect:false },
-          plugins:{ legend:{ labels:{ color:"#fff" } } },
-          scales:{
-            x:{
-              type:"linear",
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
               min: timeMin,
               max: timeMax,
-              title:{ display:true, text:"Seconds" , color:"#fff"},
-              ticks:{
-                color:"#fff",
+              title: { display: true, text: "Seconds", color: "#fff" },
+              ticks: {
+                color: "#fff",
                 stepSize: 0.5,
-                callback:(v)=>Number(v).toFixed(1),
+                callback: (v) => Number(v).toFixed(1),
               },
-              grid:{ color:"rgba(255,255,255,0.05)" }
+              grid: { color: "rgba(255,255,255,0.05)" }
             },
-            y:{ title:{ display:true, text:"Relative Level (dB)", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } }
+            y: { title: { display: true, text: "Relative Level (dB)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } }
           }
         }
       });
@@ -207,29 +369,29 @@
       const timeMax = Math.max(...frames.map(f => f.time), 0);
       if (toneChart) toneChart.destroy();
       toneChart = new Chart(ctx, {
-        type:"line",
-        data:{
-          datasets:[
-            { label:"Smoothed MIDI", data: smoothed, parsing:false, borderColor:"rgba(56,189,248,0.9)", backgroundColor:"rgba(56,189,248,0.2)", borderWidth:2, pointRadius:0, spanGaps:false, yAxisID:"y" },
-            { label:"Δ cents", data: deltas, parsing:false, borderColor:"rgba(249,115,22,0.9)", backgroundColor:"rgba(249,115,22,0.2)", borderWidth:1.5, pointRadius:0, spanGaps:false, yAxisID:"y2" },
+        type: "line",
+        data: {
+          datasets: [
+            { label: "Smoothed MIDI", data: smoothed, parsing: false, borderColor: "rgba(56,189,248,0.9)", backgroundColor: "rgba(56,189,248,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, yAxisID: "y" },
+            { label: "Δ cents", data: deltas, parsing: false, borderColor: "rgba(249,115,22,0.9)", backgroundColor: "rgba(249,115,22,0.2)", borderWidth: 1.5, pointRadius: 0, spanGaps: false, yAxisID: "y2" },
           ]
         },
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          interaction:{ mode:"index", intersect:false },
-          plugins:{ legend:{ labels:{ color:"#fff" } } },
-          scales:{
-            x:{
-              type:"linear",
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
               min: timeMin,
               max: timeMax,
-              title:{ display:true, text:"Seconds" , color:"#fff"},
-              ticks:{ color:"#fff", stepSize: 0.5 },
-              grid:{ color:"rgba(255,255,255,0.05)" }
+              title: { display: true, text: "Seconds", color: "#fff" },
+              ticks: { color: "#fff", stepSize: 0.5 },
+              grid: { color: "rgba(255,255,255,0.05)" }
             },
-            y:{ position:"left", title:{ display:true, text:"Smoothed MIDI", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } },
-            y2:{ position:"right", title:{ display:true, text:"Δ cents/frame", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ display:false } }
+            y: { position: "left", title: { display: true, text: "Smoothed MIDI", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } },
+            y2: { position: "right", title: { display: true, text: "Δ cents/frame", color: "#fff" }, ticks: { color: "#fff" }, grid: { display: false } }
           }
         }
       });
@@ -251,39 +413,39 @@
       const timeMax = Math.max(...frames.map(f => f.time), 0);
       if (toneSpectralChart) toneSpectralChart.destroy();
       toneSpectralChart = new Chart(ctx, {
-        type:"line",
-        data:{
-          datasets:[
-            { label:"Centroid (Hz)", data: centroid, parsing:false, borderColor:"rgba(56,189,248,0.9)", backgroundColor:"rgba(56,189,248,0.2)", borderWidth:2, pointRadius:0, spanGaps:false, yAxisID:"y" },
-            { label:"Flatness", data: flatness, parsing:false, borderColor:"rgba(34,197,94,0.85)", backgroundColor:"rgba(34,197,94,0.15)", borderWidth:2, pointRadius:0, spanGaps:true, yAxisID:"y2" },
-            { label:"Jitter", data: jitter, parsing:false, borderColor:"rgba(249,115,22,0.8)", backgroundColor:"rgba(249,115,22,0.15)", borderWidth:1.5, pointRadius:0, spanGaps:true, yAxisID:"y3" },
-            { label:"Shimmer", data: shimmer, parsing:false, borderColor:"rgba(94,234,212,0.8)", backgroundColor:"rgba(94,234,212,0.15)", borderWidth:1.5, pointRadius:0, spanGaps:true, yAxisID:"y3" },
+        type: "line",
+        data: {
+          datasets: [
+            { label: "Centroid (Hz)", data: centroid, parsing: false, borderColor: "rgba(56,189,248,0.9)", backgroundColor: "rgba(56,189,248,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, yAxisID: "y" },
+            { label: "Flatness", data: flatness, parsing: false, borderColor: "rgba(34,197,94,0.85)", backgroundColor: "rgba(34,197,94,0.15)", borderWidth: 2, pointRadius: 0, spanGaps: true, yAxisID: "y2" },
+            { label: "Jitter", data: jitter, parsing: false, borderColor: "rgba(249,115,22,0.8)", backgroundColor: "rgba(249,115,22,0.15)", borderWidth: 1.5, pointRadius: 0, spanGaps: true, yAxisID: "y3" },
+            { label: "Shimmer", data: shimmer, parsing: false, borderColor: "rgba(94,234,212,0.8)", backgroundColor: "rgba(94,234,212,0.15)", borderWidth: 1.5, pointRadius: 0, spanGaps: true, yAxisID: "y3" },
           ]
         },
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          interaction:{ mode:"index", intersect:false },
-          plugins:{ legend:{ labels:{ color:"#fff" } } },
-          scales:{
-            x:{
-              type:"linear",
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
               min: timeMin,
               max: timeMax,
-              title:{ display:true, text:"Seconds" , color:"#fff"},
-              ticks:{ color:"#fff", stepSize: 0.5 },
-              grid:{ color:"rgba(255,255,255,0.05)" }
+              title: { display: true, text: "Seconds", color: "#fff" },
+              ticks: { color: "#fff", stepSize: 0.5 },
+              grid: { color: "rgba(255,255,255,0.05)" }
             },
-            y:{ position:"left", title:{ display:true, text:"Centroid (Hz)", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } },
-            y2:{ position:"right", title:{ display:true, text:"Flatness", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ display:false } },
-            y3:{ position:"right", title:{ display:true, text:"Jitter/Shimmer", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ display:false }, offset:true },
+            y: { position: "left", title: { display: true, text: "Centroid (Hz)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } },
+            y2: { position: "right", title: { display: true, text: "Flatness", color: "#fff" }, ticks: { color: "#fff" }, grid: { display: false } },
+            y3: { position: "right", title: { display: true, text: "Jitter/Shimmer", color: "#fff" }, ticks: { color: "#fff" }, grid: { display: false }, offset: true },
           }
         }
       });
     }
 
     async function loadData() {
-      const resp = await fetch(`${DATA_URL}?ts=${Date.now()}`, { cache:'no-store' });
+      const resp = await fetch(`${DATA_URL}?ts=${Date.now()}`, { cache: 'no-store' });
       if (!resp.ok) throw new Error("Could not load analysis_similarity.json");
       const data = await resp.json();
       const baseUrl = resp.url;
@@ -296,7 +458,7 @@
 
     function renderTakeSelect() {
       const sel = document.getElementById("takeSelect");
-      sel.innerHTML = runs.map((r,i) => `<option value="${r.take}">${r.take}</option>`).join("");
+      sel.innerHTML = runs.map((r, i) => `<option value="${r.take}">${r.take}</option>`).join("");
       if (selected) sel.value = selected;
       sel.onchange = () => {
         selected = sel.value;
@@ -323,8 +485,8 @@
       const shouldPlay = play ?? !isPlaying;
       isPlaying = shouldPlay && (audioEls.vocal.src || audioEls.ref.src);
       if (isPlaying) {
-        if (document.getElementById("vocalToggle").checked) audioEls.vocal.play().catch(()=>{});
-        if (document.getElementById("refToggle").checked) audioEls.ref.play().catch(()=>{});
+        if (document.getElementById("vocalToggle").checked) audioEls.vocal.play().catch(() => { });
+        if (document.getElementById("refToggle").checked) audioEls.ref.play().catch(() => { });
       } else {
         audioEls.vocal.pause(); audioEls.ref.pause();
       }
@@ -342,60 +504,144 @@
       if (isPlaying) requestAnimationFrame(updatePlayhead);
     }
 
-    function renderCards(summary={}, takeName="", volumeSummary=null, toneSummary=null) {
+    function renderCards(summary = {}, takeName = "", volumeSummary = null) {
       const cards = [
-        { title:"Take", value: takeName || "—", color:"var(--text)" },
-        { title:"Accuracy (±50c)", value: fmt(summary.pct_within_50,1)+"%", color:"var(--accent2)" },
-        { title:"Accuracy (±25c)", value: fmt(summary.pct_within_25,1)+"%", color:"var(--accent2)" },
-        { title:"Accuracy (±100c)", value: fmt(summary.pct_within_100,1)+"%", color:"var(--accent2)" },
-        { title:"Mean Abs Cents", value: fmt(summary.mean_abs_cents,1)+" c", color:"var(--muted)" },
-        { title:"Valid Frames", value: summary.valid_frames ?? 0, color:"var(--muted)" },
+        { title: "Take", value: takeName || "—", color: "var(--text)" },
+        { title: "Accuracy (±50c)", value: fmt(summary.pct_within_50, 1) + "%", color: "var(--accent2)" },
+        { title: "Accuracy (±25c)", value: fmt(summary.pct_within_25, 1) + "%", color: "var(--accent2)" },
+        { title: "Accuracy (±100c)", value: fmt(summary.pct_within_100, 1) + "%", color: "var(--accent2)" },
+        { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents, 1) + " c", color: "var(--muted)" },
+        { title: "Valid Frames", value: summary.valid_frames ?? 0, color: "var(--muted)" },
       ];
       if (volumeSummary) {
         cards.push(
-          { title:"Volume std", value: fmt(volumeSummary.std_db,1)+" dB", color:"var(--accent)" },
-          { title:`Vol within ±${fmt(volumeSummary.tolerance_db,1)} dB`, value: fmt(volumeSummary.pct_within_tolerance,1)+"%", color:"var(--accent2)" },
+          { title: "Volume std", value: fmt(volumeSummary.std_db, 1) + " dB", color: "var(--accent)" },
+          { title: `Vol within ±${fmt(volumeSummary.tolerance_db, 1)} dB`, value: fmt(volumeSummary.pct_within_tolerance, 1) + "%", color: "var(--accent2)" },
         );
       }
-      if (toneSummary) {
-        const sm = toneSummary.smoothness || toneSummary;
-        if (sm) {
-          cards.push(
-            { title:"Tone mean |Δ|", value: fmt(sm.mean_abs_delta_cents,1)+" c", color:"var(--accent)" },
-            { title:"Tone median |Δ|", value: fmt(sm.median_abs_delta_cents,1)+" c", color:"var(--accent)" },
-            { title:`Tone within ±${fmt(sm.tolerance_cents_per_step,0)}c`, value: fmt(sm.pct_within_tolerance,1)+"%", color:"var(--accent2)" },
-          );
-        }
-      }
-      document.getElementById("cards").innerHTML = cards.map(c=>`
+      document.getElementById("cards").innerHTML = cards.map(c => `
         <div class="card"><h3>${c.title}</h3><div class="value" style="color:${c.color}">${c.value}</div></div>
       `).join("");
+    }
+    function renderToneProfile(run) {
+      const ctx = document.getElementById("toneProfileChart").getContext("2d");
+      const categories = run.tone?.summary?.spectral?.categories || null;
+      if (!categories) {
+        if (toneProfileChart) toneProfileChart.destroy();
+        toneProfileChart = null;
+        document.getElementById("toneMetrics").innerHTML = "";
+        return;
+      }
+
+      const labels = [
+        "Brightness",
+        "Noisiness",
+        "Tilt (Warm→Bright)",
+        "Clarity",
+        "Breathy→Pressed"
+      ];
+      const values = [
+        categories.brightness?.score ?? null,
+        categories.noisiness?.score ?? null,
+        categories.tilt_warm_to_bright?.score ?? null,
+        categories.clarity?.score ?? null,
+        categories.breathiness_to_pressed?.score ?? null,
+      ];
+
+      // If all values are null, skip rendering
+      if (values.every(v => v == null)) {
+        if (toneProfileChart) toneProfileChart.destroy();
+        toneProfileChart = null;
+        document.getElementById("toneMetrics").innerHTML = "";
+        return;
+      }
+
+      if (toneProfileChart) toneProfileChart.destroy();
+      toneProfileChart = new Chart(ctx, {
+        type: "radar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Tone Profile (1–10)",
+            data: values,
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#fff" } }
+          },
+          scales: {
+            r: {
+              min: 1,
+              max: 10,
+              ticks: {
+                stepSize: 1,
+                color: "#fff",
+              },
+              angleLines: { color: "rgba(255,255,255,0.15)" },
+              grid: { color: "rgba(255,255,255,0.15)" },
+              pointLabels: { color: "#fff" }
+            }
+          }
+        }
+      });
+
+      // Render tone metrics list below radar
+      const sm = run.tone?.summary?.smoothness;
+      const spectral = run.tone?.summary?.spectral;
+      const jitter = run.tone?.summary?.jitter;
+      const shimmer = run.tone?.summary?.shimmer;
+      const metrics = [];
+      if (sm) {
+        metrics.push({ label: "Tone mean |Δ|", value: `${fmt(sm.mean_abs_delta_cents,1)} c` });
+        metrics.push({ label: "Tone median |Δ|", value: `${fmt(sm.median_abs_delta_cents,1)} c` });
+        metrics.push({ label: `Tone within ±${fmt(sm.tolerance_cents_per_step,0)}c`, value: `${fmt(sm.pct_within_tolerance,1)}%` });
+      }
+      const addCat = (key, label) => {
+        const score = categories[key]?.score;
+        if (score != null && !Number.isNaN(score)) metrics.push({ label, value: `${fmt(score,1)} / 10` });
+      };
+      addCat("brightness", "Brightness");
+      addCat("noisiness", "Noisiness");
+      addCat("tilt_warm_to_bright", "Tilt (Warm→Bright)");
+      addCat("clarity", "Clarity");
+      addCat("breathiness_to_pressed", "Breathy→Pressed");
+      if (jitter && jitter.mean != null) metrics.push({ label: "Jitter (mean)", value: fmt(jitter.mean,3) });
+      if (shimmer && shimmer.mean != null) metrics.push({ label: "Shimmer (mean)", value: fmt(shimmer.mean,3) });
+
+      const toneMetricsEl = document.getElementById("toneMetrics");
+      toneMetricsEl.innerHTML = metrics.map(m => `<div class="tone-metric"><span>${m.label}</span><strong>${m.value}</strong></div>`).join("");
     }
 
     function renderMelody(run) {
       const frames = run.frames || [];
       const vocalPoints = frames.map(f => ({ x: f.time, y: f.vocal_midi ?? null }));
       const refPoints = frames.map(f => ({ x: f.time, y: f.ref_midi ?? null }));
-      const timeMin = Math.min(...frames.map(f=>f.time), 0);
-      const timeMax = Math.max(...frames.map(f=>f.time), duration, 0);
+      const timeMin = Math.min(...frames.map(f => f.time), 0);
+      const timeMax = Math.max(...frames.map(f => f.time), duration, 0);
       const ctx = document.getElementById("melodyChart").getContext("2d");
       if (melodyChart) melodyChart.destroy();
       melodyChart = new Chart(ctx, {
-        type:"scatter",
-        data:{
-          datasets:[
-            { label:"Vocal (MIDI)", data:vocalPoints, showLine:true, borderColor:"rgba(56,189,248,0.9)", backgroundColor:"rgba(56,189,248,0.2)", borderWidth:2, pointRadius:0, spanGaps:false, parsing:false, tension:0 },
-            { label:"Reference (MIDI)", data:refPoints, showLine:true, borderColor:"rgba(34,197,94,0.9)", backgroundColor:"rgba(34,197,94,0.2)", borderWidth:2, pointRadius:0, spanGaps:false, parsing:false, tension:0 }
+        type: "scatter",
+        data: {
+          datasets: [
+            { label: "Vocal (MIDI)", data: vocalPoints, showLine: true, borderColor: "rgba(56,189,248,0.9)", backgroundColor: "rgba(56,189,248,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, parsing: false, tension: 0 },
+            { label: "Reference (MIDI)", data: refPoints, showLine: true, borderColor: "rgba(34,197,94,0.9)", backgroundColor: "rgba(34,197,94,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, parsing: false, tension: 0 }
           ]
         },
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          interaction:{ mode:"index", intersect:false },
-          plugins:{ legend:{ labels:{ color:"#fff" } } },
-          scales:{
-            x:{ title:{ display:true, text:"Time (s)" , color:"#fff"}, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.05)" }, min: timeMin, max: timeMax },
-            y:{ title:{ display:true, text:"MIDI", color:"#fff"}, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: { title: { display: true, text: "Time (s)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" }, min: timeMin, max: timeMax },
+            y: { title: { display: true, text: "MIDI", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } }
           }
         }
       });
@@ -419,28 +665,28 @@
     }
 
     function renderScores() {
-      const labels = runs.map(r=>r.take);
-      const scores = runs.map(r=>r.summary?.pct_within_50 ?? null); // accuracy within ±50c
+      const labels = runs.map(r => r.take);
+      const scores = runs.map(r => r.summary?.pct_within_50 ?? null); // accuracy within ±50c
       const ctx = document.getElementById("scoresChart").getContext("2d");
       if (scoresChart) scoresChart.destroy();
-      scoresChart = new Chart(ctx,{
-        type:"bar",
-        data:{ labels, datasets:[{ label:"Accuracy (±50c %)", data:scores, backgroundColor: labels.map(l=> l===selected ? "#f97316" : "#60a5fa") }]},
-        options:{
-          responsive:true,
-          maintainAspectRatio:false,
-          scales:{
-            y:{ beginAtZero:true, max:100, title:{ display:true, text:"Accuracy (within ±50c %)", color:"#fff" }, ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.08)" } },
-            x:{ ticks:{ color:"#fff" }, grid:{ color:"rgba(255,255,255,0.05)" } }
+      scoresChart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Accuracy (±50c %)", data: scores, backgroundColor: labels.map(l => l === selected ? "#f97316" : "#60a5fa") }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, max: 100, title: { display: true, text: "Accuracy (within ±50c %)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } },
+            x: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" } }
           },
-          plugins:{ legend:{ display:false } },
-          onClick: (_, el)=>{ if (el?.length){ selected = labels[el[0].index]; renderTake(selected); renderScores(); } }
+          plugins: { legend: { display: false } },
+          onClick: (_, el) => { if (el?.length) { selected = labels[el[0].index]; renderTake(selected); renderScores(); } }
         }
       });
     }
 
     function renderTake(takeName) {
-      const run = runs.find(r=>r.take===takeName);
+      const run = runs.find(r => r.take === takeName);
       if (!run) return;
       selected = takeName;
       setAudioSources(run);
@@ -449,6 +695,7 @@
       renderVolume(run);
       renderToneSmooth(run);
       renderToneSpectral(run);
+      renderToneProfile(run);
     }
 
     document.getElementById("playPause").onclick = () => togglePlay();
@@ -485,4 +732,5 @@
     loadData().catch(err => console.error(err));
   </script>
 </body>
+
 </html>
