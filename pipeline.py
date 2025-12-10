@@ -15,7 +15,9 @@ from inter_take_analysis import build_takes_index, record_and_process
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
 from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
 from vocal_analyzer.pitch_utils import (
-    estimate_pitch,
+    compute_pitch_accuracy_score,
+    estimate_pitch_pyin,
+    estimate_pitch_yin,
     write_notes_csv,
     write_take_csv,
     upsert_similarity,
@@ -50,6 +52,7 @@ def main():
     ap.add_argument("--frame_length", type=int, default=2048)
     ap.add_argument("--hop_length", type=int, default=256)
     ap.add_argument("--median_win", type=int, default=3)
+    ap.add_argument("--pitch_method", choices=["yin", "pyin"], default="yin", help="Pitch estimator to use.")
     ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
     ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
     ap.add_argument("--chatgpt_model", default=DEFAULT_MODEL, help="Model for ChatGPT feedback (must support audio input).")
@@ -90,28 +93,51 @@ def main():
             ref_y = trim_audio(ref_y, ref_sr, args.trim_start, args.trim_end)
 
     # Pitch once
-    vocal_f0_raw, vocal_times = estimate_pitch(
-        vocal_y,
-        vocal_sr,
-        fmin=args.fmin,
-        fmax=args.fmax,
-        frame_length=args.frame_length,
-        hop_length=args.hop_length,
-        median_win=args.median_win,
-    )
-
-    ref_f0 = None
-    ref_times = None
-    if ref_y is not None:
-        ref_f0, ref_times = estimate_pitch(
-            ref_y,
-            ref_sr,
+    use_pyin = args.pitch_method == "pyin"
+    if use_pyin:
+        vocal_f0_raw, vocal_times, _ = estimate_pitch_pyin(
+            vocal_y,
+            vocal_sr,
             fmin=args.fmin,
             fmax=args.fmax,
             frame_length=args.frame_length,
             hop_length=args.hop_length,
             median_win=args.median_win,
         )
+    else:
+        vocal_f0_raw, vocal_times = estimate_pitch_yin(
+            vocal_y,
+            vocal_sr,
+            fmin=args.fmin,
+            fmax=args.fmax,
+            frame_length=args.frame_length,
+            hop_length=args.hop_length,
+            median_win=args.median_win,
+        )
+
+    ref_f0 = None
+    ref_times = None
+    if ref_y is not None:
+        if use_pyin:
+            ref_f0, ref_times, _ = estimate_pitch_pyin(
+                ref_y,
+                ref_sr,
+                fmin=args.fmin,
+                fmax=args.fmax,
+                frame_length=args.frame_length,
+                hop_length=args.hop_length,
+                median_win=args.median_win,
+            )
+        else:
+            ref_f0, ref_times = estimate_pitch_yin(
+                ref_y,
+                ref_sr,
+                fmin=args.fmin,
+                fmax=args.fmax,
+                frame_length=args.frame_length,
+                hop_length=args.hop_length,
+                median_win=args.median_win,
+            )
     else:
         # No reference provided: compare against nearest MIDI quantization of the vocal itself.
         ref_f0, ref_times = vocal_f0_raw, vocal_times
@@ -145,6 +171,13 @@ def main():
         max_delay_ms=args.max_delay_ms,
         penalize_late=args.penalize_late_notes,
     )
+
+    # Derive our own pitch accuracy score (0–100) from the similarity metrics,
+    # so we can show it alongside ChatGPT's pitch_accuracy in JSON/HTML.
+    local_pitch_score = compute_pitch_accuracy_score(summary)
+    if local_pitch_score is not None:
+        summary["local_pitch_accuracy_score"] = local_pitch_score
+
     run = {
         "metadata": {
             "vocal_path": f"../audio_files/{vocal_wav.name}",
@@ -165,6 +198,7 @@ def main():
             "ignore_short_outliers_ms": args.ignore_short_outliers_ms,
             "alignment_offset_frames": offset_info["offset_frames"],
             "alignment_offset_ms": offset_info["offset_ms"],
+            "pitch_method": args.pitch_method,
             "max_delay_ms": args.max_delay_ms,
             "penalize_late_notes": args.penalize_late_notes,
             "reference_mode": "reference_audio" if ref_path else "nearest_midi",

@@ -1,6 +1,7 @@
 venv/
 audio_files/
 vocal_analyzer/__pycache__/
+.env
 
 
 vocal_analyzer/__pycache__/

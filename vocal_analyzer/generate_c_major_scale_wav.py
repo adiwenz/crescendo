@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 import numpy as np
 import soundfile as sf
 import pretty_midi
@@ -32,6 +33,11 @@ def generate_c_major_scale_wav(
     amplitude=DEFAULT_AMPLITUDE,
     sr=SR,
 ):
+    # Normalize output path and ensure .wav extension
+    out_path = Path(output_path)
+    if out_path.suffix == "":
+        out_path = out_path.with_suffix(".wav")
+
     # C major scale C4–C5
     note_names = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"]
     if not ascending:
@@ -60,8 +66,9 @@ def generate_c_major_scale_wav(
 
     audio = np.concatenate(audio).astype(np.float32)
 
-    sf.write(output_path, audio, sr)
-    print(f"Wrote {output_path} (duration {len(audio)/sr:.2f}s)")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(out_path, audio, sr)
+    print(f"Wrote {out_path} (duration {len(audio)/sr:.2f}s)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a simple C major scale WAV.")

@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Qualitative Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --panel: #141417;
+      --card: #1a1a1f;
+      --text: #f5f5f5;
+      --muted: #b3b3b7;
+      --accent: #f97316;
+      --accent2: #22c55e;
+      --border: #2d2d34;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 18px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    select {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+
+    .player {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .play-btn {
+      background: var(--accent);
+      border: none;
+      color: #0a0a0a;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .toggles {
+      display: flex;
+      gap: 10px;
+      color: var(--muted);
+    }
+
+    .seek {
+      flex: 1;
+      min-width: 180px;
+      accent-color: var(--accent);
+    }
+
+    .time {
+      color: var(--muted);
+      min-width: 110px;
+      text-align: right;
+    }
+
+    #chartWrapper {
+      height: 420px;
+      margin-top: 10px;
+    }
+
+    #volumeWrapper {
+      height: 260px;
+      margin-top: 10px;
+    }
+
+    canvas {
+      background: #18181c;
+      border-radius: 12px;
+      padding: 8px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .card h3 {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .card .value {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    #scoresWrapper {
+      height: 260px;
+    }
+
+    .gpt-feedback {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .gpt-summary {
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .gpt-scores {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .gpt-score {
+      background: #111116;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .gpt-score span {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .gpt-score strong {
+      color: var(--accent2);
+      font-size: 1.2rem;
+    }
+
+    .gpt-recs ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .gpt-meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .gpt-expl {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Qualitative Dashboard</h1>
+  <p>Compare recorded takes against a reference audio. Select a take, play both tracks together or solo, and view melody
+    vs reference with a shared playhead.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <label>Take:
+        <select id="takeSelect">
+          <option>Loading…</option>
+        </select>
+      </label>
+      <button id="reload">Reload data</button>
+    </div>
+    <div class="player">
+      <button class="play-btn" id="playPause">▶</button>
+      <div class="toggles">
+        <label><input type="checkbox" id="vocalToggle" checked> Vocal</label>
+        <label><input type="checkbox" id="refToggle" checked> Reference</label>
+      </div>
+      <input type="range" id="seek" class="seek" min="0" max="1" step="0.001" value="0">
+      <div class="time" id="timeLabel">0:00 / 0:00</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="cards" id="cards"></div>
+    <div id="chartWrapper"><canvas id="melodyChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h3>Volume (RMS)</h3>
+    <div id="volumeWrapper"><canvas id="volumeChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h3>Take Scores</h3>
+    <div id="scoresWrapper"><canvas id="scoresChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h3>ChatGPT Feedback</h3>
+    <div id="gptFeedback" class="gpt-feedback"></div>
+  </div>
+
+  <script>
+    const DATA_URLS = [
+      "analysis_similarity.json",
+      "../vocal_analyzer/analysis_similarity.json",
+    ];
+    let runs = [];
+    let selected = null;
+    let melodyChart = null;
+    let volumeChart = null;
+    let scoresChart = null;
+    const audioEls = { vocal: new Audio(), ref: new Audio() };
+    let isPlaying = false;
+    let playheadTime = 0;
+    let duration = 0;
+    let zoomWindow = 4;
+
+    const playheadPlugin = {
+      id: 'playhead',
+      afterDatasetsDraw(chart) {
+        if (!Number.isFinite(playheadTime)) return;
+        const xScale = chart.scales.x;
+        if (!xScale) return;
+        const x = xScale.getPixelForValue(playheadTime);
+        if (Number.isNaN(x)) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, chart.chartArea.top);
+        ctx.lineTo(x, chart.chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(playheadPlugin);
+
+    const fmt = (v, d = 2) => v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
+    const fmtTime = (t) => {
+      if (!Number.isFinite(t)) return "0:00";
+      const m = Math.floor(t / 60), s = Math.floor(t % 60).toString().padStart(2, "0");
+      return `${m}:${s}`;
+    };
+    const escapeHtml = (str = "") => str.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+
+    // --- New helper functions and scoring ---
+    const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+    const safePct = (v) => {
+      if (v == null || Number.isNaN(v)) return null;
+      return clamp(Number(v), 0, 100);
+    };
+    const smallIsGoodToPct = (v, goodMax) => {
+      if (v == null || !Number.isFinite(v)) return null;
+      const frac = clamp(v / goodMax, 0, 1);
+      return (1 - frac) * 100;
+    };
+    function computeTakeScores(run) {
+      const pitchSummary = run.summary || {};
+      const volSummary = run.volume?.summary || {};
+      const coachScores = run.chatgpt_feedback?.scores || {};
+      const pitch = safePct(pitchSummary.pct_within_50);
+      const vol = safePct(volSummary.pct_within_tolerance);
+      const coachOverall = safePct(coachScores.overall_score);
+      const parts = [];
+      const addPart = (score, weight) => {
+        if (score == null || !Number.isFinite(score)) return;
+        parts.push({ score, weight });
+      };
+      addPart(pitch, 0.6);
+      addPart(vol, 0.2);
+      addPart(coachOverall, 0.2);
+      let overall = null;
+      if (parts.length) {
+        const wsum = parts.reduce((s, p) => s + p.weight, 0);
+        overall = parts.reduce((s, p) => s + p.score * p.weight, 0) / wsum;
+      }
+      return {
+        pitchAccuracy: pitch,
+        volumeConsistency: vol,
+        coachOverall,
+        overall,
+      };
+    }
+
+    const resolveUrl = (path, base) => {
+      if (!path) return "";
+      if (path.startsWith("http://") || path.startsWith("https://")) return path;
+      // For ../audio_files/* keep as-is relative to dashboard dir
+      try { return new URL(path, base || window.location.href).href; } catch { return path; }
+    };
+
+    function normalizeRuns(data, baseUrl) {
+      const arr = data.runs || [];
+      return arr.map(r => {
+        const take =
+          r.take ||
+          (r.metadata && r.metadata.vocal_path && r.metadata.vocal_path.split("/").pop().replace(/\.[^.]+$/, "")) ||
+          "take";
+        return { ...r, take, baseUrl };
+      });
+    }
+
+    function renderVolume(run) {
+      const frames = run.volume?.frames || [];
+      const ctx = document.getElementById("volumeChart").getContext("2d");
+      if (!frames.length) {
+        if (volumeChart) volumeChart.destroy();
+        volumeChart = null;
+        return;
+      }
+      const rmsPoints = frames.map(f => ({ x: f.time, y: f.rms_db ?? null })).filter(p => p.y !== null);
+      const smoothPoints = frames.map(f => ({ x: f.time, y: f.rms_db_smooth ?? null })).filter(p => p.y !== null);
+      const timeMin = Math.min(...frames.map(f => f.time), 0);
+      const timeMax = Math.max(...frames.map(f => f.time), 0);
+      if (volumeChart) volumeChart.destroy();
+      volumeChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: "RMS (dB)", data: rmsPoints, parsing: false, borderColor: "rgba(249,115,22,0.75)", backgroundColor: "rgba(249,115,22,0.2)", borderWidth: 1.5, pointRadius: 0, spanGaps: false, yAxisID: "y" },
+            { label: "Smoothed RMS (dB)", data: smoothPoints, parsing: false, borderColor: "rgba(34,197,94,0.85)", backgroundColor: "rgba(34,197,94,0.15)", borderWidth: 2, pointRadius: 0, spanGaps: true, yAxisID: "y" },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: {
+              type: "linear",
+              min: timeMin,
+              max: timeMax,
+              title: { display: true, text: "Seconds", color: "#fff" },
+              ticks: {
+                color: "#fff",
+                stepSize: 0.5,
+                callback: (v) => Number(v).toFixed(1),
+              },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            },
+            y: { title: { display: true, text: "Relative Level (dB)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } }
+          }
+        }
+      });
+    }
+
+    function renderChatGPTFeedback(feedback) {
+      const container = document.getElementById("gptFeedback");
+      if (!container) return;
+      if (!feedback) {
+        container.innerHTML = `<div class="gpt-summary" style="color: var(--muted);">No ChatGPT feedback available.</div>`;
+        return;
+      }
+      const metrics = feedback.metrics || {};
+      const order = [
+        ["Pitch Accuracy", "pitch_accuracy"],
+        ["Tone Quality", "tone_quality"],
+        ["Breath Support", "breath_support"],
+        ["Resonance Placement", "resonance_placement"],
+        ["Intonation + Control", "intonation_control"],
+        ["Overall Score", "overall_score"],
+      ];
+      const scoreHtml = order.map(([label, key]) => {
+        const m = metrics[key] || {};
+        return `
+        <div class="gpt-score">
+          <span>${label}</span>
+          <strong>${fmt(m.score, 0)}</strong>
+          ${m.explanation ? `<div class="gpt-expl">${escapeHtml(m.explanation)}</div>` : ""}
+          ${m.improvement_recommendation ? `<div class="gpt-expl" style="color: var(--accent);">Improve: ${escapeHtml(m.improvement_recommendation)}</div>` : ""}
+        </div>
+      `}).join("");
+      const recs = (feedback.recommendations || []).map(r => `<li>${escapeHtml(r)}</li>`).join("");
+      const summary = escapeHtml(feedback.summary || "No summary provided.");
+      const meta = `Source: ${feedback.source || "unknown"}${feedback.model ? ` · Model: ${feedback.model}` : ""}${feedback.error ? ` · Note: ${feedback.error}` : ""}`;
+      container.innerHTML = `
+        <div class="gpt-summary">${summary}</div>
+        <div class="gpt-scores">${scoreHtml}</div>
+        <div class="gpt-recs">
+          <strong style="color: var(--text);">Recommendations</strong>
+          <ul>${recs || "<li>No recommendations provided.</li>"}</ul>
+        </div>
+        <div class="gpt-meta">${escapeHtml(meta)}</div>
+      `;
+    }
+
+    async function loadData() {
+      let lastError = null;
+      for (const url of DATA_URLS) {
+        try {
+          const resp = await fetch(`${url}?ts=${Date.now()}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
+          const baseUrl = resp.url;
+          runs = normalizeRuns(data, baseUrl);
+          if (runs.length && !selected) selected = runs[0].take;
+          renderTakeSelect();
+          renderScores();
+          renderTake(selected);
+          return;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      console.error("Failed to load analysis_similarity.json from expected locations.", lastError);
+    }
+
+    function renderTakeSelect() {
+      const sel = document.getElementById("takeSelect");
+      sel.innerHTML = runs.map((r, i) => `<option value="${r.take}">${r.take}</option>`).join("");
+      if (selected) sel.value = selected;
+      sel.onchange = () => {
+        selected = sel.value;
+        renderTake(selected);
+        renderScores();
+      };
+    }
+
+    function setAudioSources(run) {
+      const meta = run.metadata || {};
+      const base = run.baseUrl || window.location.href;
+      audioEls.vocal.src = resolveUrl(meta.vocal_path, base);
+      audioEls.ref.src = resolveUrl(meta.reference_path, base);
+      audioEls.vocal.load(); audioEls.ref.load();
+      duration = Math.max(meta.duration_vocal || 0, meta.duration_reference || 0, run.frames?.at(-1)?.time || 0);
+      if (duration <= 0) duration = 1;
+      playheadTime = 0;
+      document.getElementById("seek").max = duration;
+      document.getElementById("seek").value = 0;
+      document.getElementById("timeLabel").textContent = `${fmtTime(0)} / ${fmtTime(duration)}`;
+    }
+
+    function togglePlay(play) {
+      const shouldPlay = play ?? !isPlaying;
+      isPlaying = shouldPlay && (audioEls.vocal.src || audioEls.ref.src);
+      if (isPlaying) {
+        if (document.getElementById("vocalToggle").checked) audioEls.vocal.play().catch(() => { });
+        if (document.getElementById("refToggle").checked) audioEls.ref.play().catch(() => { });
+      } else {
+        audioEls.vocal.pause(); audioEls.ref.pause();
+      }
+      document.getElementById("playPause").textContent = isPlaying ? "❚❚" : "▶";
+      requestAnimationFrame(updatePlayhead);
+    }
+
+    function updatePlayhead() {
+      const master = document.getElementById("vocalToggle").checked ? audioEls.vocal : audioEls.ref;
+      playheadTime = master.currentTime || 0;
+      document.getElementById("seek").value = playheadTime;
+      document.getElementById("timeLabel").textContent = `${fmtTime(playheadTime)} / ${fmtTime(duration)}`;
+      if (melodyChart) melodyChart.update('none');
+      if (volumeChart) volumeChart.update('none');
+      if (isPlaying) requestAnimationFrame(updatePlayhead);
+    }
+
+    function renderCards(summary = {}, takeName = "", volumeSummary = null, metadata = {}) {
+      const refLabel = metadata.reference_path ? metadata.reference_path : "Nearest MIDI (no reference)";
+      const cards = [
+        { title: "Take", value: takeName || "—", color: "var(--text)" },
+        { title: "Reference", value: refLabel, color: "var(--muted)" },
+        { title: "Accuracy (±50c)", value: fmt(summary.pct_within_50, 1) + "%", color: "var(--accent2)" },
+        { title: "Accuracy (±25c)", value: fmt(summary.pct_within_25, 1) + "%", color: "var(--accent2)" },
+        { title: "Accuracy (±100c)", value: fmt(summary.pct_within_100, 1) + "%", color: "var(--accent2)" },
+        { title: "Mean Abs Cents", value: fmt(summary.mean_abs_cents, 1) + " c", color: "var(--muted)" },
+        { title: "Valid Frames", value: summary.valid_frames ?? 0, color: "var(--muted)" },
+      ];
+      if (volumeSummary) {
+        cards.push(
+          { title: "Volume std", value: fmt(volumeSummary.std_db, 1) + " dB", color: "var(--accent)" },
+          { title: `Vol within ±${fmt(volumeSummary.tolerance_db, 1)} dB`, value: fmt(volumeSummary.pct_within_tolerance, 1) + "%", color: "var(--accent2)" },
+        );
+      }
+      document.getElementById("cards").innerHTML = cards.map(c => `
+        <div class="card"><h3>${c.title}</h3><div class="value" style="color:${c.color}">${c.value}</div></div>
+      `).join("");
+    }
+
+    function renderMelody(run) {
+      const frames = run.frames || [];
+      const vocalPoints = frames.map(f => ({ x: f.time, y: f.vocal_midi ?? null }));
+      const refPoints = frames.map(f => ({ x: f.time, y: f.ref_midi ?? null }));
+      const refLabel = run.metadata?.reference_path ? "Reference (MIDI)" : "Nearest MIDI (self-quantized)";
+      const timeMin = Math.min(...frames.map(f => f.time), 0);
+      const timeMax = Math.max(...frames.map(f => f.time), duration, 0);
+      const ctx = document.getElementById("melodyChart").getContext("2d");
+      if (melodyChart) melodyChart.destroy();
+      melodyChart = new Chart(ctx, {
+        type: "scatter",
+        data: {
+          datasets: [
+            { label: "Vocal (MIDI)", data: vocalPoints, showLine: true, borderColor: "rgba(56,189,248,0.9)", backgroundColor: "rgba(56,189,248,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, parsing: false, tension: 0 },
+            { label: refLabel, data: refPoints, showLine: true, borderColor: "rgba(34,197,94,0.9)", backgroundColor: "rgba(34,197,94,0.2)", borderWidth: 2, pointRadius: 0, spanGaps: false, parsing: false, tension: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#fff" } } },
+          scales: {
+            x: { title: { display: true, text: "Time (s)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" }, min: timeMin, max: timeMax },
+            y: { title: { display: true, text: "MIDI", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } }
+          }
+        }
+      });
+
+      // Scrub by clicking/dragging on chart
+      const scrub = (evt) => {
+        const xVal = melodyChart.scales.x.getValueForPixel(evt.offsetX);
+        if (!Number.isFinite(xVal)) return;
+        const t = Math.max(0, Math.min(xVal, duration));
+        playheadTime = t;
+        audioEls.vocal.currentTime = t;
+        audioEls.ref.currentTime = t;
+        document.getElementById("seek").value = t;
+        document.getElementById("timeLabel").textContent = `${fmtTime(t)} / ${fmtTime(duration)}`;
+        melodyChart.update('none');
+      };
+      let dragging = false;
+      melodyChart.canvas.onpointerdown = (e) => { dragging = true; scrub(e); };
+      melodyChart.canvas.onpointermove = (e) => { if (dragging) scrub(e); };
+      window.onpointerup = () => { dragging = false; };
+    }
+
+    function renderScores() {
+      const labels = runs.map(r => r.take);
+      const pitchScores = [];
+      const overallScores = [];
+      const coachScores = [];
+      const pitchColors = [];
+      const overallColors = [];
+      const coachColors = [];
+      for (const r of runs) {
+        const s = computeTakeScores(r);
+        pitchScores.push(s.pitchAccuracy);
+        overallScores.push(s.overall);
+        coachScores.push(s.coachOverall);
+        const isSel = r.take === selected;
+        pitchColors.push(isSel ? "#60a5fa" : "rgba(96,165,250,0.6)");
+        overallColors.push(isSel ? "#f97316" : "rgba(249,115,22,0.7)");
+        coachColors.push(isSel ? "#22c55e" : "rgba(34,197,94,0.6)");
+      }
+      const ctx = document.getElementById("scoresChart").getContext("2d");
+      if (scoresChart) scoresChart.destroy();
+      scoresChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Pitch Accuracy (±50c, %)",
+              data: pitchScores,
+              backgroundColor: pitchColors,
+            },
+            {
+              label: "ChatGPT Overall (0–100)",
+              data: coachScores,
+              backgroundColor: coachColors,
+            },
+            {
+              label: "Overall Take Quality (0–100)",
+              data: overallScores,
+              backgroundColor: overallColors,
+            },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              title: { display: true, text: "Score (0–100)", color: "#fff" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            x: {
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            }
+          },
+          plugins: {
+            legend: { display: true, labels: { color: "#fff" } }
+          },
+          onClick: (_, el) => {
+            if (el?.length) {
+              const idx = el[0].index;
+              selected = labels[idx];
+              renderTake(selected);
+              renderScores();
+            }
+          }
+        }
+      });
+    }
+
+    function renderTake(takeName) {
+      const run = runs.find(r => r.take === takeName);
+      if (!run) return;
+      selected = takeName;
+      setAudioSources(run);
+      renderCards(run.summary || {}, takeName, run.volume?.summary, run.metadata || {});
+      renderMelody(run);
+      renderVolume(run);
+      renderChatGPTFeedback(run.chatgpt_feedback);
+    }
+
+    document.getElementById("playPause").onclick = () => togglePlay();
+    document.getElementById("seek").oninput = (e) => {
+      const t = Number(e.target.value);
+      playheadTime = t;
+      audioEls.vocal.currentTime = t;
+      audioEls.ref.currentTime = t;
+      document.getElementById("timeLabel").textContent = `${fmtTime(t)} / ${fmtTime(duration)}`;
+      if (melodyChart) melodyChart.update('none');
+      if (volumeChart) volumeChart.update('none');
+    };
+    document.getElementById("vocalToggle").onchange = () => { if (!document.getElementById("vocalToggle").checked) audioEls.vocal.pause(); };
+    document.getElementById("refToggle").onchange = () => { if (!document.getElementById("refToggle").checked) audioEls.ref.pause(); };
+    document.getElementById("reload").onclick = loadData;
+
+    audioEls.vocal.addEventListener("timeupdate", () => {
+      if (!isPlaying) return;
+      playheadTime = audioEls.vocal.currentTime;
+    });
+    audioEls.ref.addEventListener("timeupdate", () => {
+      if (!isPlaying) return;
+      // keep ref aligned to vocal if vocal is enabled
+      if (document.getElementById("vocalToggle").checked) {
+        const delta = Math.abs(audioEls.ref.currentTime - audioEls.vocal.currentTime);
+        if (delta > 0.05) audioEls.ref.currentTime = audioEls.vocal.currentTime;
+      }
+    });
+
+    // Auto-refresh every 15s to pick up new takes
+    setInterval(loadData, 15000);
+    loadData().catch(err => console.error(err));
+  </script>
+</body>
+
+</html>

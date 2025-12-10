@@ -20,7 +20,7 @@ from typing import Any, Dict
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
 from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
 from vocal_analyzer.tone_analysis_utils import analyze_tone
-from vocal_analyzer.pitch_utils import estimate_pitch
+from vocal_analyzer.pitch_utils import estimate_pitch_yin
 
 
 def parse_args():
@@ -58,7 +58,7 @@ def main():
         ref_y = trim_audio(ref_y, ref_sr, args.trim_start, args.trim_end)
 
     print("Extracting vocal pitch...")
-    vocal_f0, vocal_times = estimate_pitch(
+    vocal_f0, vocal_times = estimate_pitch_yin(
         vocal_y,
         vocal_sr,
         fmin=args.fmin,
@@ -69,7 +69,7 @@ def main():
     )
 
     print("Extracting reference pitch...")
-    ref_f0, ref_times = estimate_pitch(
+    ref_f0, ref_times = estimate_pitch_yin(
         ref_y,
         ref_sr,
         fmin=args.fmin,

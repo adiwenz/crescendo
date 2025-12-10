@@ -6,5 +6,7 @@ mplcursors
 soundfile
 pretty_midi
 midi2audio
+elevenlabs
+python-dotenv
 
 # brew install fluidsynth   # macOS only

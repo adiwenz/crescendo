@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 try:
-    from vocal_analyzer.pitch_utils import estimate_pitch
+    from vocal_analyzer.pitch_utils import estimate_pitch_yin
 except ImportError:
-    estimate_pitch = None
+    estimate_pitch_yin = None
 
 
 def hz_to_cents_error(measured_hz: float, target_hz: float) -> float:
@@ -139,8 +139,8 @@ def analyze_audio_to_take(
     y, sr = librosa.load(audio_path, sr=None, mono=True)
 
     print("Estimating pitch (YIN)...")
-    if estimate_pitch:
-        f0, _ = estimate_pitch(
+    if estimate_pitch_yin:
+        f0, _ = estimate_pitch_yin(
             y,
             sr,
             fmin=librosa.note_to_hz(fmin),

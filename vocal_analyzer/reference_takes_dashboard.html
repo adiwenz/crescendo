@@ -156,6 +156,16 @@
       font-size: 1.1rem;
     }
 
+    .tone-tips {
+      margin-top: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
     canvas {
       background: #18181c;
       border-radius: 12px;
@@ -241,6 +251,7 @@
     <h3>Tone Profile (Averages)</h3>
     <div id="toneProfileWrapper"><canvas id="toneProfileChart"></canvas></div>
     <div id="toneMetrics" class="tone-metrics"></div>
+    <div id="toneTips" class="tone-tips"></div>
   </div>
 
   <div class="panel">
@@ -291,6 +302,107 @@
       const m = Math.floor(t / 60), s = Math.floor(t % 60).toString().padStart(2, "0");
       return `${m}:${s}`;
     };
+
+    const toneHelp = {
+      "Brightness": {
+        meaning: "Higher = more upper harmonics/energy (brighter). Lower = darker/warmer.",
+        improve: "For brighter tone, sing with more forward resonance and open vowels; for darker, relax larynx and use rounder vowels."
+      },
+      "Noisiness": {
+        meaning: "Higher = more noise-like (breathy/airy). Lower = cleaner, more pitched.",
+        improve: "Reduce breathiness with firmer cord closure and steady airflow; for more air, lighten support and soften onset."
+      },
+      "Tilt (Warm→Bright)": {
+        meaning: "1 = warm/low-heavy; 10 = bright/high-heavy spectrum.",
+        improve: "Shift brightness with vowel tuning and resonance (more smile/forward for bright, more space/yawn for warm)."
+      },
+      "Clarity": {
+        meaning: "Higher = clearer/more harmonic (higher HNR).",
+        improve: "Use clean onsets and steady support; minimize harsh consonants during sustained vowels."
+      },
+      "Breathy→Pressed": {
+        meaning: "1 = pressed; 10 = breathier phonation (via H1–H2).",
+        improve: "If too pressed, ease subglottal pressure; if too breathy, firm up closure and focus resonance."
+      },
+      "Tone mean |Δ|": {
+        meaning: "Average frame-to-frame pitch change (cents); lower = smoother tone line.",
+        improve: "Sustain vowels steadily, lighten vibrato width, and reduce unnecessary pitch scoops."
+      },
+      "Tone median |Δ|": {
+        meaning: "Median frame-to-frame pitch change; robust smoothness indicator.",
+        improve: "Practice slow, even slides and controlled legato to stabilize pitch changes."
+      },
+      "Tone within ±20c": {
+        meaning: "Percent of steps with small pitch change; higher = steadier contour.",
+        improve: "Focus on consistent airflow and minimal jaw/tongue movement between notes."
+      },
+      "Jitter (mean)": {
+        meaning: "Cycle-to-cycle pitch variation proxy; lower = steadier pitch cycles.",
+        improve: "Relax tension, keep breath support steady, and aim for gentle onsets."
+      },
+      "Shimmer (mean)": {
+        meaning: "Cycle-to-cycle amplitude variation proxy; lower = steadier loudness cycles.",
+        improve: "Maintain even airflow and support; avoid sudden breath pulses."
+      }
+    };
+
+    // --- New helper functions and scoring ---
+    const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+    const safePct = (v) => {
+      if (v == null || Number.isNaN(v)) return null;
+      return clamp(Number(v), 0, 100);
+    };
+    const smallIsGoodToPct = (v, goodMax) => {
+      if (v == null || !Number.isFinite(v)) return null;
+      const frac = clamp(v / goodMax, 0, 1);
+      return (1 - frac) * 100;
+    };
+    function computeTakeScores(run) {
+      const pitchSummary = run.summary || {};
+      const volSummary = run.volume?.summary || {};
+      const toneSummary = run.tone?.summary || {};
+      const smooth = toneSummary.smoothness || {};
+      const jitterBlock = toneSummary.jitter || {};
+      const spectral = toneSummary.spectral || {};
+      const cats = spectral.categories || {};
+      const pitch = safePct(pitchSummary.pct_within_50);
+      const vol = safePct(volSummary.pct_within_tolerance);
+      const smoothPct = safePct(smooth.pct_within_tolerance);
+      const jitterMean = jitterBlock.jitter?.mean;
+      const shimmerMean = jitterBlock.shimmer?.mean;
+      const jitterScore = smallIsGoodToPct(jitterMean, 0.05);
+      const shimmerScore = smallIsGoodToPct(shimmerMean, 0.10);
+      let toneStability = null;
+      const toneParts = [jitterScore, shimmerScore].filter(v => v != null);
+      if (toneParts.length) {
+        toneStability = toneParts.reduce((a, b) => a + b, 0) / toneParts.length;
+      }
+      const clarityCat = cats.clarity?.score;
+      const clarity = clarityCat == null ? null : clamp((Number(clarityCat) / 10) * 100, 0, 100);
+      const parts = [];
+      const addPart = (score, weight) => {
+        if (score == null || !Number.isFinite(score)) return;
+        parts.push({ score, weight });
+      };
+      addPart(pitch, 0.5);
+      addPart(vol, 0.15);
+      addPart(smoothPct, 0.15);
+      addPart(toneStability, 0.10);
+      addPart(clarity, 0.10);
+      let overall = null;
+      if (parts.length) {
+        const wsum = parts.reduce((s, p) => s + p.weight, 0);
+        overall = parts.reduce((s, p) => s + p.score * p.weight, 0) / wsum;
+      }
+      return {
+        pitchAccuracy: pitch,
+        volumeConsistency: vol,
+        toneSmoothness: smoothPct,
+        toneStability,
+        clarity,
+        overall,
+      };
+    }
 
     const resolveUrl = (path, base) => {
       if (!path) return "";
@@ -573,7 +685,18 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { labels: { color: "#fff" } }
+            legend: { labels: { color: "#fff" } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.label || "";
+                  const v = ctx.raw;
+                  const desc = toneHelp[label]?.meaning || "";
+                  const improve = toneHelp[label]?.improve || "";
+                  return [`${label}: ${fmt(v, 1)} / 10`, desc ? `Meaning: ${desc}` : "", improve ? `Improve: ${improve}` : ""].filter(Boolean);
+                }
+              }
+            }
           },
           scales: {
             r: {
@@ -598,24 +721,40 @@
       const shimmer = run.tone?.summary?.shimmer;
       const metrics = [];
       if (sm) {
-        metrics.push({ label: "Tone mean |Δ|", value: `${fmt(sm.mean_abs_delta_cents,1)} c` });
-        metrics.push({ label: "Tone median |Δ|", value: `${fmt(sm.median_abs_delta_cents,1)} c` });
-        metrics.push({ label: `Tone within ±${fmt(sm.tolerance_cents_per_step,0)}c`, value: `${fmt(sm.pct_within_tolerance,1)}%` });
+        metrics.push({ label: "Tone mean |Δ|", value: `${fmt(sm.mean_abs_delta_cents, 1)} c`, tip: "Tone mean |Δ|" });
+        metrics.push({ label: "Tone median |Δ|", value: `${fmt(sm.median_abs_delta_cents, 1)} c`, tip: "Tone median |Δ|" });
+        metrics.push({ label: `Tone within ±${fmt(sm.tolerance_cents_per_step, 0)}c`, value: `${fmt(sm.pct_within_tolerance, 1)}%`, tip: "Tone within ±20c" });
       }
       const addCat = (key, label) => {
         const score = categories[key]?.score;
-        if (score != null && !Number.isNaN(score)) metrics.push({ label, value: `${fmt(score,1)} / 10` });
+        if (score != null && !Number.isNaN(score)) metrics.push({ label, value: `${fmt(score, 1)} / 10`, tip: label });
       };
       addCat("brightness", "Brightness");
       addCat("noisiness", "Noisiness");
       addCat("tilt_warm_to_bright", "Tilt (Warm→Bright)");
       addCat("clarity", "Clarity");
       addCat("breathiness_to_pressed", "Breathy→Pressed");
-      if (jitter && jitter.mean != null) metrics.push({ label: "Jitter (mean)", value: fmt(jitter.mean,3) });
-      if (shimmer && shimmer.mean != null) metrics.push({ label: "Shimmer (mean)", value: fmt(shimmer.mean,3) });
+      if (jitter && jitter.mean != null) metrics.push({ label: "Jitter (mean)", value: fmt(jitter.mean, 3), tip: "Jitter (mean)" });
+      if (shimmer && shimmer.mean != null) metrics.push({ label: "Shimmer (mean)", value: fmt(shimmer.mean, 3), tip: "Shimmer (mean)" });
 
       const toneMetricsEl = document.getElementById("toneMetrics");
-      toneMetricsEl.innerHTML = metrics.map(m => `<div class="tone-metric"><span>${m.label}</span><strong>${m.value}</strong></div>`).join("");
+      toneMetricsEl.innerHTML = metrics.map(m => {
+        const tip = toneHelp[m.tip || m.label]?.meaning || "";
+        const improve = toneHelp[m.tip || m.label]?.improve;
+        const title = [tip, improve ? `Improve: ${improve}` : ""].filter(Boolean).join("\n");
+        return `<div class="tone-metric" title="${title}"><span>${m.label}</span><strong>${m.value}</strong></div>`;
+      }).join("");
+
+      // Tips block
+      const tips = [];
+      ["Brightness", "Noisiness", "Tilt (Warm→Bright)", "Clarity", "Breathy→Pressed", "Tone mean |Δ|", "Tone median |Δ|", "Tone within ±20c", "Jitter (mean)", "Shimmer (mean)"].forEach(key => {
+        const desc = toneHelp[key]?.meaning;
+        const improve = toneHelp[key]?.improve;
+        if (desc || improve) {
+          tips.push(`<div><strong>${key}</strong>: ${desc || ""}${improve ? ` <em>Improve:</em> ${improve}` : ""}</div>`);
+        }
+      });
+      document.getElementById("toneTips").innerHTML = tips.join("<br>");
     }
 
     function renderMelody(run) {
@@ -666,21 +805,64 @@
 
     function renderScores() {
       const labels = runs.map(r => r.take);
-      const scores = runs.map(r => r.summary?.pct_within_50 ?? null); // accuracy within ±50c
+      const pitchScores = [];
+      const overallScores = [];
+      const pitchColors = [];
+      const overallColors = [];
+      for (const r of runs) {
+        const s = computeTakeScores(r);
+        pitchScores.push(s.pitchAccuracy);
+        overallScores.push(s.overall);
+        const isSel = r.take === selected;
+        pitchColors.push(isSel ? "#60a5fa" : "rgba(96,165,250,0.6)");
+        overallColors.push(isSel ? "#f97316" : "rgba(249,115,22,0.7)");
+      }
       const ctx = document.getElementById("scoresChart").getContext("2d");
       if (scoresChart) scoresChart.destroy();
       scoresChart = new Chart(ctx, {
         type: "bar",
-        data: { labels, datasets: [{ label: "Accuracy (±50c %)", data: scores, backgroundColor: labels.map(l => l === selected ? "#f97316" : "#60a5fa") }] },
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Pitch Accuracy (±50c, %)",
+              data: pitchScores,
+              backgroundColor: pitchColors,
+            },
+            {
+              label: "Overall Take Quality (0–100)",
+              data: overallScores,
+              backgroundColor: overallColors,
+            },
+          ]
+        },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            y: { beginAtZero: true, max: 100, title: { display: true, text: "Accuracy (within ±50c %)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } },
-            x: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" } }
+            y: {
+              beginAtZero: true,
+              max: 100,
+              title: { display: true, text: "Score (0–100)", color: "#fff" },
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            x: {
+              ticks: { color: "#fff" },
+              grid: { color: "rgba(255,255,255,0.05)" }
+            }
           },
-          plugins: { legend: { display: false } },
-          onClick: (_, el) => { if (el?.length) { selected = labels[el[0].index]; renderTake(selected); renderScores(); } }
+          plugins: {
+            legend: { display: true, labels: { color: "#fff" } }
+          },
+          onClick: (_, el) => {
+            if (el?.length) {
+              const idx = el[0].index;
+              selected = labels[idx];
+              renderTake(selected);
+              renderScores();
+            }
+          }
         }
       });
     }
