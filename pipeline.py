@@ -14,13 +14,13 @@ import soundfile as sf
 from inter_take_analysis import build_takes_index, record_and_process
 from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
 from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
-from vocal_analyzer.tone_analysis_utils import analyze_tone
 from vocal_analyzer.pitch_utils import (
     estimate_pitch,
     write_notes_csv,
     write_take_csv,
     upsert_similarity,
 )
+from vocal_coach.chatgpt_utils import DEFAULT_MODEL, get_chatgpt_feedback
 
 ROOT = Path(__file__).resolve().parent
 AUDIO_DIR = ROOT / "audio_files"
@@ -52,9 +52,8 @@ def main():
     ap.add_argument("--median_win", type=int, default=3)
     ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
     ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
-    ap.add_argument("--tone_metrics", default="smoothness,spectral,jitter", help="Comma-separated tone metrics to compute (smoothness,spectral,jitter).")
-    ap.add_argument("--tone_smooth_win", type=int, default=5, help="Window for tone smoothness smoothing (frames).")
-    ap.add_argument("--tone_smooth_tol_cents", type=float, default=20.0, help="Tolerance (cents per step) for tone smoothness percent metric.")
+    ap.add_argument("--chatgpt_model", default=DEFAULT_MODEL, help="Model for ChatGPT feedback (must support audio input).")
+    ap.add_argument("--mock_chatgpt", action="store_true", help="Force mock ChatGPT feedback instead of API call.")
     args = ap.parse_args()
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,6 +112,9 @@ def main():
             hop_length=args.hop_length,
             median_win=args.median_win,
         )
+    else:
+        # No reference provided: compare against nearest MIDI quantization of the vocal itself.
+        ref_f0, ref_times = vocal_f0_raw, vocal_times
 
     # Volume consistency (always computed on vocal take)
     volume_summary, volume_frames = analyze_volume_consistency(
@@ -122,73 +124,60 @@ def main():
         hop_length=args.hop_length,
     )
 
-    tone_metrics = [m.strip() for m in args.tone_metrics.split(",") if m.strip()]
-    tone_summary, tone_frames = analyze_tone(
-        vocal_y,
-        vocal_sr,
-        vocal_f0_raw,
-        vocal_times,
+    chatgpt_feedback = get_chatgpt_feedback(
+        audio_path=vocal_wav,
+        model=args.chatgpt_model,
+        mock=args.mock_chatgpt,
+    ).to_dict()
+    summary, frames, offset_info = compute_similarity(
+        vocal_y=vocal_y,
+        vocal_sr=vocal_sr,
+        vocal_f0_raw=vocal_f0_raw,
+        vocal_times=vocal_times,
+        ref_f0=ref_f0,
+        ref_times=ref_times,
         frame_length=args.frame_length,
         hop_length=args.hop_length,
-        metrics=tone_metrics,
-        smooth_win=args.tone_smooth_win,
-        smooth_tolerance_cents=args.tone_smooth_tol_cents,
+        rms_gate_ratio=args.rms_gate_ratio,
+        jump_gate_cents=args.jump_gate_cents,
+        score_max_abs_cents=args.score_max_abs_cents,
+        ignore_short_outliers_ms=args.ignore_short_outliers_ms,
+        max_delay_ms=args.max_delay_ms,
+        penalize_late=args.penalize_late_notes,
     )
-
-    # Similarity if reference provided
-    if ref_f0 is not None:
-        summary, frames, offset_info = compute_similarity(
-            vocal_y=vocal_y,
-            vocal_sr=vocal_sr,
-            vocal_f0_raw=vocal_f0_raw,
-            vocal_times=vocal_times,
-            ref_f0=ref_f0,
-            ref_times=ref_times,
-            frame_length=args.frame_length,
-            hop_length=args.hop_length,
-            rms_gate_ratio=args.rms_gate_ratio,
-            jump_gate_cents=args.jump_gate_cents,
-            score_max_abs_cents=args.score_max_abs_cents,
-            ignore_short_outliers_ms=args.ignore_short_outliers_ms,
-            max_delay_ms=args.max_delay_ms,
-            penalize_late=args.penalize_late_notes,
-        )
-        run = {
-            "metadata": {
-                "vocal_path": f"../audio_files/{vocal_wav.name}",
-                "reference_path": f"../audio_files/{ref_path.name}" if ref_path and ref_path.parent == AUDIO_DIR else (str(ref_path) if ref_path else None),
-                "sample_rate": vocal_sr,
-                "duration_vocal": len(vocal_y) / vocal_sr,
-                "duration_reference": len(ref_y) / ref_sr if ref_y is not None else None,
-                "frame_length": args.frame_length,
-                "hop_length": args.hop_length,
-                "fmin": args.fmin,
-                "fmax": args.fmax,
-                "median_win": args.median_win,
-                "trim_start": args.trim_start,
-                "trim_end": args.trim_end,
-                "rms_gate_ratio": args.rms_gate_ratio,
-                "jump_gate_cents": args.jump_gate_cents,
-                "score_max_abs_cents": args.score_max_abs_cents,
-                "ignore_short_outliers_ms": args.ignore_short_outliers_ms,
-                "alignment_offset_frames": offset_info["offset_frames"],
-                "alignment_offset_ms": offset_info["offset_ms"],
-                "max_delay_ms": args.max_delay_ms,
-                "penalize_late_notes": args.penalize_late_notes,
-            },
-            "summary": summary,
-            "frames": frames,
-            "volume": {
-                "summary": volume_summary,
-                "frames": volume_frames,
-            },
-            "tone": {
-                "summary": tone_summary,
-                "frames": tone_frames,
-                "metrics": tone_metrics,
-            },
-        }
-        upsert_similarity(run, args.take_name, SIM_JSON)
+    run = {
+        "metadata": {
+            "vocal_path": f"../audio_files/{vocal_wav.name}",
+            "reference_path": f"../audio_files/{ref_path.name}" if ref_path and ref_path.parent == AUDIO_DIR else (str(ref_path) if ref_path else None),
+            "sample_rate": vocal_sr,
+            "duration_vocal": len(vocal_y) / vocal_sr,
+            "duration_reference": len(ref_y) / ref_sr if ref_y is not None else None,
+            "frame_length": args.frame_length,
+            "hop_length": args.hop_length,
+            "fmin": args.fmin,
+            "fmax": args.fmax,
+            "median_win": args.median_win,
+            "trim_start": args.trim_start,
+            "trim_end": args.trim_end,
+            "rms_gate_ratio": args.rms_gate_ratio,
+            "jump_gate_cents": args.jump_gate_cents,
+            "score_max_abs_cents": args.score_max_abs_cents,
+            "ignore_short_outliers_ms": args.ignore_short_outliers_ms,
+            "alignment_offset_frames": offset_info["offset_frames"],
+            "alignment_offset_ms": offset_info["offset_ms"],
+            "max_delay_ms": args.max_delay_ms,
+            "penalize_late_notes": args.penalize_late_notes,
+            "reference_mode": "reference_audio" if ref_path else "nearest_midi",
+        },
+        "summary": summary,
+        "frames": frames,
+        "volume": {
+            "summary": volume_summary,
+            "frames": volume_frames,
+        },
+        "chatgpt_feedback": chatgpt_feedback,
+    }
+    upsert_similarity(run, args.take_name, SIM_JSON)
 
     # Notes/take CSVs using raw pitch
     write_notes_csv(args.take_name, vocal_times, vocal_f0_raw, NOTES_CSV)
