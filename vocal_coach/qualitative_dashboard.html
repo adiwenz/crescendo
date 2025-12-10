@@ -308,10 +308,15 @@
     function computeTakeScores(run) {
       const pitchSummary = run.summary || {};
       const volSummary = run.volume?.summary || {};
-      const coachScores = run.chatgpt_feedback?.scores || {};
+      const coachScores = run.chatgpt_feedback?.scores || run.chatgpt_feedback?.metrics || {};
+      const extractScore = (val) => {
+        if (val == null) return null;
+        if (typeof val === "object" && "score" in val) return val.score;
+        return val;
+      };
       const pitch = safePct(pitchSummary.pct_within_50);
       const vol = safePct(volSummary.pct_within_tolerance);
-      const coachOverall = safePct(coachScores.overall_score);
+      const coachOverall = safePct(extractScore(coachScores.overall_score));
       const parts = [];
       const addPart = (score, weight) => {
         if (score == null || !Number.isFinite(score)) return;
