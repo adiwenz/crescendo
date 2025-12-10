@@ -80,6 +80,7 @@ def main():
         sr = args.samplerate  # assume
 
     # Load audio
+    print("Loading audio...")
     vocal_y, vocal_sr, ref_y, ref_sr, ref_path = load_audio_pair(
         vocal_path=vocal_wav,
         reference_path=Path(args.reference) if args.reference else None,
@@ -87,12 +88,14 @@ def main():
     )
 
     # Trim
+    print("Trimming audio for analysis...")
     if args.trim_start > 0 or args.trim_end > 0:
         vocal_y = trim_audio(vocal_y, vocal_sr, args.trim_start, args.trim_end)
         if ref_y is not None:
             ref_y = trim_audio(ref_y, ref_sr, args.trim_start, args.trim_end)
 
     # Pitch once
+    print("Estimating pitch...")
     use_pyin = args.pitch_method == "pyin"
     if use_pyin:
         vocal_f0_raw, vocal_times, _ = estimate_pitch_pyin(
@@ -143,6 +146,7 @@ def main():
         ref_f0, ref_times = vocal_f0_raw, vocal_times
 
     # Volume consistency (always computed on vocal take)
+    print("Analyzing volume")
     volume_summary, volume_frames = analyze_volume_consistency(
         vocal_y,
         vocal_sr,
@@ -150,11 +154,7 @@ def main():
         hop_length=args.hop_length,
     )
 
-    chatgpt_feedback = get_chatgpt_feedback(
-        audio_path=vocal_wav,
-        model=args.chatgpt_model,
-        mock=args.mock_chatgpt,
-    ).to_dict()
+    print("Computing similarity")
     summary, frames, offset_info = compute_similarity(
         vocal_y=vocal_y,
         vocal_sr=vocal_sr,
@@ -177,6 +177,19 @@ def main():
     local_pitch_score = compute_pitch_accuracy_score(summary)
     if local_pitch_score is not None:
         summary["local_pitch_accuracy_score"] = local_pitch_score
+        print(f"local pitch score {local_pitch_score}")
+    else:
+        print("local pitch score: N/A")
+
+
+    print("Getting ChatGPT feedback...")
+    chatgpt_feedback = get_chatgpt_feedback(
+        audio_path=vocal_wav,
+        model=args.chatgpt_model,
+        mock=args.mock_chatgpt,
+        analysis_context=summary,
+        locked_metrics={"pitch_accuracy": local_pitch_score} if local_pitch_score is not None else None,
+    ).to_dict()
 
     run = {
         "metadata": {

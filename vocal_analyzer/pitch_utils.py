@@ -58,8 +58,10 @@ def compute_pitch_accuracy_score(summary: Dict[str, Any]) -> Optional[float]:
     """
     Derive a 0–100 pitch accuracy score from a similarity summary.
     Prefers explicit in-tune proportions if available; otherwise falls back to mean abs cents error.
+    Prioritize within-50-cents accuracy as the local pitch score.
     """
-    for key in ("p_within_25_cents", "p_within_50_cents", "percent_in_tune", "pct_within_25", "pct_within_50"):
+    # NOTE: using 50% instead of 25% accuracy
+    for key in ("p_within_50_cents", "p_within_25_cents", "percent_in_tune", "pct_within_50", "pct_within_25"):
         val = summary.get(key)
         if val is None:
             continue

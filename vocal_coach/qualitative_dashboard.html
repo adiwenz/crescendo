@@ -411,6 +411,7 @@
       const metrics = feedback.metrics || {};
       const order = [
         ["Pitch Accuracy", "pitch_accuracy"],
+        ...(metrics.local_pitch_accuracy ? [["Local Pitch Accuracy (ChatGPT echo)", "local_pitch_accuracy"]] : []),
         ["Tone Quality", "tone_quality"],
         ["Breath Support", "breath_support"],
         ["Resonance Placement", "resonance_placement"],

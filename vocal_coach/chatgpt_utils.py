@@ -58,7 +58,6 @@ SAMPLE_FEEDBACK = ChatGPTFeedback(
     raw_text="Sample fallback feedback.",
 )
 
-
 SYSTEM_PROMPT = """You are a vocal coach. Given an audio take, return JSON only.
 The JSON must follow this shape:
 {
@@ -71,10 +70,11 @@ The JSON must follow this shape:
     "overall_score": { "score": 0-100, "explanation": "overall takeaway", "improvement_recommendation": "overall priority" }
   },
   "summary": "1-2 sentences summarizing the take",
-  "recommendations": ["3 concise bullet points to improve weakest areas"]
+  "recommendations": ["3 concise bullet points to improve weakest areas"],
+  "local_pitch_accuracy": { "score": 0-100,}  // optional, should be the locked_metrics pitch_accuracy 
 }
-No markdown, no extra keys, numbers only for scores."""
-
+No markdown, no extra keys, numbers only for scores. For the returned pitch_accuracy score, use locked_metrics={"pitch_accuracy"}.
+"""
 
 def _load_audio_b64(path: Path) -> str:
     data = path.read_bytes()
@@ -108,7 +108,13 @@ def _safe_parse_json(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: bool = False) -> ChatGPTFeedback:
+def get_chatgpt_feedback(
+    audio_path: Path,
+    model: str = DEFAULT_MODEL,
+    mock: bool = False,
+    analysis_context: Optional[Dict[str, Any]] = None,
+    locked_metrics: Optional[Dict[str, float]] = None,
+) -> ChatGPTFeedback:
     """Call OpenAI for vocal feedback; return structured data or sample fallback."""
     if mock:
         fb = SAMPLE_FEEDBACK
@@ -152,17 +158,35 @@ def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: boo
     audio_b64 = _load_audio_b64(audio_path)
 
     try:
+        user_content: List[Dict[str, Any]] = [
+            {"type": "text", "text": "Evaluate this vocal take."},
+        ]
+        if analysis_context:
+            try:
+                ctx_json = json.dumps(analysis_context)
+            except Exception:
+                ctx_json = str(analysis_context)
+            user_content.append(
+                {
+                    "type": "text",
+                    "text": f"Precomputed analysis (use as the basis for numeric scores, especially pitch; adjust only if the audio clearly contradicts): {ctx_json}",
+                }
+            )
+        if locked_metrics:
+            locked_text = json.dumps({k: v for k, v in locked_metrics.items()})
+            user_content.append(
+                {
+                    "type": "text",
+                    "text": f"Fixed metric scores (do not recompute; set these exact numbers in the JSON; especially for pitch use these exact values): {locked_text}",
+                }
+            )
+        user_content.append({"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}})
+
         completion = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Evaluate this vocal take."},
-                        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}},
-                    ],
-                },
+                {"role": "user", "content": user_content},
             ],
         )
         text = _parse_chat_completion(completion)
@@ -179,6 +203,9 @@ def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: boo
                 error="Could not parse JSON from ChatGPT response",
             )
         metrics = parsed.get("metrics") or {}
+        local_pitch = parsed.get("local_pitch_accuracy")
+        if isinstance(local_pitch, dict) and "score" in local_pitch:
+            metrics.setdefault("local_pitch_accuracy", {})["score"] = local_pitch.get("score")
         recommendations = parsed.get("recommendations") or []
         summary = parsed.get("summary") or ""
         if not metrics and "scores" in parsed and "improvements" in parsed:
@@ -193,7 +220,7 @@ def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: boo
                 }
                 for k in set(scores) | set(improvements)
             }
-        return ChatGPTFeedback(
+        fb = ChatGPTFeedback(
             metrics={
                 k: {
                     "score": float(v.get("score")) if isinstance(v.get("score"), (int, float)) else None,
@@ -209,9 +236,10 @@ def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: boo
             source="openai",
             raw_text=text or json.dumps(parsed),
         )
+        return _apply_locked_metrics(fb, locked_metrics)
     except Exception as e:
         fb = SAMPLE_FEEDBACK
-        return ChatGPTFeedback(
+        fb_obj = ChatGPTFeedback(
             metrics=fb.metrics,
             summary=fb.summary,
             recommendations=fb.recommendations,
@@ -220,6 +248,20 @@ def get_chatgpt_feedback(audio_path: Path, model: str = DEFAULT_MODEL, mock: boo
             raw_text=fb.raw_text,
             error=str(e),
         )
+        return _apply_locked_metrics(fb_obj, locked_metrics)
+
+
+def _apply_locked_metrics(feedback: ChatGPTFeedback, locked: Optional[Dict[str, float]]):
+    """Override specific metric scores with provided fixed values."""
+    if not locked:
+        return feedback
+    metrics = feedback.metrics or {}
+    for key, val in locked.items():
+        if key not in metrics:
+            metrics[key] = {"score": None, "explanation": "", "improvement_recommendation": ""}
+        metrics[key]["score"] = val
+    feedback.metrics = metrics
+    return feedback
 
 
 def feedback_to_text(feedback: Dict[str, Any]) -> str:
