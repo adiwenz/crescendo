@@ -1,0 +1,1 @@
+Create a script that sends the audio to chatGPT.  Then concisely explain the vocal exercises to improve. Lastly, use generate vocal exercises to create the exercises, and press record and into pipeline so chatGPT can analyze the new takes. Graph each take based on chatGPT goodness score. Show improvement over time (if there is any)
