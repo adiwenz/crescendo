@@ -31,10 +31,10 @@ CSV columns:
 """
 
 import argparse
-import csv
 import os
 import json
 import sys
+import numpy as np
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -42,6 +42,70 @@ from typing import Any, Dict, List
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from vocal_analyzer.pitch_utils import analyze_take
+
+
+def to_list(value: Any) -> List[Any]:
+    """Normalize scalars, numpy arrays, and iterables into a plain list for CSV output."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (float, int)):
+        return [value]
+    return list(value)
+
+
+def to_scalar(value: Any) -> str:
+    """Format a scalar as a CSV-friendly string (booleans become 1/0)."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value}"
+    return str(value)
+
+
+def collect_note_rows(audio_paths: List[str], fmin: float, fmax: float, verbose: bool = True) -> List[Dict[str, Any]]:
+    """Extract notes for each audio take and return flattened rows for CSV writing."""
+    rows: List[Dict[str, Any]] = []
+    extend_rows = rows.extend
+    analyze = analyze_take
+
+    for audio_path in audio_paths:
+        take_name = os.path.splitext(os.path.basename(audio_path))[0]
+        notes = analyze(audio_path, fmin=fmin, fmax=fmax, verbose=verbose)
+        if notes:
+            extend_rows({"take": take_name, **n} for n in notes)
+
+    return rows
+
+
+def write_rows(rows: List[Dict[str, Any]], output_csv: str, fieldnames: List[str]) -> None:
+    """Write rows to CSV with pre-bound helpers to minimize per-row overhead."""
+    with open(output_csv, "w", newline="") as f:
+        f.write(",".join(fieldnames) + "\n")
+
+        for row in rows:
+            frame_times = [float(x) for x in to_list(row.get("frame_times"))]
+            frame_hz = [float(x) for x in to_list(row.get("frame_hz"))]
+
+            ft_str = json.dumps(frame_times)
+            fh_str = json.dumps(frame_hz)
+
+            parts = []
+            for fn in fieldnames:
+                if fn == "frame_times":
+                    parts.append(f"\"{ft_str}\"")
+                elif fn == "frame_hz":
+                    parts.append(f"\"{fh_str}\"")
+                else:
+                    parts.append(to_scalar(row[fn]))
+            f.write(",".join(parts) + "\n")
 
 
 def main():
@@ -59,24 +123,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Convenience: allow last positional arg to be an output CSV path
-    if args.output_csv == "vocal_notes_stats.csv" and len(args.audio_paths) > 1 and args.audio_paths[-1].lower().endswith(".csv"):
-        args.output_csv = args.audio_paths[-1]
-        args.audio_paths = args.audio_paths[:-1]
-        print(f"Interpreting last argument as output CSV: {args.output_csv}")
-
-    all_rows: List[Dict[str, Any]] = []
-
-    for audio_path in args.audio_paths:
-        take_name = os.path.splitext(os.path.basename(audio_path))[0]
-        notes = analyze_take(audio_path, fmin=args.fmin, fmax=args.fmax, verbose=True)
-
-        for n in notes:
-            row = {
-                "take": take_name,
-                **n
-            }
-            all_rows.append(row)
+    all_rows = collect_note_rows(args.audio_paths, fmin=args.fmin, fmax=args.fmax, verbose=True)
 
     if not all_rows:
         print("No notes to write. Exiting.")
@@ -97,50 +144,7 @@ def main():
     ]
 
     print(f"\nWriting {len(all_rows)} notes to {args.output_csv}")
-    with open(args.output_csv, "w", newline="") as f:
-        # write header
-        f.write(",".join(fieldnames) + "\n")
-
-        def as_list(v):
-            if v is None:
-                return []
-            if isinstance(v, (list, tuple)):
-                return list(v)
-            try:
-                import numpy as np  # local import to avoid top-level dependency here
-                if isinstance(v, np.ndarray):
-                    v = v.tolist()
-            except Exception:
-                pass
-            if isinstance(v, (float, int)):
-                return [v]
-            return list(v) if isinstance(v, (set, dict)) is False else list(v)
-
-        def fmt_scalar(val):
-            if isinstance(val, bool):
-                return "1" if val else "0"
-            if isinstance(val, int):
-                return str(val)
-            if isinstance(val, float):
-                return f"{val}"
-            return str(val)
-
-        for row in all_rows:
-            frame_times = [float(x) for x in as_list(row.get("frame_times"))]
-            frame_hz = [float(x) for x in as_list(row.get("frame_hz"))]
-
-            ft_str = json.dumps(frame_times)
-            fh_str = json.dumps(frame_hz)
-
-            parts = []
-            for fn in fieldnames:
-                if fn == "frame_times":
-                    parts.append(f"\"{ft_str}\"")
-                elif fn == "frame_hz":
-                    parts.append(f"\"{fh_str}\"")
-                else:
-                    parts.append(fmt_scalar(row[fn]))
-            f.write(",".join(parts) + "\n")
+    write_rows(all_rows, args.output_csv, fieldnames)
 
 
 if __name__ == "__main__":
