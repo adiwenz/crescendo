@@ -1,9 +1,13 @@
 venv/
 audio_files/
 inter_take_analysis/audio_files/
-vocal_analyzer/__pycache__/
-vocal_coach/__pycache__/
 webapp/uploads/
-webapp/__pycache__/
 .env
 .DS_Store
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pycache
