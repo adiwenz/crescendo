@@ -1,5 +1,7 @@
 import os
 import sys
+import warnings
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -48,20 +50,51 @@ def analyze():
     save_path = UPLOAD_FOLDER / filename
     file.save(save_path)
 
+    chatgpt_audio_path = save_path
+    duration_seconds = 0.0
+    print("saving to wav")
+    preprocess_start = time.time()
     try:
-        y, sr = librosa.load(save_path, sr=None, mono=True)
-        wav_path = save_path.with_suffix(".wav")
-        sf.write(wav_path, y, sr)
-        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
-        chatgpt_audio_path = wav_path
+        if save_path.suffix.lower() in {".wav", ".wave"}:
+            try:
+                duration_seconds = float(sf.info(save_path).duration)
+            except Exception:
+                # Fallback if SoundFile can't read duration
+                duration_seconds = float(librosa.get_duration(path=save_path))
+        else:
+            # Convert to wav because ChatGPT call expects wav input.
+            target_sr = 16000
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="PySoundFile failed*")
+                warnings.filterwarnings("ignore", message=".*__audioread_load.*", category=FutureWarning)
+                y, sr = librosa.load(save_path, sr=target_sr, mono=True)
+            if y is None or sr is None:
+                raise ValueError("Audio decode returned empty data")
+            wav_path = save_path.with_suffix(".wav")
+            sf.write(wav_path, y, target_sr)
+            chatgpt_audio_path = wav_path
+            duration_seconds = float(librosa.get_duration(y=y, sr=target_sr))
     except Exception as e:
+        app.logger.exception("Audio preprocessing failed: %s", e)
         return jsonify({"error": f"Audio preprocessing failed: {e}"}), 500
+    preprocess_time = time.time() - preprocess_start
+    print(f"converted to wav (or reused) in {preprocess_time:.2f}s")
 
-    chatgpt_feedback: ChatGPTFeedback = get_chatgpt_feedback(
-        audio_path=chatgpt_audio_path,
-        analysis_context={"duration": duration_seconds},
-        return_pitch_contour=True,
-    )
+    print("getting chatgpt feedback")
+    start_gpt = time.time()
+    try:
+        chatgpt_feedback: ChatGPTFeedback = get_chatgpt_feedback(
+            audio_path=chatgpt_audio_path,
+            analysis_context={"duration": duration_seconds},
+            return_pitch_contour=True,
+        )
+    except Exception as e:
+        app.logger.exception("ChatGPT feedback call crashed: %s", e)
+        chatgpt_feedback = get_chatgpt_feedback(audio_path=save_path, mock=True)
+        chatgpt_feedback.error = str(e)
+    elapsed_gpt = time.time() - start_gpt
+    print(f"chatgpt call took {elapsed_gpt:.2f}s")
+
     chatgpt_error = chatgpt_feedback.error
     if chatgpt_error:
         app.logger.error("ChatGPT feedback error: %s", chatgpt_error)

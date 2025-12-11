@@ -291,6 +291,18 @@
                 </div>
             </div>
         </div>
+
+        <h2 style="margin-top:18px;">AI Feedback</h2>
+        <div class="card">
+            <div id="gptError" class="error-text" style="margin-top:0;"></div>
+            <div id="gptSummary" style="font-size:14px;color:#e5e7eb;margin-top:4px;"></div>
+            <div id="gptModel" style="font-size:12px;color:#9ca3af;margin-top:6px;"></div>
+            <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;" id="gptMetrics"></div>
+            <div style="margin-top:10px;">
+                <div style="font-size:13px;color:#9ca3af;margin-bottom:6px;">Recommendations</div>
+                <ul id="gptRecs" style="margin:0;padding-left:18px;color:#e5e7eb;font-size:13px;line-height:1.5;"></ul>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -329,6 +341,11 @@
 
         const btnTake1 = document.getElementById('btnTake1');
         const btnTake2 = document.getElementById('btnTake2');
+        const gptSummary = document.getElementById('gptSummary');
+        const gptModel = document.getElementById('gptModel');
+        const gptRecs = document.getElementById('gptRecs');
+        const gptMetrics = document.getElementById('gptMetrics');
+        const gptError = document.getElementById('gptError');
 
         let pitchChart;
         let chartData = {
@@ -439,6 +456,7 @@
             chartData.datasets[0].hidden = false;
             chartData.datasets[1].hidden = true;
             if (pitchChart) pitchChart.update();
+            renderChatGPT(null, null);
         }
 
         function hzToMidi(hz) {
@@ -633,7 +651,42 @@
                 }
             }
 
+            renderChatGPT(data.chatgpt_feedback, data.chatgpt_error);
             if (pitchChart) pitchChart.update();
+        }
+
+        function renderChatGPT(feedback, error) {
+            gptError.textContent = error || '';
+            if (!feedback) {
+                gptSummary.textContent = '';
+                gptModel.textContent = '';
+                gptRecs.innerHTML = '';
+                gptMetrics.innerHTML = '';
+                return;
+            }
+            gptSummary.textContent = feedback.summary || '';
+            const modelText = [feedback.model, feedback.source].filter(Boolean).join(' • ');
+            gptModel.textContent = modelText ? `Model: ${modelText}` : '';
+
+            const recs = Array.isArray(feedback.recommendations) ? feedback.recommendations : [];
+            gptRecs.innerHTML = recs.map(r => `<li>${r}</li>`).join('');
+
+            const metrics = feedback.metrics || {};
+            const metricCards = Object.keys(metrics).map(key => {
+                const m = metrics[key] || {};
+                const score = m.score !== undefined && m.score !== null ? `${m.score}` : '—';
+                const expl = m.explanation || '';
+                const imp = m.improvement_recommendation || '';
+                return `
+                    <div class="card" style="background:radial-gradient(circle at top left, #0b1220 0, #0a0f1a 55%);padding:10px;">
+                        <div style="font-size:13px;color:#9ca3af;margin-bottom:4px;">${key}</div>
+                        <div style="font-size:22px;font-weight:600;color:#e5e7eb;">${score}</div>
+                        ${expl ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px;">${expl}</div>` : ''}
+                        ${imp ? `<div style="font-size:12px;color:#22c55e;margin-top:4px;">Improve: ${imp}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+            gptMetrics.innerHTML = metricCards;
         }
 
         btnTake1.addEventListener('click', () => {

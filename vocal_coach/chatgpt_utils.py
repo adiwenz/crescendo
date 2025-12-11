@@ -25,9 +25,10 @@ class ChatGPTFeedback:
     source: str
     raw_text: str
     error: Optional[str] = None
+    pitch_contour: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data = {
             "metrics": self.metrics,
             "summary": self.summary,
             "recommendations": self.recommendations,
@@ -36,6 +37,9 @@ class ChatGPTFeedback:
             "raw_text": self.raw_text,
             **({"error": self.error} if self.error else {}),
         }
+        if self.pitch_contour is not None:
+            data["pitch_contour"] = self.pitch_contour
+        return data
 
 
 SAMPLE_FEEDBACK = ChatGPTFeedback(
@@ -56,6 +60,7 @@ SAMPLE_FEEDBACK = ChatGPTFeedback(
     model=DEFAULT_MODEL,
     source="sample",
     raw_text="Sample fallback feedback.",
+    pitch_contour=[{"time": t / 10.0, "pitch": 200 + (t % 30)} for t in range(50)],
 )
 
 SYSTEM_PROMPT = """You are a vocal coach. Given an audio take, return JSON only.
@@ -72,6 +77,7 @@ The JSON must follow this shape:
   "summary": "1-2 sentences summarizing the take",
   "recommendations": ["3 concise bullet points to improve weakest areas"],
   "local_pitch_accuracy": { "score": 0-100,}  // optional, should be the locked_metrics pitch_accuracy 
+  "pitch_contour": [ { "time": seconds, "pitch": hz } ] // optional contour sampled ~10 Hz
 }
 No markdown, no extra keys, numbers only for scores. For the returned pitch_accuracy score, use locked_metrics={"pitch_accuracy"}.
 """
@@ -114,6 +120,7 @@ def get_chatgpt_feedback(
     mock: bool = False,
     analysis_context: Optional[Dict[str, Any]] = None,
     locked_metrics: Optional[Dict[str, float]] = None,
+    return_pitch_contour: bool = False,
 ) -> ChatGPTFeedback:
     """Call OpenAI for vocal feedback; return structured data or sample fallback."""
     if mock:
@@ -125,6 +132,7 @@ def get_chatgpt_feedback(
             model=model,
             source="mock",
             raw_text=fb.raw_text,
+            pitch_contour=fb.pitch_contour,
         )
 
     try:
@@ -139,6 +147,7 @@ def get_chatgpt_feedback(
             source="mock",
             raw_text=fb.raw_text,
             error=f"openai import failed: {e}",
+            pitch_contour=fb.pitch_contour,
         )
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -152,6 +161,7 @@ def get_chatgpt_feedback(
             source="mock",
             raw_text=fb.raw_text,
             error="OPENAI_API_KEY not set",
+            pitch_contour=fb.pitch_contour,
         )
 
     client = openai.OpenAI(api_key=api_key)
@@ -178,6 +188,13 @@ def get_chatgpt_feedback(
                 {
                     "type": "text",
                     "text": f"Fixed metric scores (do not recompute; set these exact numbers in the JSON; especially for pitch use these exact values): {locked_text}",
+                }
+            )
+        if return_pitch_contour:
+            user_content.append(
+                {
+                    "type": "text",
+                    "text": "Also include a pitch_contour array of objects with time (seconds) and pitch (Hz) sampled at ~10 Hz; omit or leave empty if uncertain.",
                 }
             )
         user_content.append({"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}})
@@ -208,6 +225,7 @@ def get_chatgpt_feedback(
             metrics.setdefault("local_pitch_accuracy", {})["score"] = local_pitch.get("score")
         recommendations = parsed.get("recommendations") or []
         summary = parsed.get("summary") or ""
+        pitch_contour = parsed.get("pitch_contour") if isinstance(parsed.get("pitch_contour"), list) else None
         if not metrics and "scores" in parsed and "improvements" in parsed:
             # Back-compat: combine scores+improvements into metrics blocks.
             scores = parsed.get("scores") or {}
@@ -235,6 +253,7 @@ def get_chatgpt_feedback(
             model=model,
             source="openai",
             raw_text=text or json.dumps(parsed),
+            pitch_contour=pitch_contour,
         )
         return _apply_locked_metrics(fb, locked_metrics)
     except Exception as e:
@@ -247,6 +266,7 @@ def get_chatgpt_feedback(
             source="mock",
             raw_text=fb.raw_text,
             error=str(e),
+            pitch_contour=fb.pitch_contour,
         )
         return _apply_locked_metrics(fb_obj, locked_metrics)
 
