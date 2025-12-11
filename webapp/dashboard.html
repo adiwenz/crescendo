@@ -332,35 +332,30 @@
 
         let pitchChart;
         let chartData = {
-            labels: [],
             datasets: [
                 {
-                    label: 'Take 1 Pitch',
+                    label: 'Take 1 Melody (MIDI)',
                     data: [],
-                    borderColor: '#4f46e5',
-                    backgroundColor: 'rgba(79, 70, 229, 0.5)',
+                    borderColor: '#60a5fa',
+                    pointBackgroundColor: [],
                     pointRadius: 3,
+                    showLine: true,
                     fill: false,
                     hidden: false,
-                    yAxisID: 'pitch',
-                    parsing: {
-                        xAxisKey: 'time',
-                        yAxisKey: 'pitch',
-                    },
+                    parsing: false,
+                    spanGaps: true,
                 },
                 {
-                    label: 'Take 2 Pitch',
+                    label: 'Take 2 Melody (MIDI)',
                     data: [],
-                    borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245, 158, 11, 0.5)',
+                    borderColor: '#fbbf24',
+                    pointBackgroundColor: [],
                     pointRadius: 3,
+                    showLine: true,
                     fill: false,
                     hidden: true,
-                    yAxisID: 'pitch',
-                    parsing: {
-                        xAxisKey: 'time',
-                        yAxisKey: 'pitch',
-                    },
+                    parsing: false,
+                    spanGaps: true,
                 }
             ],
         };
@@ -368,7 +363,7 @@
         function initChart() {
             const ctx = document.getElementById('pitchChart').getContext('2d');
             pitchChart = new Chart(ctx, {
-                type: 'line',
+                type: 'scatter',
                 data: chartData,
                 options: {
                     responsive: false,
@@ -381,34 +376,23 @@
                                 text: 'Time (s)',
                                 color: '#9ca3af',
                             },
-                            grid: {
-                                color: '#1f2937',
-                            },
-                            ticks: {
-                                color: '#9ca3af',
-                            },
+                            grid: { color: '#1f2937' },
+                            ticks: { color: '#9ca3af' },
                         },
-                        pitch: {
+                        y: {
                             type: 'linear',
-                            position: 'left',
                             title: {
                                 display: true,
-                                text: 'Pitch (Hz)',
+                                text: 'MIDI Note',
                                 color: '#9ca3af',
                             },
-                            grid: {
-                                color: '#1f2937',
-                            },
-                            ticks: {
-                                color: '#9ca3af',
-                            },
+                            grid: { color: '#1f2937' },
+                            ticks: { color: '#9ca3af' },
                         },
                     },
                     plugins: {
                         legend: {
-                            labels: {
-                                color: '#e5e7eb',
-                            },
+                            labels: { color: '#e5e7eb' },
                         },
                         tooltip: {
                             enabled: true,
@@ -416,17 +400,14 @@
                             intersect: false,
                             callbacks: {
                                 label: function (context) {
-                                    const pitch = context.parsed.y.toFixed(2);
-                                    const time = context.parsed.x.toFixed(2);
-                                    return `Time: ${time}s, Pitch: ${pitch} Hz`;
+                                    const midi = context.parsed.y?.toFixed(2) ?? '--';
+                                    const time = context.parsed.x?.toFixed(2) ?? '--';
+                                    return `Time: ${time}s, MIDI: ${midi}`;
                                 }
                             }
                         }
                     },
-                    interaction: {
-                        mode: 'nearest',
-                        intersect: false,
-                    },
+                    interaction: { mode: 'nearest', intersect: false },
                     animation: false,
                 }
             });
@@ -452,10 +433,48 @@
             audio2.load();
 
             chartData.datasets[0].data = [];
+            chartData.datasets[0].pointBackgroundColor = [];
             chartData.datasets[1].data = [];
+            chartData.datasets[1].pointBackgroundColor = [];
             chartData.datasets[0].hidden = false;
             chartData.datasets[1].hidden = true;
             if (pitchChart) pitchChart.update();
+        }
+
+        function hzToMidi(hz) {
+            if (!hz || hz <= 0) return null;
+            return 69 + 12 * Math.log2(hz / 440);
+        }
+
+        function centsFromNearestMidi(hz) {
+            const midi = hzToMidi(hz);
+            if (midi === null) return { midi: null, cents: null };
+            const nearestMidi = Math.round(midi);
+            const nearestHz = 440 * Math.pow(2, (nearestMidi - 69) / 12);
+            const cents = 1200 * Math.log2(hz / nearestHz);
+            return { midi, cents };
+        }
+
+        function colorForCents(cents) {
+            if (cents === null) return '#6b7280';
+            const abs = Math.abs(cents);
+            if (abs <= 25) return '#22c55e'; // green
+            if (abs <= 50) return '#fbbf24'; // yellow
+            return '#ef4444'; // red
+        }
+
+        function buildContour(pitchData = []) {
+            const points = [];
+            const colors = [];
+            for (const frame of pitchData) {
+                const hz = frame.pitch;
+                if (!hz || hz <= 0) continue;
+                const { midi, cents } = centsFromNearestMidi(hz);
+                if (midi === null) continue;
+                points.push({ x: frame.time, y: midi });
+                colors.push(colorForCents(cents));
+            }
+            return { points, colors };
         }
 
         fileInput.addEventListener('change', () => {
@@ -583,9 +602,12 @@
                     audio1.load();
                 }
                 if (Array.isArray(data.take1.pitch_data)) {
-                    chartData.datasets[0].data = data.take1.pitch_data;
+                    const contour = buildContour(data.take1.pitch_data);
+                    chartData.datasets[0].data = contour.points;
+                    chartData.datasets[0].pointBackgroundColor = contour.colors;
                 } else {
                     chartData.datasets[0].data = [];
+                    chartData.datasets[0].pointBackgroundColor = [];
                 }
             }
 
@@ -602,9 +624,12 @@
                     audio2.load();
                 }
                 if (Array.isArray(data.take2.pitch_data)) {
-                    chartData.datasets[1].data = data.take2.pitch_data;
+                    const contour = buildContour(data.take2.pitch_data);
+                    chartData.datasets[1].data = contour.points;
+                    chartData.datasets[1].pointBackgroundColor = contour.colors;
                 } else {
                     chartData.datasets[1].data = [];
+                    chartData.datasets[1].pointBackgroundColor = [];
                 }
             }
 
