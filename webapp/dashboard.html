@@ -327,6 +327,9 @@
     let mediaRecorder;
     let recordedChunks = [];
     let recordedBlobUrl;
+    let playheadTime = 0;
+    let playheadSource = null;
+    let playheadRaf = null;
 
     const fileInput = document.getElementById('fileInput');
     const fileStatus = document.getElementById('fileStatus');
@@ -367,6 +370,27 @@
     const gptRecs = document.getElementById('gptRecs');
     const gptMetrics = document.getElementById('gptMetrics');
     const gptError = document.getElementById('gptError');
+
+    const playheadPlugin = {
+      id: 'playhead',
+      afterDatasetsDraw(chart) {
+        if (!Number.isFinite(playheadTime)) return;
+        const xScale = chart.scales.x;
+        if (!xScale) return;
+        const x = xScale.getPixelForValue(playheadTime);
+        if (Number.isNaN(x)) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, chart.chartArea.top);
+        ctx.lineTo(x, chart.chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(playheadPlugin);
 
     let pitchChart;
     const chartData = {
@@ -783,9 +807,63 @@
       if (pitchChart) pitchChart.update();
     });
 
+    function attachPlayheadListeners(audioEl) {
+      audioEl.addEventListener('play', () => startPlayheadLoop(audioEl));
+      audioEl.addEventListener('pause', () => {
+        if (playheadSource === audioEl) {
+          playheadSource = null;
+        }
+      });
+      audioEl.addEventListener('ended', () => {
+        if (playheadSource === audioEl) {
+          playheadSource = null;
+        }
+      });
+    }
+
+    function startPlayheadLoop(source) {
+      playheadSource = source;
+      if (playheadRaf) cancelAnimationFrame(playheadRaf);
+      const tick = () => {
+        if (!playheadSource || playheadSource.paused) {
+          playheadRaf = null;
+          return;
+        }
+        playheadTime = playheadSource.currentTime || 0;
+        if (pitchChart) pitchChart.update('none');
+        playheadRaf = requestAnimationFrame(tick);
+      };
+      tick();
+    }
+
+    function enableChartScrub() {
+      if (!pitchChart) return;
+      const canvas = pitchChart.canvas;
+      const scrub = (evt) => {
+        const rect = canvas.getBoundingClientRect();
+        const xPixel = evt.clientX - rect.left;
+        const xVal = pitchChart.scales.x.getValueForPixel(xPixel);
+        if (!Number.isFinite(xVal)) return;
+        playheadTime = Math.max(0, xVal);
+        [audioVocal, audioRef].forEach(a => {
+          if (a && a.src) {
+            a.currentTime = Math.min(playheadTime, Number.isFinite(a.duration) ? a.duration : playheadTime);
+          }
+        });
+        if (pitchChart) pitchChart.update();
+      };
+      let dragging = false;
+      canvas.onpointerdown = (e) => { dragging = true; scrub(e); };
+      canvas.onpointermove = (e) => { if (dragging) scrub(e); };
+      window.onpointerup = () => { dragging = false; };
+    }
+
     window.onload = () => {
       resetUI();
       initChart();
+      attachPlayheadListeners(audioVocal);
+      attachPlayheadListeners(audioRef);
+      enableChartScrub();
     };
   </script>
 </body>

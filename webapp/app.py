@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+import numpy as np
+
 BASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BASE_DIR.parent
 if str(REPO_ROOT) not in sys.path:
@@ -15,6 +17,7 @@ import librosa
 import soundfile as sf
 from werkzeug.utils import secure_filename
 from vocal_coach.chatgpt_utils import ChatGPTFeedback, get_chatgpt_feedback
+from vocal_analyzer.pitch_utils import compute_pitch_accuracy_score, estimate_pitch_pyin, segment_notes
 
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 
@@ -32,6 +35,53 @@ def build_filename(original_name: str) -> str:
         return f"upload-{uuid4().hex}"
     stem, ext = os.path.splitext(filename)
     return f"{stem}-{uuid4().hex}{ext}"
+
+
+def compute_pyin_contour(audio_path: Path, target_sr: int = 16000) -> dict:
+    """Estimate pitch contour with PYIN and return frames + summary metrics."""
+    y, sr = librosa.load(audio_path, sr=target_sr, mono=True)
+    f0, voiced_flag, _ = estimate_pitch_pyin(
+        y,
+        sr=sr,
+        fmin=80.0,
+        fmax=1000.0,
+        frame_length=2048,
+        hop_length=256,
+        median_win=3,
+    )
+    hop_length = 256
+    times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
+    frames = []
+    cents_errors = []
+    for t, hz, voiced in zip(times, f0, voiced_flag):
+        if not voiced or hz is None or (isinstance(hz, float) and (hz != hz)) or hz <= 0:  # NaN guard
+            continue
+        midi = float(librosa.hz_to_midi(hz))
+        nearest_midi = round(midi)
+        target_hz = librosa.midi_to_hz(nearest_midi)
+        cents_err = 1200.0 * np.log2(hz / target_hz) if target_hz > 0 else 0.0
+        cents_errors.append(cents_err)
+        frames.append(
+            {
+                "time": float(t),
+                "midi": float(midi),
+                "cents_error": float(cents_err),
+            }
+        )
+
+    notes = segment_notes(times, f0)
+
+    summary = {}
+    if cents_errors:
+        cents_arr = np.asarray(cents_errors, dtype=float)
+        summary = {
+            "mean_abs_cents": float(np.mean(np.abs(cents_arr))),
+            "rms_cents": float(np.sqrt(np.mean(cents_arr ** 2))),
+            "pct_within_50": float(np.mean(np.abs(cents_arr) <= 50.0)),  # proportion 0–1
+            "valid_frames": int(len(cents_arr)),
+        }
+        summary["pitch_accuracy_score"] = compute_pitch_accuracy_score(summary)
+    return {"frames": frames, "summary": summary, "notes": notes}
 
 
 @app.route("/", methods=["GET"])
@@ -80,13 +130,33 @@ def analyze():
     preprocess_time = time.time() - preprocess_start
     print(f"converted to wav (or reused) in {preprocess_time:.2f}s")
 
+    # Local PYIN contour used for visualization and as the fixed pitch score.
+    pyin_result = {}
+    try:
+        pyin_result = compute_pyin_contour(chatgpt_audio_path)
+    except Exception as e:
+        app.logger.exception("PYIN pitch extraction failed: %s", e)
+
     print("getting chatgpt feedback")
     start_gpt = time.time()
+    locked_metrics = None
+    if pyin_result and pyin_result.get("summary", {}).get("pitch_accuracy_score") is not None:
+        locked_metrics = {"pitch_accuracy": pyin_result["summary"]["pitch_accuracy_score"]}
+        local_score = pyin_result["summary"]["pitch_accuracy_score"]
+        app.logger.info("Local PYIN pitch_accuracy_score (pct within 50c): %.2f", local_score)
+        print(f"Local PYIN pitch_accuracy_score (pct within 50c): {local_score:.2f}")
     try:
+        # Previous behavior (kept for reference):
+        # chatgpt_feedback: ChatGPTFeedback = get_chatgpt_feedback(
+        #     audio_path=chatgpt_audio_path,
+        #     analysis_context={"duration": duration_seconds},
+        #     return_pitch_contour=True,
+        # )
         chatgpt_feedback: ChatGPTFeedback = get_chatgpt_feedback(
             audio_path=chatgpt_audio_path,
-            analysis_context={"duration": duration_seconds},
-            return_pitch_contour=True,
+            analysis_context={"duration": duration_seconds, "pitch_summary": pyin_result.get("summary")},
+            locked_metrics=locked_metrics,
+            return_pitch_contour=False,
         )
         chatgpt_raw_text = chatgpt_feedback.raw_text
     except Exception as e:
@@ -110,19 +180,35 @@ def analyze():
         fallback.raw_text = chatgpt_raw_text or fallback.raw_text
         chatgpt_feedback = fallback
     metrics = chatgpt_feedback.metrics or {}
-    overall_score = metrics.get("overall_score", {}).get("score") or 98.0
-    pitch_data = chatgpt_feedback.pitch_contour or []
+    overall_score = metrics.get("overall_score", {}).get("score") or pyin_result.get("summary", {}).get("pitch_accuracy_score") or 98.0
+    pyin_frames = pyin_result.get("frames") if pyin_result else []
+    pitch_data = pyin_frames if pyin_frames else (chatgpt_feedback.pitch_contour or [])
+    pyin_summary = pyin_result.get("summary", {}) if pyin_result else {}
+
+    take_payload = {
+        "name": file.filename or "Uploaded Take",
+        "audio_url": f"/uploads/{filename}",
+        "pitch_data": pitch_data,
+        "frames": pitch_data,
+        "score": float(overall_score),
+        "score_label": chatgpt_feedback.summary or "AI vocal feedback",
+        "mean_error": pyin_summary.get("mean_abs_cents", 0.0),
+        "rms_error": pyin_summary.get("rms_cents", 0.0),
+        "duration": duration_seconds,
+        "local_pitch_accuracy_score": pyin_summary.get("pitch_accuracy_score"),
+    }
 
     response = {
-        "take1": {
-            "name": file.filename or "Uploaded Take",
-            "audio_url": f"/uploads/{filename}",
-            "pitch_data": pitch_data,
-            "score": float(overall_score),
-            "score_label": chatgpt_feedback.summary or "AI vocal feedback",
-            "mean_error": 2.5,
-            "rms_error": 3.4,
-            "duration": duration_seconds,
+        "take1": take_payload,
+        "vocal_take": {
+            "label": take_payload["name"],
+            "audio_url": take_payload["audio_url"],
+            "duration_seconds": duration_seconds,
+            "overall_mean_cents_error": pyin_summary.get("mean_abs_cents", 0.0),
+            "overall_rms_cents_error": pyin_summary.get("rms_cents", 0.0),
+            "accuracy_score": pyin_summary.get("pitch_accuracy_score", overall_score),
+            "frames": pitch_data,
+            "local_pitch_accuracy_score": pyin_summary.get("pitch_accuracy_score"),
         },
         "chatgpt_feedback": chatgpt_feedback.to_dict(),
         **({"chatgpt_raw_response": chatgpt_raw_text} if chatgpt_error and chatgpt_raw_text else {}),
