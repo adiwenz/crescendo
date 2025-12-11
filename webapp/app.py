@@ -1,5 +1,4 @@
 import os
-import math
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -14,7 +13,6 @@ import librosa
 import soundfile as sf
 from werkzeug.utils import secure_filename
 from vocal_coach.chatgpt_utils import ChatGPTFeedback, get_chatgpt_feedback
-from vocal_analyzer.pitch_utils import estimate_pitch_pyin
 
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 
@@ -52,26 +50,17 @@ def analyze():
 
     try:
         y, sr = librosa.load(save_path, sr=None, mono=True)
-        # Normalize to WAV for downstream consumers (ChatGPT expects format to match).
         wav_path = save_path.with_suffix(".wav")
         sf.write(wav_path, y, sr)
-
-        f0, times, voiced = estimate_pitch_pyin(y, sr)
-        pitch_data = [
-            {"time": float(t), "pitch": float(f)}
-            for t, f, v in zip(times, f0, voiced)
-            if v and f and math.isfinite(f) and f > 0
-        ]
-        duration_seconds = float(times[-1]) if len(times) else 0.0
+        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
         chatgpt_audio_path = wav_path
     except Exception as e:
-        pitch_data = []
-        duration_seconds = 0.0
-        return jsonify({"error": f"Pitch analysis failed: {e}"}), 500
+        return jsonify({"error": f"Audio preprocessing failed: {e}"}), 500
 
     chatgpt_feedback: ChatGPTFeedback = get_chatgpt_feedback(
         audio_path=chatgpt_audio_path,
         analysis_context={"duration": duration_seconds},
+        return_pitch_contour=True,
     )
     chatgpt_error = chatgpt_feedback.error
     if chatgpt_error:
@@ -82,6 +71,7 @@ def analyze():
         chatgpt_feedback = fallback
     metrics = chatgpt_feedback.metrics or {}
     overall_score = metrics.get("overall_score", {}).get("score") or 98.0
+    pitch_data = chatgpt_feedback.pitch_contour or []
 
     response = {
         "take1": {
