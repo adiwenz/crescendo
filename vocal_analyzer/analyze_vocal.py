@@ -3,7 +3,7 @@
 analyze_vocal.py
 
 Compare a vocal WAV against a reference WAV by:
-1) Estimating pitch (f0) for both
+1) Estimating pitch (f0) for both using librosa.yin
 2) Quantizing the reference to the nearest MIDI note per frame (handles connected legato)
 3) Computing frame-aligned cents error between vocal and reference
 4) Writing a JSON report consumable by the HTML viewer
@@ -14,13 +14,18 @@ Usage:
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
-from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
-from vocal_analyzer.tone_analysis_utils import analyze_tone
-from vocal_analyzer.pitch_utils import estimate_pitch_yin
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
+from dutils.analysis_utils import compute_similarity, load_audio_pair, trim_audio
+from dutils.volume_analysis_utils import analyze_volume_consistency
+from dutils.tone_analysis_utils import analyze_tone
+from dutils.pitch_utils import estimate_pitch_yin
 
 
 def parse_args():

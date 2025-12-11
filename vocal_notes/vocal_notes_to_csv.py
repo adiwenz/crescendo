@@ -41,7 +41,7 @@ from typing import Any, Dict, List
 # Ensure repo root is on sys.path when running as a script
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from vocal_analyzer.pitch_utils import analyze_take
+from dutils.pitch_utils import analyze_take
 
 
 def to_list(value: Any) -> List[Any]:

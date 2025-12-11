@@ -16,8 +16,8 @@ from flask import Flask, jsonify, request, send_from_directory
 import librosa
 import soundfile as sf
 from werkzeug.utils import secure_filename
-from vocal_coach.chatgpt_utils import ChatGPTFeedback, get_chatgpt_feedback
-from vocal_analyzer.pitch_utils import compute_pitch_accuracy_score, estimate_pitch_pyin, segment_notes
+from dutils.chatgpt_utils import ChatGPTFeedback, get_chatgpt_feedback
+from dutils.pitch_utils import compute_pitch_accuracy_score, estimate_pitch_pyin, segment_notes
 
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 

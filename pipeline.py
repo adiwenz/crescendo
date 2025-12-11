@@ -12,9 +12,9 @@ from pathlib import Path
 import soundfile as sf
 
 from inter_take_analysis import build_takes_index, record_and_process
-from vocal_analyzer.analysis_utils import compute_similarity, load_audio_pair, trim_audio
-from vocal_analyzer.volume_analysis_utils import analyze_volume_consistency
-from vocal_analyzer.pitch_utils import (
+from dutils.analysis_utils import compute_similarity, load_audio_pair, trim_audio
+from dutils.volume_analysis_utils import analyze_volume_consistency
+from dutils.pitch_utils import (
     compute_pitch_accuracy_score,
     estimate_pitch_pyin,
     estimate_pitch_yin,
@@ -22,7 +22,7 @@ from vocal_analyzer.pitch_utils import (
     write_take_csv,
     upsert_similarity,
 )
-from vocal_coach.chatgpt_utils import DEFAULT_MODEL, get_chatgpt_feedback
+from dutils.chatgpt_utils import DEFAULT_MODEL, get_chatgpt_feedback
 
 ROOT = Path(__file__).resolve().parent
 AUDIO_DIR = ROOT / "audio_files"

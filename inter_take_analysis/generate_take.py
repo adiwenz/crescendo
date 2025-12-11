@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 try:
-    from vocal_analyzer.pitch_utils import estimate_pitch_yin
+    from dutils.pitch_utils import estimate_pitch_yin
 except ImportError:
     estimate_pitch_yin = None
 
