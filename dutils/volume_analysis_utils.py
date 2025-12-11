@@ -8,6 +8,7 @@ import numpy as np
 
 
 def _moving_average(x: np.ndarray, win: int) -> np.ndarray:
+    """Apply centered moving average with odd window; returns original if disabled."""
     if win is None or win < 2:
         return x
     win = int(win)

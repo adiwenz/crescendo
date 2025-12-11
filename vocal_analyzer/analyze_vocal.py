@@ -29,6 +29,7 @@ from dutils.pitch_utils import estimate_pitch_yin
 
 
 def parse_args():
+    """Configure and parse CLI arguments for vocal vs reference analysis."""
     ap = argparse.ArgumentParser(description="Compare vocal WAV to reference WAV via nearest-MIDI reference.")
     ap.add_argument("--vocal", required=True, help="Vocal WAV file")
     ap.add_argument("--reference", required=True, help="Reference WAV file")
@@ -53,6 +54,7 @@ def parse_args():
 
 
 def main():
+    """Run full vocal vs reference analysis and write JSON report."""
     args = parse_args()
 
     vocal_y, vocal_sr, ref_y, ref_sr, _ = load_audio_pair(Path(args.vocal), Path(args.reference))

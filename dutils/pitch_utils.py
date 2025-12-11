@@ -11,6 +11,7 @@ import librosa
 
 
 def median_filter_1d(x, win=3):
+    """Apply 1D median filter with odd window; no-op when window <2."""
     x = np.asarray(x)
     if win is None or win < 2:
         return x

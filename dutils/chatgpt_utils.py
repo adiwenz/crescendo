@@ -83,6 +83,7 @@ No markdown, no extra keys, numbers only for scores. For the returned pitch_accu
 """
 
 def _load_audio_b64(path: Path) -> str:
+    """Load audio file bytes and return base64-encoded string."""
     data = path.read_bytes()
     return base64.b64encode(data).decode("utf-8")
 

@@ -33,6 +33,7 @@ SIM_JSON = ROOT / "vocal_analyzer" / "analysis_similarity.json"
 
 
 def main():
+    """Run unified record/analyze pipeline: optional record, analyze, write outputs."""
     ap = argparse.ArgumentParser(description="Unified record/analyze pipeline (no subprocess).")
     ap.add_argument("--take_name", required=True, help="Name for the take")
     ap.add_argument("--reference", help="Reference WAV (optional). If provided, will be played during recording and used for similarity.")

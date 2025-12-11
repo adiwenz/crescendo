@@ -26,10 +26,12 @@ app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 
 
 def ensure_upload_folder() -> None:
+    """Create uploads directory if missing."""
     UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 def build_filename(original_name: str) -> str:
+    """Return a secure, unique filename preserving extension."""
     filename = secure_filename(original_name)
     if not filename:
         return f"upload-{uuid4().hex}"
@@ -86,11 +88,13 @@ def compute_pyin_contour(audio_path: Path, target_sr: int = 16000) -> dict:
 
 @app.route("/", methods=["GET"])
 def serve_dashboard():
+    """Serve the web dashboard asset."""
     return send_from_directory(BASE_DIR, "dashboard.html")
 
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    """Handle audio upload, run pitch analysis, and return JSON feedback."""
     ensure_upload_folder()
     file = request.files.get("audio") or request.files.get("file")
     if file is None or file.filename == "":

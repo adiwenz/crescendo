@@ -24,6 +24,7 @@ if sys.version_info[0] < 3:
 
 
 def run_analyze(vocal: Path, reference: Path, tmp_out: Path):
+    """Invoke analyze_vocal.py for a pair and write results to a temp JSON."""
     cmd = [
         "python3",
         str(ROOT / "vocal_analyzer" / "analyze_vocal.py"),
@@ -50,6 +51,7 @@ def run_analyze(vocal: Path, reference: Path, tmp_out: Path):
 
 
 def load_existing(path: Path):
+    """Load existing multi-run JSON or wrap a legacy single-run format."""
     if not path.exists():
         return {"runs": []}
     with open(path, "r") as f:
@@ -62,6 +64,7 @@ def load_existing(path: Path):
 
 
 def rel_to_dashboard(path: Path) -> str:
+    """Normalize audio path relative to the dashboard directory."""
     # Dashboard lives in vocal_analyzer/, so go up one to repo root then into audio_files
     try:
         return f"../audio_files/{path.name}"
@@ -70,6 +73,7 @@ def rel_to_dashboard(path: Path) -> str:
 
 
 def upsert_run(data: dict, take: str, run: dict, vocal_path: Path, ref_path: Path):
+    """Insert or replace a run entry keyed by take name."""
     run["take"] = take
     # normalize metadata paths relative to dashboard location (vocal_analyzer/)
     meta = run.get("metadata", {})
@@ -89,6 +93,7 @@ def upsert_run(data: dict, take: str, run: dict, vocal_path: Path, ref_path: Pat
 
 
 def parse_args():
+    """Parse CLI args for updating the combined analysis file."""
     ap = argparse.ArgumentParser(description="Update multi-take analysis_similarity.json")
     ap.add_argument("--vocal", required=True, help="Path to vocal WAV")
     ap.add_argument("--reference", required=True, help="Path to reference WAV")
@@ -104,6 +109,7 @@ def parse_args():
 
 
 def main():
+    """Run analyze_vocal and upsert its output into the shared JSON file."""
     global args_global
     args_global = parse_args()
     vocal = Path(args_global.vocal)

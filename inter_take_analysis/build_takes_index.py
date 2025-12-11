@@ -34,6 +34,7 @@ def compute_take_accuracy(csv_path: str, threshold_cents: float = 25.0) -> float
 
 
 def find_csv_files(takes_dir: str) -> List[str]:
+    """Return sorted list of .csv paths inside takes_dir; raises if dir missing."""
     if not os.path.isdir(takes_dir):
         raise FileNotFoundError(f"takes directory not found: {takes_dir}")
     csvs = [
@@ -46,6 +47,7 @@ def find_csv_files(takes_dir: str) -> List[str]:
 
 
 def build_index(takes_dir: str, threshold_cents: float) -> Tuple[list, list]:
+    """Compute labels and accuracy scores for all take CSVs in the directory."""
     csv_files = find_csv_files(takes_dir)
 
     labels = []
@@ -61,6 +63,7 @@ def build_index(takes_dir: str, threshold_cents: float) -> Tuple[list, list]:
 
 
 def main():
+    """CLI entrypoint: parse args, compute index, and write JSON summary."""
     parser = argparse.ArgumentParser(
         description="Build JSON index of vocal take accuracies from takes/ folder."
     )

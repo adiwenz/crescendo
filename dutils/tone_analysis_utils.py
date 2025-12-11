@@ -122,6 +122,7 @@ def _scale_to_1_10(value: float, vmin: float, vmax: float, invert: bool = False)
 
 
 def _safe_float(x) -> Optional[float]:
+    """Cast to float if finite; otherwise return None."""
     try:
         if x is None:
             return None
@@ -134,6 +135,7 @@ def _safe_float(x) -> Optional[float]:
 
 
 def _nan_mean_window(x: np.ndarray, center: int, half_win: int) -> float:
+    """Return mean over a window around center, ignoring NaNs."""
     lo = max(0, center - half_win)
     hi = min(len(x), center + half_win + 1)
     window = x[lo:hi]

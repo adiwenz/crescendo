@@ -109,6 +109,7 @@ def write_rows(rows: List[Dict[str, Any]], output_csv: str, fieldnames: List[str
 
 
 def main():
+    """CLI entrypoint: analyze input WAVs into a single notes CSV."""
     parser = argparse.ArgumentParser(
         description="Analyze vocal takes into notes and export cents stats to CSV."
     )

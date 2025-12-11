@@ -10,6 +10,7 @@ import pretty_midi
 
 
 def hz_to_midi_safe(f):
+    """Convert Hz array to MIDI numbers; returns NaN for non-positive inputs."""
     f = np.asarray(f)
     midi = np.full_like(f, np.nan, dtype=float)
     mask = f > 0
@@ -18,6 +19,7 @@ def hz_to_midi_safe(f):
 
 
 def cents_error(vocal_hz, ref_hz):
+    """Compute signed cents error between aligned vocal and reference Hz arrays."""
     vocal_hz = np.asarray(vocal_hz)
     ref_hz = np.asarray(ref_hz)
     err = np.full_like(vocal_hz, np.nan, dtype=float)
@@ -27,11 +29,13 @@ def cents_error(vocal_hz, ref_hz):
 
 
 def align_arrays(a, b):
+    """Trim both arrays to the length of the shorter one."""
     n = min(len(a), len(b))
     return a[:n], b[:n]
 
 
 def summarize_errors(cents, frame_duration, max_abs=None, ignore_short_ms=None):
+    """Summarize cents error array with thresholds and optional outlier gating."""
     valid = ~np.isnan(cents)
     if max_abs is not None and max_abs > 0:
         abs_ce = np.abs(cents)
@@ -102,6 +106,7 @@ def gate_frames(f0, rms, rms_gate_ratio=0.02, jump_gate_cents=200.0):
 
 
 def none_if_nan(x):
+    """Convert NaN to None while preserving floats; handles non-numeric gracefully."""
     try:
         return None if np.isnan(x) else float(x)
     except Exception:
