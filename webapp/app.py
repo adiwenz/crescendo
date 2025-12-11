@@ -88,19 +88,26 @@ def analyze():
             analysis_context={"duration": duration_seconds},
             return_pitch_contour=True,
         )
+        chatgpt_raw_text = chatgpt_feedback.raw_text
     except Exception as e:
         app.logger.exception("ChatGPT feedback call crashed: %s", e)
         chatgpt_feedback = get_chatgpt_feedback(audio_path=save_path, mock=True)
         chatgpt_feedback.error = str(e)
+        chatgpt_raw_text = chatgpt_feedback.raw_text
     elapsed_gpt = time.time() - start_gpt
     print(f"chatgpt call took {elapsed_gpt:.2f}s")
 
     chatgpt_error = chatgpt_feedback.error
     if chatgpt_error:
         app.logger.error("ChatGPT feedback error: %s", chatgpt_error)
+        if chatgpt_raw_text:
+            # Log the raw text returned by ChatGPT to diagnose JSON parsing issues.
+            app.logger.error("ChatGPT raw response: %s", chatgpt_raw_text)
         # fall back to mock feedback so UI still renders
         fallback = get_chatgpt_feedback(audio_path=save_path, mock=True)
         fallback.error = chatgpt_error
+        # Preserve the raw response that caused the failure for downstream debugging.
+        fallback.raw_text = chatgpt_raw_text or fallback.raw_text
         chatgpt_feedback = fallback
     metrics = chatgpt_feedback.metrics or {}
     overall_score = metrics.get("overall_score", {}).get("score") or 98.0
@@ -118,6 +125,7 @@ def analyze():
             "duration": duration_seconds,
         },
         "chatgpt_feedback": chatgpt_feedback.to_dict(),
+        **({"chatgpt_raw_response": chatgpt_raw_text} if chatgpt_error and chatgpt_raw_text else {}),
         **({"chatgpt_error": chatgpt_error} if chatgpt_error else {}),
     }
     return jsonify(response)

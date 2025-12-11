@@ -2,714 +2,792 @@
 <html>
 
 <head>
-    <meta charset="UTF-8" />
-    <title>Vocal Take Comparison – Melodyne-Style View</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #020617;
-            color: #e5e7eb;
-            margin: 0;
-            padding: 0;
-        }
+  <meta charset="UTF-8" />
+  <title>Vocal Analyzer – Melodyne Style</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #020617;
+      --panel: radial-gradient(circle at top left, #0f172a 0, #020617 60%);
+      --card: radial-gradient(circle at top left, #111827 0, #0a0f1c 60%);
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent2: #fbbf24;
+      --border: #1f2937;
+      --danger: #ef4444;
+      --success: #22c55e;
+    }
 
-        .page {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px 16px 40px;
-        }
+    * {
+      box-sizing: border-box;
+    }
 
-        h1 {
-            font-size: 24px;
-            margin-bottom: 6px;
-        }
+    body {
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+    }
 
-        h2 {
-            font-size: 18px;
-            margin: 22px 0 8px;
-        }
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px 16px 36px;
+    }
 
-        p {
-            margin-top: 4px;
-            color: #9ca3af;
-        }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 6px;
+    }
 
-        .controls {
-            margin-top: 16px;
-            padding: 12px 16px;
-            border-radius: 14px;
-            border: 1px solid #1f2937;
-            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
-        }
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
 
-        .controls-section h3 {
-            margin: 0 0 6px;
-            font-size: 15px;
-            color: #e5e7eb;
-        }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
 
-        input[type="file"] {
-            margin-top: 8px;
-            font-size: 13px;
-        }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
+    }
 
-        button {
-            border-radius: 999px;
-            border: 1px solid #374151;
-            background: #020617;
-            color: #e5e7eb;
-            font-size: 13px;
-            padding: 6px 14px;
-            cursor: pointer;
-        }
+    .panel h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      color: var(--text);
+    }
 
-        button.primary {
-            background: #4f46e5;
-            border-color: #6366f1;
-        }
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 6px;
+    }
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: default;
-        }
+    input[type="file"] {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--text);
+    }
 
-        .status-text {
-            font-size: 12px;
-            color: #9ca3af;
-            margin-top: 6px;
-        }
+    button {
+      border-radius: 999px;
+      border: 1px solid #2d3748;
+      background: #0b1220;
+      color: var(--text);
+      font-size: 13px;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
 
-        .error-text {
-            font-size: 13px;
-            color: #f97373;
-            margin-top: 8px;
-        }
+    button.primary {
+      background: linear-gradient(135deg, #4f46e5, #38bdf8);
+      border-color: #4f46e5;
+    }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
-            margin-top: 16px;
-        }
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
 
-        .card {
-            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
-            border-radius: 14px;
-            border: 1px solid #1f2937;
-            padding: 14px 16px;
-            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
-        }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
 
-        .card h3 {
-            margin: 0 0 6px;
-            font-size: 15px;
-            color: #e5e7eb;
-        }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+    }
 
-        .big-score {
-            font-size: 34px;
-            font-weight: 600;
-            letter-spacing: 0.03em;
-        }
+    .card h4 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      color: var(--text);
+    }
 
-        .score-label {
-            font-size: 13px;
-            color: #9ca3af;
-        }
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
 
-        audio {
-            width: 100%;
-            margin-top: 8px;
-        }
+    .big-score {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
 
-        #graph-wrapper {
-            width: 100%;
-            overflow-x: auto;
-            border-radius: 12px;
-            border: 1px solid #1f2937;
-            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
-            padding: 10px;
-            box-sizing: border-box;
-            margin-top: 10px;
-        }
+    .score-label {
+      font-size: 12px;
+      color: var(--muted);
+    }
 
-        #graph-container {
-            width: 2200px;
-        }
+    .metric-text {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
 
-        canvas {
-            width: 100% !important;
-            height: 420px !important;
-            background: #020617;
-            border-radius: 12px;
-        }
+    #graph-wrapper {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card);
+      padding: 12px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+    }
 
-        .toggle-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 6px;
-        }
+    #graph-container {
+      width: 100%;
+      overflow-x: auto;
+    }
 
-        .toggle-row button {
-            border-radius: 999px;
-            border: 1px solid #374151;
-            background: #020617;
-            color: #e5e7eb;
-            font-size: 12px;
-            padding: 4px 12px;
-            cursor: pointer;
-        }
+    canvas {
+      width: 100% !important;
+      min-width: 900px;
+      height: 440px !important;
+      background: #0b1220;
+      border-radius: 12px;
+    }
 
-        .toggle-row button.active {
-            background: #4f46e5;
-            border-color: #6366f1;
-        }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 6px;
-        }
+    .toggle-row button {
+      border-radius: 999px;
+      border: 1px solid #2d3748;
+      background: #0b1220;
+      color: var(--text);
+      font-size: 12px;
+      padding: 5px 12px;
+    }
 
-        th,
-        td {
-            padding: 6px 6px;
-            border-bottom: 1px solid #111827;
-            text-align: left;
-        }
+    .toggle-row button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0b1220;
+    }
 
-        th {
-            font-weight: 500;
-            color: #9ca3af;
-        }
+    .legend {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
 
-        tr:last-child td {
-            border-bottom: none;
-        }
+    .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
 
-        .good {
-            color: #22c55e;
-        }
+    .error-text {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 6px;
+      min-height: 18px;
+    }
 
-        .warn {
-            color: #eab308;
-        }
-
-        .bad {
-            color: #ef4444;
-        }
-    </style>
+    .hidden {
+      display: none !important;
+    }
+  </style>
 </head>
 
 <body>
-    <div class="page">
-        <h1>Vocal Take Comparison – Melodyne-Style View</h1>
-        <p>
-            Record or upload a take, send it to the analysis server, and visualize the results.
-            The JSON from the backend populates this dashboard.
-        </p>
+  <div class="page">
+    <h1>Vocal Analyzer – Melodyne Style</h1>
+    <p>Record or upload a take, optionally add a reference, then visualize pitch accuracy with a Melodyne-style trace.</p>
 
-        <div class="controls">
-            <div class="controls-section">
-                <h3>1. Upload an audio file</h3>
-                <input type="file" id="fileInput" accept="audio/*" />
-                <div class="status-text" id="fileStatus">No file selected.</div>
-            </div>
-
-            <div class="controls-section">
-                <h3>2. Or record from your mic</h3>
-                <button id="recordBtn">Start Recording</button>
-                <button id="stopBtn" disabled>Stop</button>
-                <div class="status-text" id="recordStatus">Not recording.</div>
-                <audio id="recordedAudio" controls style="margin-top:8px; display:none;"></audio>
-            </div>
-
-            <div class="controls-section">
-                <h3>3. Send to analysis (Flask)</h3>
-                <button id="analyzeBtn" class="primary">Analyze</button>
-                <div class="status-text" id="analyzeStatus">Waiting to analyze.</div>
-                <div class="error-text" id="errorText"></div>
-            </div>
-        </div>
-
-        <div class="grid">
-            <div class="card">
-                <h3 id="take1Label">Take 1</h3>
-                <audio id="audio1" controls>
-                    <source id="audio1Source" src="" type="audio/wav">
-                    Your browser does not support the audio element.
-                </audio>
-                <div style="margin-top:8px;">
-                    <div class="big-score" id="score1">--</div>
-                    <div class="score-label" id="score1Label"></div>
-                    <div style="margin-top:6px;font-size:12px;color:#9ca3af;">
-                        Mean error: <span id="mean1"></span>¢<br />
-                        RMS error: <span id="rms1"></span>¢<br />
-                        Duration: <span id="dur1"></span>s
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 id="take2Label">Take 2</h3>
-                <audio id="audio2" controls>
-                    <source id="audio2Source" src="" type="audio/wav">
-                    Your browser does not support the audio element.
-                </audio>
-                <div style="margin-top:8px;">
-                    <div class="big-score" id="score2">--</div>
-                    <div class="score-label" id="score2Label"></div>
-                    <div style="margin-top:6px;font-size:12px;color:#9ca3af;">
-                        Mean error: <span id="mean2"></span>¢<br />
-                        RMS error: <span id="rms2"></span>¢<br />
-                        Duration: <span id="dur2"></span>s
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <h2>Melodyne-Style Pitch View</h2>
-        <div class="card">
-            <div class="toggle-row">
-                <span style="font-size:13px;color:#9ca3af;">Showing:</span>
-                <button id="btnTake1" class="active">Take 1</button>
-                <button id="btnTake2">Take 2</button>
-                <span style="font-size:11px;color:#6b7280;">
-                    Line = your pitch over time. Colored points = accuracy. Vertical line = playhead.
-                </span>
-            </div>
-            <div id="graph-wrapper">
-                <div id="graph-container">
-                    <canvas id="pitchChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <h2 style="margin-top:18px;">AI Feedback</h2>
-        <div class="card">
-            <div id="gptError" class="error-text" style="margin-top:0;"></div>
-            <div id="gptSummary" style="font-size:14px;color:#e5e7eb;margin-top:4px;"></div>
-            <div id="gptModel" style="font-size:12px;color:#9ca3af;margin-top:6px;"></div>
-            <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;" id="gptMetrics"></div>
-            <div style="margin-top:10px;">
-                <div style="font-size:13px;color:#9ca3af;margin-bottom:6px;">Recommendations</div>
-                <ul id="gptRecs" style="margin:0;padding-left:18px;color:#e5e7eb;font-size:13px;line-height:1.5;"></ul>
-            </div>
-        </div>
+    <div class="controls">
+      <div class="panel">
+        <h3>1. Upload vocal take</h3>
+        <input type="file" id="fileInput" accept="audio/*" />
+        <div class="status" id="fileStatus">No file selected.</div>
+      </div>
+      <div class="panel">
+        <h3>2. Record from mic</h3>
+        <button id="recordBtn">Start Recording</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <div class="status" id="recordStatus">Not recording.</div>
+        <audio id="recordedAudio" controls style="margin-top:8px; display:none;"></audio>
+      </div>
+      <div class="panel">
+        <h3>3. Optional reference upload</h3>
+        <input type="file" id="referenceInput" accept="audio/*" />
+        <div class="status" id="referenceStatus">No reference selected.</div>
+      </div>
+      <div class="panel">
+        <h3>4. Send to /analyze</h3>
+        <button id="analyzeBtn" class="primary">Analyze</button>
+        <div class="status" id="analyzeStatus">Waiting to analyze.</div>
+        <div class="error-text" id="errorText"></div>
+      </div>
     </div>
 
-    <script>
-        let audioContext;
-        let mediaRecorder;
-        let recordedChunks = [];
-        let recordedBlobUrl;
+    <div class="grid" style="margin-top:18px;">
+      <div class="card" id="vocalCard">
+        <h4 id="vocalLabel">Vocal Take</h4>
+        <audio id="audioVocal" controls>
+          <source id="audioVocalSource" src="" type="audio/wav">
+          Your browser does not support the audio element.
+        </audio>
+        <div style="margin-top:10px;">
+          <div class="big-score" id="vocalScore">--</div>
+          <div class="score-label" id="vocalScoreLabel"></div>
+          <div class="metric-text">
+            Mean error: <span id="vocalMean"></span>¢<br />
+            RMS error: <span id="vocalRms"></span>¢<br />
+            Duration: <span id="vocalDur"></span>s
+          </div>
+        </div>
+      </div>
 
-        const fileInput = document.getElementById('fileInput');
-        const fileStatus = document.getElementById('fileStatus');
-        const recordBtn = document.getElementById('recordBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const recordStatus = document.getElementById('recordStatus');
-        const recordedAudio = document.getElementById('recordedAudio');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const analyzeStatus = document.getElementById('analyzeStatus');
-        const errorText = document.getElementById('errorText');
+      <div class="card hidden" id="referenceCard">
+        <h4 id="referenceLabel">Reference Take</h4>
+        <audio id="audioRef" controls>
+          <source id="audioRefSource" src="" type="audio/wav">
+          Your browser does not support the audio element.
+        </audio>
+        <div style="margin-top:10px;">
+          <div class="big-score" id="referenceScore">--</div>
+          <div class="score-label" id="referenceScoreLabel"></div>
+          <div class="metric-text">
+            Mean error: <span id="referenceMean"></span>¢<br />
+            RMS error: <span id="referenceRms"></span>¢<br />
+            Duration: <span id="referenceDur"></span>s
+          </div>
+        </div>
+      </div>
+    </div>
 
-        const audio1Source = document.getElementById('audio1Source');
-        const audio1 = document.getElementById('audio1');
-        const score1 = document.getElementById('score1');
-        const score1Label = document.getElementById('score1Label');
-        const mean1 = document.getElementById('mean1');
-        const rms1 = document.getElementById('rms1');
-        const dur1 = document.getElementById('dur1');
-        const take1Label = document.getElementById('take1Label');
+    <h2 style="font-size:18px;margin:20px 0 10px;">Melodyne-Style Pitch View</h2>
+    <div class="card">
+      <div class="toggle-row">
+        <span>Showing:</span>
+        <button id="toggleVocal" class="active">Vocal</button>
+        <button id="toggleReference" class="hidden">Reference</button>
+        <span style="font-size:11px;">Line = pitch contour · Colored points = cents error</span>
+      </div>
+      <div id="graph-wrapper">
+        <div id="graph-container">
+          <canvas id="pitchChart"></canvas>
+        </div>
+        <div class="legend">
+          <div>
+            <span class="swatch" style="background:#22c55e;"></span>±20¢
+            <span class="swatch" style="background:#eab308; margin-left:10px;"></span>20–40¢
+            <span class="swatch" style="background:#ef4444; margin-left:10px;"></span>&gt;40¢
+          </div>
+        </div>
+      </div>
+    </div>
 
-        const audio2Source = document.getElementById('audio2Source');
-        const audio2 = document.getElementById('audio2');
-        const score2 = document.getElementById('score2');
-        const score2Label = document.getElementById('score2Label');
-        const mean2 = document.getElementById('mean2');
-        const rms2 = document.getElementById('rms2');
-        const dur2 = document.getElementById('dur2');
-        const take2Label = document.getElementById('take2Label');
+    <h2 style="font-size:18px;margin:18px 0 10px;">AI Feedback</h2>
+    <div class="card">
+      <div id="gptError" class="error-text" style="margin-top:0;"></div>
+      <div id="gptSummary" style="font-size:14px;color:var(--text);margin-top:4px;"></div>
+      <div id="gptModel" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;" id="gptMetrics"></div>
+      <div style="margin-top:10px;">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">Recommendations</div>
+        <ul id="gptRecs" style="margin:0;padding-left:18px;color:var(--text);font-size:13px;line-height:1.5;"></ul>
+      </div>
+    </div>
+  </div>
 
-        const btnTake1 = document.getElementById('btnTake1');
-        const btnTake2 = document.getElementById('btnTake2');
-        const gptSummary = document.getElementById('gptSummary');
-        const gptModel = document.getElementById('gptModel');
-        const gptRecs = document.getElementById('gptRecs');
-        const gptMetrics = document.getElementById('gptMetrics');
-        const gptError = document.getElementById('gptError');
+  <script>
+    let audioContext;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let recordedBlobUrl;
 
-        let pitchChart;
-        let chartData = {
-            datasets: [
-                {
-                    label: 'Take 1 Melody (MIDI)',
-                    data: [],
-                    borderColor: '#60a5fa',
-                    pointBackgroundColor: [],
-                    pointRadius: 3,
-                    showLine: true,
-                    fill: false,
-                    hidden: false,
-                    parsing: false,
-                    spanGaps: true,
-                },
-                {
-                    label: 'Take 2 Melody (MIDI)',
-                    data: [],
-                    borderColor: '#fbbf24',
-                    pointBackgroundColor: [],
-                    pointRadius: 3,
-                    showLine: true,
-                    fill: false,
-                    hidden: true,
-                    parsing: false,
-                    spanGaps: true,
+    const fileInput = document.getElementById('fileInput');
+    const fileStatus = document.getElementById('fileStatus');
+    const referenceInput = document.getElementById('referenceInput');
+    const referenceStatus = document.getElementById('referenceStatus');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const recordStatus = document.getElementById('recordStatus');
+    const recordedAudio = document.getElementById('recordedAudio');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const analyzeStatus = document.getElementById('analyzeStatus');
+    const errorText = document.getElementById('errorText');
+
+    const audioVocal = document.getElementById('audioVocal');
+    const audioVocalSource = document.getElementById('audioVocalSource');
+    const vocalLabel = document.getElementById('vocalLabel');
+    const vocalScore = document.getElementById('vocalScore');
+    const vocalScoreLabel = document.getElementById('vocalScoreLabel');
+    const vocalMean = document.getElementById('vocalMean');
+    const vocalRms = document.getElementById('vocalRms');
+    const vocalDur = document.getElementById('vocalDur');
+
+    const referenceCard = document.getElementById('referenceCard');
+    const audioRef = document.getElementById('audioRef');
+    const audioRefSource = document.getElementById('audioRefSource');
+    const referenceLabel = document.getElementById('referenceLabel');
+    const referenceScore = document.getElementById('referenceScore');
+    const referenceScoreLabel = document.getElementById('referenceScoreLabel');
+    const referenceMean = document.getElementById('referenceMean');
+    const referenceRms = document.getElementById('referenceRms');
+    const referenceDur = document.getElementById('referenceDur');
+
+    const toggleVocal = document.getElementById('toggleVocal');
+    const toggleReference = document.getElementById('toggleReference');
+
+    const gptSummary = document.getElementById('gptSummary');
+    const gptModel = document.getElementById('gptModel');
+    const gptRecs = document.getElementById('gptRecs');
+    const gptMetrics = document.getElementById('gptMetrics');
+    const gptError = document.getElementById('gptError');
+
+    let pitchChart;
+    const chartData = {
+      datasets: [
+        {
+          label: 'Vocal Pitch',
+          data: [],
+          borderColor: '#38bdf8',
+          pointBackgroundColor: [],
+          pointRadius: 3,
+          showLine: true,
+          fill: false,
+          parsing: false,
+          spanGaps: true,
+        },
+        {
+          label: 'Reference Pitch',
+          data: [],
+          borderColor: '#fbbf24',
+          pointBackgroundColor: [],
+          pointRadius: 3,
+          showLine: true,
+          fill: false,
+          parsing: false,
+          spanGaps: true,
+          hidden: true,
+        }
+      ],
+    };
+
+    function initChart() {
+      const ctx = document.getElementById('pitchChart').getContext('2d');
+      pitchChart = new Chart(ctx, {
+        type: 'scatter',
+        data: chartData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Time (s)', color: '#9ca3af' },
+              grid: { color: '#1f2937' },
+              ticks: { color: '#9ca3af' },
+            },
+            y: {
+              type: 'linear',
+              title: { display: true, text: 'MIDI', color: '#9ca3af' },
+              grid: { color: '#1f2937' },
+              ticks: { color: '#9ca3af' },
+            },
+          },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb' } },
+            tooltip: {
+              enabled: true,
+              mode: 'nearest',
+              intersect: false,
+              callbacks: {
+                label(context) {
+                  const midi = context.parsed.y?.toFixed(2) ?? '--';
+                  const time = context.parsed.x?.toFixed(2) ?? '--';
+                  return `Time: ${time}s, MIDI: ${midi}`;
                 }
-            ],
+              }
+            }
+          },
+          interaction: { mode: 'nearest', intersect: false },
+          animation: false,
+        }
+      });
+    }
+
+    function resetUI() {
+      vocalLabel.textContent = 'Vocal Take';
+      vocalScore.textContent = '--';
+      vocalScoreLabel.textContent = '';
+      vocalMean.textContent = '';
+      vocalRms.textContent = '';
+      vocalDur.textContent = '';
+      audioVocalSource.src = '';
+      audioVocal.load();
+
+      referenceLabel.textContent = 'Reference Take';
+      referenceScore.textContent = '--';
+      referenceScoreLabel.textContent = '';
+      referenceMean.textContent = '';
+      referenceRms.textContent = '';
+      referenceDur.textContent = '';
+      audioRefSource.src = '';
+      audioRef.load();
+      referenceCard.classList.add('hidden');
+      toggleReference.classList.add('hidden');
+
+      chartData.datasets[0].data = [];
+      chartData.datasets[0].pointBackgroundColor = [];
+      chartData.datasets[1].data = [];
+      chartData.datasets[1].pointBackgroundColor = [];
+      chartData.datasets[0].hidden = false;
+      chartData.datasets[1].hidden = true;
+      syncToggleButtons();
+      if (pitchChart) pitchChart.update();
+      renderChatGPT(null, null);
+    }
+
+    function hzToMidi(hz) {
+      if (!hz || hz <= 0) return null;
+      return 69 + 12 * Math.log2(hz / 440);
+    }
+
+    function centsColor(cents) {
+      if (cents === null || cents === undefined) return '#6b7280';
+      const abs = Math.abs(cents);
+      if (abs <= 20) return '#22c55e';
+      if (abs <= 40) return '#eab308';
+      return '#ef4444';
+    }
+
+    function buildContour(frames = []) {
+      const points = [];
+      const colors = [];
+      for (const f of frames) {
+        let midi = f.midi;
+        if (midi === undefined || midi === null) {
+          midi = hzToMidi(f.pitch);
+        }
+        if (midi === null || midi === undefined) continue;
+        points.push({ x: f.time, y: midi });
+        colors.push(centsColor(f.cents_error));
+      }
+      return { points, colors };
+    }
+
+    fileInput.addEventListener('change', () => {
+      errorText.textContent = '';
+      if (fileInput.files.length > 0) {
+        fileStatus.textContent = `Selected: ${fileInput.files[0].name}`;
+        const fileURL = URL.createObjectURL(fileInput.files[0]);
+        audioVocalSource.src = fileURL;
+        audioVocal.load();
+        vocalLabel.textContent = fileInput.files[0].name;
+      } else {
+        fileStatus.textContent = 'No file selected.';
+        audioVocalSource.src = '';
+        audioVocal.load();
+        vocalLabel.textContent = 'Vocal Take';
+      }
+    });
+
+    referenceInput.addEventListener('change', () => {
+      errorText.textContent = '';
+      if (referenceInput.files.length > 0) {
+        referenceStatus.textContent = `Reference: ${referenceInput.files[0].name}`;
+      } else {
+        referenceStatus.textContent = 'No reference selected.';
+      }
+    });
+
+    recordBtn.addEventListener('click', async () => {
+      errorText.textContent = '';
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        errorText.textContent = 'Your browser does not support recording.';
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new AudioContext();
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
         };
-
-        function initChart() {
-            const ctx = document.getElementById('pitchChart').getContext('2d');
-            pitchChart = new Chart(ctx, {
-                type: 'scatter',
-                data: chartData,
-                options: {
-                    responsive: false,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            title: {
-                                display: true,
-                                text: 'Time (s)',
-                                color: '#9ca3af',
-                            },
-                            grid: { color: '#1f2937' },
-                            ticks: { color: '#9ca3af' },
-                        },
-                        y: {
-                            type: 'linear',
-                            title: {
-                                display: true,
-                                text: 'MIDI Note',
-                                color: '#9ca3af',
-                            },
-                            grid: { color: '#1f2937' },
-                            ticks: { color: '#9ca3af' },
-                        },
-                    },
-                    plugins: {
-                        legend: {
-                            labels: { color: '#e5e7eb' },
-                        },
-                        tooltip: {
-                            enabled: true,
-                            mode: 'nearest',
-                            intersect: false,
-                            callbacks: {
-                                label: function (context) {
-                                    const midi = context.parsed.y?.toFixed(2) ?? '--';
-                                    const time = context.parsed.x?.toFixed(2) ?? '--';
-                                    return `Time: ${time}s, MIDI: ${midi}`;
-                                }
-                            }
-                        }
-                    },
-                    interaction: { mode: 'nearest', intersect: false },
-                    animation: false,
-                }
-            });
-        }
-
-        function resetUI() {
-            score1.textContent = '--';
-            score1Label.textContent = '';
-            mean1.textContent = '';
-            rms1.textContent = '';
-            dur1.textContent = '';
-            take1Label.textContent = 'Take 1';
-            audio1Source.src = '';
-            audio1.load();
-
-            score2.textContent = '--';
-            score2Label.textContent = '';
-            mean2.textContent = '';
-            rms2.textContent = '';
-            dur2.textContent = '';
-            take2Label.textContent = 'Take 2';
-            audio2Source.src = '';
-            audio2.load();
-
-            chartData.datasets[0].data = [];
-            chartData.datasets[0].pointBackgroundColor = [];
-            chartData.datasets[1].data = [];
-            chartData.datasets[1].pointBackgroundColor = [];
-            chartData.datasets[0].hidden = false;
-            chartData.datasets[1].hidden = true;
-            if (pitchChart) pitchChart.update();
-            renderChatGPT(null, null);
-        }
-
-        function hzToMidi(hz) {
-            if (!hz || hz <= 0) return null;
-            return 69 + 12 * Math.log2(hz / 440);
-        }
-
-        function centsFromNearestMidi(hz) {
-            const midi = hzToMidi(hz);
-            if (midi === null) return { midi: null, cents: null };
-            const nearestMidi = Math.round(midi);
-            const nearestHz = 440 * Math.pow(2, (nearestMidi - 69) / 12);
-            const cents = 1200 * Math.log2(hz / nearestHz);
-            return { midi, cents };
-        }
-
-        function colorForCents(cents) {
-            if (cents === null) return '#6b7280';
-            const abs = Math.abs(cents);
-            if (abs <= 25) return '#22c55e'; // green
-            if (abs <= 50) return '#fbbf24'; // yellow
-            return '#ef4444'; // red
-        }
-
-        function buildContour(pitchData = []) {
-            const points = [];
-            const colors = [];
-            for (const frame of pitchData) {
-                const hz = frame.pitch;
-                if (!hz || hz <= 0) continue;
-                const { midi, cents } = centsFromNearestMidi(hz);
-                if (midi === null) continue;
-                points.push({ x: frame.time, y: midi });
-                colors.push(colorForCents(cents));
-            }
-            return { points, colors };
-        }
-
-        fileInput.addEventListener('change', () => {
-            errorText.textContent = '';
-            if (fileInput.files.length > 0) {
-                fileStatus.textContent = `Selected file: ${fileInput.files[0].name}`;
-                // Use this file for analysis and playback (Take 1)
-                const fileURL = URL.createObjectURL(fileInput.files[0]);
-                audio1Source.src = fileURL;
-                audio1.load();
-                take1Label.textContent = fileInput.files[0].name;
-            } else {
-                fileStatus.textContent = 'No file selected.';
-                audio1Source.src = '';
-                audio1.load();
-                take1Label.textContent = 'Take 1';
-            }
-        });
-
-        recordBtn.addEventListener('click', async () => {
-            errorText.textContent = '';
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                errorText.textContent = 'Your browser does not support recording.';
-                return;
-            }
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new AudioContext();
-                mediaRecorder = new MediaRecorder(stream);
-                recordedChunks = [];
-                mediaRecorder.ondataavailable = e => {
-                    if (e.data.size > 0) recordedChunks.push(e.data);
-                };
-                mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                    if (recordedBlobUrl) URL.revokeObjectURL(recordedBlobUrl);
-                    recordedBlobUrl = URL.createObjectURL(blob);
-                    recordedAudio.src = recordedBlobUrl;
-                    recordedAudio.style.display = 'block';
-                    take1Label.textContent = 'Recorded Take';
-                    audio1Source.src = recordedBlobUrl;
-                    audio1.load();
-                };
-                mediaRecorder.start();
-                recordBtn.disabled = true;
-                stopBtn.disabled = false;
-                recordStatus.textContent = 'Recording...';
-            } catch (err) {
-                errorText.textContent = 'Error accessing microphone: ' + err.message;
-            }
-        });
-
-        stopBtn.addEventListener('click', () => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                recordBtn.disabled = false;
-                stopBtn.disabled = true;
-                recordStatus.textContent = 'Recording stopped.';
-            }
-        });
-
-        analyzeBtn.addEventListener('click', async () => {
-            errorText.textContent = '';
-            analyzeStatus.textContent = 'Analyzing...';
-            analyzeBtn.disabled = true;
-
-            // Prepare form data
-            const formData = new FormData();
-            let audioFile;
-
-            if (fileInput.files.length > 0) {
-                audioFile = fileInput.files[0];
-            } else if (recordedAudio.src) {
-                // Convert recorded blob url to blob
-                try {
-                    const response = await fetch(recordedBlobUrl);
-                    audioFile = await response.blob();
-                    audioFile.name = 'recorded.webm';
-                } catch (err) {
-                    errorText.textContent = 'Error preparing recorded audio.';
-                    analyzeStatus.textContent = 'Waiting to analyze.';
-                    analyzeBtn.disabled = false;
-                    return;
-                }
-            } else {
-                errorText.textContent = 'No audio file or recording available for analysis.';
-                analyzeStatus.textContent = 'Waiting to analyze.';
-                analyzeBtn.disabled = false;
-                return;
-            }
-            formData.append('audio', audioFile);
-
-            try {
-                const response = await fetch('/analyze', {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.statusText}`);
-                }
-                const data = await response.json();
-                updateResults(data);
-                analyzeStatus.textContent = 'Analysis complete.';
-            } catch (err) {
-                errorText.textContent = 'Analysis failed: ' + err.message;
-                analyzeStatus.textContent = 'Waiting to analyze.';
-            }
-            analyzeBtn.disabled = false;
-        });
-
-        function updateResults(data) {
-            // Assume data has take1 and take2 with pitch data and scores
-            if (!data) return;
-
-            // Update Take 1 info
-            if (data.take1) {
-                take1Label.textContent = data.take1.name || 'Take 1';
-                score1.textContent = data.take1.score !== undefined ? data.take1.score.toFixed(2) : '--';
-                score1Label.textContent = data.take1.score_label || '';
-                mean1.textContent = data.take1.mean_error !== undefined ? data.take1.mean_error.toFixed(2) : '';
-                rms1.textContent = data.take1.rms_error !== undefined ? data.take1.rms_error.toFixed(2) : '';
-                dur1.textContent = data.take1.duration !== undefined ? data.take1.duration.toFixed(2) : '';
-                if (data.take1.audio_url) {
-                    audio1Source.src = data.take1.audio_url;
-                    audio1.load();
-                }
-                if (Array.isArray(data.take1.pitch_data)) {
-                    const contour = buildContour(data.take1.pitch_data);
-                    chartData.datasets[0].data = contour.points;
-                    chartData.datasets[0].pointBackgroundColor = contour.colors;
-                } else {
-                    chartData.datasets[0].data = [];
-                    chartData.datasets[0].pointBackgroundColor = [];
-                }
-            }
-
-            // Update Take 2 info
-            if (data.take2) {
-                take2Label.textContent = data.take2.name || 'Take 2';
-                score2.textContent = data.take2.score !== undefined ? data.take2.score.toFixed(2) : '--';
-                score2Label.textContent = data.take2.score_label || '';
-                mean2.textContent = data.take2.mean_error !== undefined ? data.take2.mean_error.toFixed(2) : '';
-                rms2.textContent = data.take2.rms_error !== undefined ? data.take2.rms_error.toFixed(2) : '';
-                dur2.textContent = data.take2.duration !== undefined ? data.take2.duration.toFixed(2) : '';
-                if (data.take2.audio_url) {
-                    audio2Source.src = data.take2.audio_url;
-                    audio2.load();
-                }
-                if (Array.isArray(data.take2.pitch_data)) {
-                    const contour = buildContour(data.take2.pitch_data);
-                    chartData.datasets[1].data = contour.points;
-                    chartData.datasets[1].pointBackgroundColor = contour.colors;
-                } else {
-                    chartData.datasets[1].data = [];
-                    chartData.datasets[1].pointBackgroundColor = [];
-                }
-            }
-
-            renderChatGPT(data.chatgpt_feedback, data.chatgpt_error);
-            if (pitchChart) pitchChart.update();
-        }
-
-        function renderChatGPT(feedback, error) {
-            gptError.textContent = error || '';
-            if (!feedback) {
-                gptSummary.textContent = '';
-                gptModel.textContent = '';
-                gptRecs.innerHTML = '';
-                gptMetrics.innerHTML = '';
-                return;
-            }
-            gptSummary.textContent = feedback.summary || '';
-            const modelText = [feedback.model, feedback.source].filter(Boolean).join(' • ');
-            gptModel.textContent = modelText ? `Model: ${modelText}` : '';
-
-            const recs = Array.isArray(feedback.recommendations) ? feedback.recommendations : [];
-            gptRecs.innerHTML = recs.map(r => `<li>${r}</li>`).join('');
-
-            const metrics = feedback.metrics || {};
-            const metricCards = Object.keys(metrics).map(key => {
-                const m = metrics[key] || {};
-                const score = m.score !== undefined && m.score !== null ? `${m.score}` : '—';
-                const expl = m.explanation || '';
-                const imp = m.improvement_recommendation || '';
-                return `
-                    <div class="card" style="background:radial-gradient(circle at top left, #0b1220 0, #0a0f1a 55%);padding:10px;">
-                        <div style="font-size:13px;color:#9ca3af;margin-bottom:4px;">${key}</div>
-                        <div style="font-size:22px;font-weight:600;color:#e5e7eb;">${score}</div>
-                        ${expl ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px;">${expl}</div>` : ''}
-                        ${imp ? `<div style="font-size:12px;color:#22c55e;margin-top:4px;">Improve: ${imp}</div>` : ''}
-                    </div>
-                `;
-            }).join('');
-            gptMetrics.innerHTML = metricCards;
-        }
-
-        btnTake1.addEventListener('click', () => {
-            chartData.datasets[0].hidden = false;
-            chartData.datasets[1].hidden = true;
-            btnTake1.classList.add('active');
-            btnTake2.classList.remove('active');
-            if (pitchChart) pitchChart.update();
-        });
-
-        btnTake2.addEventListener('click', () => {
-            chartData.datasets[0].hidden = true;
-            chartData.datasets[1].hidden = false;
-            btnTake1.classList.remove('active');
-            btnTake2.classList.add('active');
-            if (pitchChart) pitchChart.update();
-        });
-
-        window.onload = () => {
-            resetUI();
-            initChart();
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          if (recordedBlobUrl) URL.revokeObjectURL(recordedBlobUrl);
+          recordedBlobUrl = URL.createObjectURL(blob);
+          recordedAudio.src = recordedBlobUrl;
+          recordedAudio.style.display = 'block';
+          vocalLabel.textContent = 'Recorded Take';
+          audioVocalSource.src = recordedBlobUrl;
+          audioVocal.load();
         };
-    </script>
+        mediaRecorder.start();
+        recordBtn.disabled = true;
+        stopBtn.disabled = false;
+        recordStatus.textContent = 'Recording...';
+      } catch (err) {
+        errorText.textContent = 'Error accessing microphone: ' + err.message;
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        recordStatus.textContent = 'Recording stopped.';
+      }
+    });
+
+    analyzeBtn.addEventListener('click', async () => {
+      errorText.textContent = '';
+      analyzeStatus.textContent = 'Analyzing...';
+      analyzeBtn.disabled = true;
+
+      const formData = new FormData();
+      let audioFile;
+
+      if (fileInput.files.length > 0) {
+        audioFile = fileInput.files[0];
+      } else if (recordedAudio.src) {
+        try {
+          const response = await fetch(recordedBlobUrl);
+          audioFile = await response.blob();
+          audioFile.name = 'recorded.webm';
+        } catch (err) {
+          errorText.textContent = 'Error preparing recorded audio.';
+          analyzeStatus.textContent = 'Waiting to analyze.';
+          analyzeBtn.disabled = false;
+          return;
+        }
+      } else {
+        errorText.textContent = 'No audio file or recording available for analysis.';
+        analyzeStatus.textContent = 'Waiting to analyze.';
+        analyzeBtn.disabled = false;
+        return;
+      }
+
+      formData.append('audio', audioFile);
+      if (referenceInput.files.length > 0) {
+        formData.append('reference', referenceInput.files[0]);
+      }
+
+      try {
+        const response = await fetch('/analyze', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.statusText}`);
+        }
+        const data = await response.json();
+        updateResults(data);
+        analyzeStatus.textContent = 'Analysis complete.';
+      } catch (err) {
+        errorText.textContent = 'Analysis failed: ' + err.message;
+        analyzeStatus.textContent = 'Waiting to analyze.';
+      }
+      analyzeBtn.disabled = false;
+    });
+
+    function fillTake(el, takeData) {
+      const { labelEl, scoreEl, scoreLabelEl, meanEl, rmsEl, durEl, audioSourceEl, audioEl } = el;
+      if (!takeData) {
+        labelEl.textContent = '—';
+        scoreEl.textContent = '--';
+        scoreLabelEl.textContent = '';
+        meanEl.textContent = '';
+        rmsEl.textContent = '';
+        durEl.textContent = '';
+        audioSourceEl.src = '';
+        audioEl.load();
+        return;
+      }
+      labelEl.textContent = takeData.label || takeData.name || 'Take';
+      const score = takeData.accuracy_score ?? takeData.score;
+      scoreEl.textContent = Number.isFinite(score) ? Number(score).toFixed(2) : '--';
+      scoreLabelEl.textContent = takeData.score_label || '';
+      const mean = takeData.overall_mean_cents_error ?? takeData.mean_error;
+      const rms = takeData.overall_rms_cents_error ?? takeData.rms_error;
+      const dur = takeData.duration_seconds ?? takeData.duration;
+      meanEl.textContent = Number.isFinite(mean) ? Number(mean).toFixed(2) : '';
+      rmsEl.textContent = Number.isFinite(rms) ? Number(rms).toFixed(2) : '';
+      durEl.textContent = Number.isFinite(dur) ? Number(dur).toFixed(2) : '';
+      if (takeData.audio_url) {
+        audioSourceEl.src = takeData.audio_url;
+        audioEl.load();
+      }
+    }
+
+    function updateResults(data) {
+      if (!data) return;
+
+      const vocalTake = data.vocal_take || data.take1 || null;
+      const refTake = data.reference_take || data.take2 || null;
+
+      fillTake({
+        labelEl: vocalLabel,
+        scoreEl: vocalScore,
+        scoreLabelEl: vocalScoreLabel,
+        meanEl: vocalMean,
+        rmsEl: vocalRms,
+        durEl: vocalDur,
+        audioSourceEl: audioVocalSource,
+        audioEl: audioVocal,
+      }, vocalTake);
+
+      if (refTake) {
+        referenceCard.classList.remove('hidden');
+        toggleReference.classList.remove('hidden');
+        fillTake({
+          labelEl: referenceLabel,
+          scoreEl: referenceScore,
+          scoreLabelEl: referenceScoreLabel,
+          meanEl: referenceMean,
+          rmsEl: referenceRms,
+          durEl: referenceDur,
+          audioSourceEl: audioRefSource,
+          audioEl: audioRef,
+        }, refTake);
+      } else {
+        referenceCard.classList.add('hidden');
+        toggleReference.classList.add('hidden');
+      }
+
+      // Chart data
+      if (vocalTake && Array.isArray(vocalTake.frames)) {
+        const contour = buildContour(vocalTake.frames);
+        chartData.datasets[0].data = contour.points;
+        chartData.datasets[0].pointBackgroundColor = contour.colors;
+      } else if (vocalTake && Array.isArray(vocalTake.pitch_data)) {
+        const contour = buildContour(vocalTake.pitch_data);
+        chartData.datasets[0].data = contour.points;
+        chartData.datasets[0].pointBackgroundColor = contour.colors;
+      } else {
+        chartData.datasets[0].data = [];
+        chartData.datasets[0].pointBackgroundColor = [];
+      }
+
+      if (refTake && (Array.isArray(refTake.frames) || Array.isArray(refTake.pitch_data))) {
+        const contour = buildContour(refTake.frames || refTake.pitch_data || []);
+        chartData.datasets[1].data = contour.points;
+        chartData.datasets[1].pointBackgroundColor = contour.colors;
+        chartData.datasets[1].hidden = false;
+        toggleReference.classList.remove('hidden');
+      } else {
+        chartData.datasets[1].data = [];
+        chartData.datasets[1].pointBackgroundColor = [];
+        chartData.datasets[1].hidden = true;
+        toggleReference.classList.add('hidden');
+      }
+
+      chartData.datasets[0].hidden = false;
+      chartData.datasets[1].hidden = refTake ? false : true;
+      syncToggleButtons();
+
+      renderChatGPT(data.chatgpt_feedback, data.chatgpt_error);
+      if (pitchChart) pitchChart.update();
+    }
+
+    function renderChatGPT(feedback, error) {
+      gptError.textContent = error || '';
+      if (!feedback) {
+        gptSummary.textContent = '';
+        gptModel.textContent = '';
+        gptRecs.innerHTML = '';
+        gptMetrics.innerHTML = '';
+        return;
+      }
+      gptSummary.textContent = feedback.summary || '';
+      const modelText = [feedback.model, feedback.source].filter(Boolean).join(' • ');
+      gptModel.textContent = modelText ? `Model: ${modelText}` : '';
+
+      const recs = Array.isArray(feedback.recommendations) ? feedback.recommendations : [];
+      gptRecs.innerHTML = recs.map(r => `<li>${r}</li>`).join('');
+
+      const metrics = feedback.metrics || {};
+      const metricCards = Object.keys(metrics).map(key => {
+        const m = metrics[key] || {};
+        const score = m.score !== undefined && m.score !== null ? `${m.score}` : '—';
+        const expl = m.explanation || '';
+        const imp = m.improvement_recommendation || '';
+        return `
+          <div class="card" style="background:${'radial-gradient(circle at top left, #0b1220 0, #0a0f1a 60%)'};padding:10px;">
+            <div style="font-size:13px;color:${'var(--muted)'};margin-bottom:4px;">${key}</div>
+            <div style="font-size:22px;font-weight:600;color:${'var(--text)'};">${score}</div>
+            ${expl ? `<div style="font-size:12px;color:${'var(--muted)'};margin-top:4px;">${expl}</div>` : ''}
+            ${imp ? `<div style="font-size:12px;color:${'var(--success)'};margin-top:4px;">Improve: ${imp}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+      gptMetrics.innerHTML = metricCards;
+    }
+
+    function syncToggleButtons() {
+      if (!chartData.datasets[0].hidden) {
+        toggleVocal.classList.add('active');
+      } else {
+        toggleVocal.classList.remove('active');
+      }
+      if (chartData.datasets[1].data.length === 0 || chartData.datasets[1].hidden) {
+        toggleReference.classList.remove('active');
+      } else {
+        toggleReference.classList.add('active');
+      }
+    }
+
+    toggleVocal.addEventListener('click', () => {
+      chartData.datasets[0].hidden = !chartData.datasets[0].hidden;
+      if (chartData.datasets[0].hidden && chartData.datasets[1].hidden && chartData.datasets[1].data.length > 0) {
+        chartData.datasets[1].hidden = false; // ensure at least one line is visible
+      }
+      syncToggleButtons();
+      if (pitchChart) pitchChart.update();
+    });
+
+    toggleReference.addEventListener('click', () => {
+      if (chartData.datasets[1].data.length === 0) return;
+      chartData.datasets[1].hidden = !chartData.datasets[1].hidden;
+      if (chartData.datasets[0].hidden && chartData.datasets[1].hidden) {
+        chartData.datasets[0].hidden = false; // ensure at least one line is visible
+      }
+      syncToggleButtons();
+      if (pitchChart) pitchChart.update();
+    });
+
+    window.onload = () => {
+      resetUI();
+      initChart();
+    };
+  </script>
 </body>
 
 </html>
