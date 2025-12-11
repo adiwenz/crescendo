@@ -8,5 +8,6 @@ pretty_midi
 midi2audio
 elevenlabs
 python-dotenv
+flask
 
 # brew install fluidsynth   # macOS only

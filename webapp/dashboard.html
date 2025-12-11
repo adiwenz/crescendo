@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Vocal Take Comparison – Melodyne-Style View</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #020617;
+            color: #e5e7eb;
+            margin: 0;
+            padding: 0;
+        }
+
+        .page {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px 16px 40px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+
+        h2 {
+            font-size: 18px;
+            margin: 22px 0 8px;
+        }
+
+        p {
+            margin-top: 4px;
+            color: #9ca3af;
+        }
+
+        .controls {
+            margin-top: 16px;
+            padding: 12px 16px;
+            border-radius: 14px;
+            border: 1px solid #1f2937;
+            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .controls-section h3 {
+            margin: 0 0 6px;
+            font-size: 15px;
+            color: #e5e7eb;
+        }
+
+        input[type="file"] {
+            margin-top: 8px;
+            font-size: 13px;
+        }
+
+        button {
+            border-radius: 999px;
+            border: 1px solid #374151;
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 13px;
+            padding: 6px 14px;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background: #4f46e5;
+            border-color: #6366f1;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .status-text {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+
+        .error-text {
+            font-size: 13px;
+            color: #f97373;
+            margin-top: 8px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .card {
+            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
+            border-radius: 14px;
+            border: 1px solid #1f2937;
+            padding: 14px 16px;
+            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+        }
+
+        .card h3 {
+            margin: 0 0 6px;
+            font-size: 15px;
+            color: #e5e7eb;
+        }
+
+        .big-score {
+            font-size: 34px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+
+        .score-label {
+            font-size: 13px;
+            color: #9ca3af;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        #graph-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid #1f2937;
+            background: radial-gradient(circle at top left, #111827 0, #020617 55%);
+            padding: 10px;
+            box-sizing: border-box;
+            margin-top: 10px;
+        }
+
+        #graph-container {
+            width: 2200px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 420px !important;
+            background: #020617;
+            border-radius: 12px;
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .toggle-row button {
+            border-radius: 999px;
+            border: 1px solid #374151;
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 12px;
+            padding: 4px 12px;
+            cursor: pointer;
+        }
+
+        .toggle-row button.active {
+            background: #4f46e5;
+            border-color: #6366f1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 6px;
+        }
+
+        th,
+        td {
+            padding: 6px 6px;
+            border-bottom: 1px solid #111827;
+            text-align: left;
+        }
+
+        th {
+            font-weight: 500;
+            color: #9ca3af;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .good {
+            color: #22c55e;
+        }
+
+        .warn {
+            color: #eab308;
+        }
+
+        .bad {
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page">
+        <h1>Vocal Take Comparison – Melodyne-Style View</h1>
+        <p>
+            Record or upload a take, send it to the analysis server, and visualize the results.
+            The JSON from the backend populates this dashboard.
+        </p>
+
+        <div class="controls">
+            <div class="controls-section">
+                <h3>1. Upload an audio file</h3>
+                <input type="file" id="fileInput" accept="audio/*" />
+                <div class="status-text" id="fileStatus">No file selected.</div>
+            </div>
+
+            <div class="controls-section">
+                <h3>2. Or record from your mic</h3>
+                <button id="recordBtn">Start Recording</button>
+                <button id="stopBtn" disabled>Stop</button>
+                <div class="status-text" id="recordStatus">Not recording.</div>
+                <audio id="recordedAudio" controls style="margin-top:8px; display:none;"></audio>
+            </div>
+
+            <div class="controls-section">
+                <h3>3. Send to analysis (Flask)</h3>
+                <button id="analyzeBtn" class="primary">Analyze</button>
+                <div class="status-text" id="analyzeStatus">Waiting to analyze.</div>
+                <div class="error-text" id="errorText"></div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3 id="take1Label">Take 1</h3>
+                <audio id="audio1" controls>
+                    <source id="audio1Source" src="" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+                <div style="margin-top:8px;">
+                    <div class="big-score" id="score1">--</div>
+                    <div class="score-label" id="score1Label"></div>
+                    <div style="margin-top:6px;font-size:12px;color:#9ca3af;">
+                        Mean error: <span id="mean1"></span>¢<br />
+                        RMS error: <span id="rms1"></span>¢<br />
+                        Duration: <span id="dur1"></span>s
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 id="take2Label">Take 2</h3>
+                <audio id="audio2" controls>
+                    <source id="audio2Source" src="" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+                <div style="margin-top:8px;">
+                    <div class="big-score" id="score2">--</div>
+                    <div class="score-label" id="score2Label"></div>
+                    <div style="margin-top:6px;font-size:12px;color:#9ca3af;">
+                        Mean error: <span id="mean2"></span>¢<br />
+                        RMS error: <span id="rms2"></span>¢<br />
+                        Duration: <span id="dur2"></span>s
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2>Melodyne-Style Pitch View</h2>
+        <div class="card">
+            <div class="toggle-row">
+                <span style="font-size:13px;color:#9ca3af;">Showing:</span>
+                <button id="btnTake1" class="active">Take 1</button>
+                <button id="btnTake2">Take 2</button>
+                <span style="font-size:11px;color:#6b7280;">
+                    Line = your pitch over time. Colored points = accuracy. Vertical line = playhead.
+                </span>
+            </div>
+            <div id="graph-wrapper">
+                <div id="graph-container">
+                    <canvas id="pitchChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let audioContext;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let recordedBlobUrl;
+
+        const fileInput = document.getElementById('fileInput');
+        const fileStatus = document.getElementById('fileStatus');
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const recordStatus = document.getElementById('recordStatus');
+        const recordedAudio = document.getElementById('recordedAudio');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const analyzeStatus = document.getElementById('analyzeStatus');
+        const errorText = document.getElementById('errorText');
+
+        const audio1Source = document.getElementById('audio1Source');
+        const audio1 = document.getElementById('audio1');
+        const score1 = document.getElementById('score1');
+        const score1Label = document.getElementById('score1Label');
+        const mean1 = document.getElementById('mean1');
+        const rms1 = document.getElementById('rms1');
+        const dur1 = document.getElementById('dur1');
+        const take1Label = document.getElementById('take1Label');
+
+        const audio2Source = document.getElementById('audio2Source');
+        const audio2 = document.getElementById('audio2');
+        const score2 = document.getElementById('score2');
+        const score2Label = document.getElementById('score2Label');
+        const mean2 = document.getElementById('mean2');
+        const rms2 = document.getElementById('rms2');
+        const dur2 = document.getElementById('dur2');
+        const take2Label = document.getElementById('take2Label');
+
+        const btnTake1 = document.getElementById('btnTake1');
+        const btnTake2 = document.getElementById('btnTake2');
+
+        let pitchChart;
+        let chartData = {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Take 1 Pitch',
+                    data: [],
+                    borderColor: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.5)',
+                    pointRadius: 3,
+                    fill: false,
+                    hidden: false,
+                    yAxisID: 'pitch',
+                    parsing: {
+                        xAxisKey: 'time',
+                        yAxisKey: 'pitch',
+                    },
+                },
+                {
+                    label: 'Take 2 Pitch',
+                    data: [],
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.5)',
+                    pointRadius: 3,
+                    fill: false,
+                    hidden: true,
+                    yAxisID: 'pitch',
+                    parsing: {
+                        xAxisKey: 'time',
+                        yAxisKey: 'pitch',
+                    },
+                }
+            ],
+        };
+
+        function initChart() {
+            const ctx = document.getElementById('pitchChart').getContext('2d');
+            pitchChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Time (s)',
+                                color: '#9ca3af',
+                            },
+                            grid: {
+                                color: '#1f2937',
+                            },
+                            ticks: {
+                                color: '#9ca3af',
+                            },
+                        },
+                        pitch: {
+                            type: 'linear',
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Pitch (Hz)',
+                                color: '#9ca3af',
+                            },
+                            grid: {
+                                color: '#1f2937',
+                            },
+                            ticks: {
+                                color: '#9ca3af',
+                            },
+                        },
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e5e7eb',
+                            },
+                        },
+                        tooltip: {
+                            enabled: true,
+                            mode: 'nearest',
+                            intersect: false,
+                            callbacks: {
+                                label: function (context) {
+                                    const pitch = context.parsed.y.toFixed(2);
+                                    const time = context.parsed.x.toFixed(2);
+                                    return `Time: ${time}s, Pitch: ${pitch} Hz`;
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: false,
+                    },
+                    animation: false,
+                }
+            });
+        }
+
+        function resetUI() {
+            score1.textContent = '--';
+            score1Label.textContent = '';
+            mean1.textContent = '';
+            rms1.textContent = '';
+            dur1.textContent = '';
+            take1Label.textContent = 'Take 1';
+            audio1Source.src = '';
+            audio1.load();
+
+            score2.textContent = '--';
+            score2Label.textContent = '';
+            mean2.textContent = '';
+            rms2.textContent = '';
+            dur2.textContent = '';
+            take2Label.textContent = 'Take 2';
+            audio2Source.src = '';
+            audio2.load();
+
+            chartData.datasets[0].data = [];
+            chartData.datasets[1].data = [];
+            chartData.datasets[0].hidden = false;
+            chartData.datasets[1].hidden = true;
+            if (pitchChart) pitchChart.update();
+        }
+
+        fileInput.addEventListener('change', () => {
+            errorText.textContent = '';
+            if (fileInput.files.length > 0) {
+                fileStatus.textContent = `Selected file: ${fileInput.files[0].name}`;
+                // Use this file for analysis and playback (Take 1)
+                const fileURL = URL.createObjectURL(fileInput.files[0]);
+                audio1Source.src = fileURL;
+                audio1.load();
+                take1Label.textContent = fileInput.files[0].name;
+            } else {
+                fileStatus.textContent = 'No file selected.';
+                audio1Source.src = '';
+                audio1.load();
+                take1Label.textContent = 'Take 1';
+            }
+        });
+
+        recordBtn.addEventListener('click', async () => {
+            errorText.textContent = '';
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                errorText.textContent = 'Your browser does not support recording.';
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new AudioContext();
+                mediaRecorder = new MediaRecorder(stream);
+                recordedChunks = [];
+                mediaRecorder.ondataavailable = e => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    if (recordedBlobUrl) URL.revokeObjectURL(recordedBlobUrl);
+                    recordedBlobUrl = URL.createObjectURL(blob);
+                    recordedAudio.src = recordedBlobUrl;
+                    recordedAudio.style.display = 'block';
+                    take1Label.textContent = 'Recorded Take';
+                    audio1Source.src = recordedBlobUrl;
+                    audio1.load();
+                };
+                mediaRecorder.start();
+                recordBtn.disabled = true;
+                stopBtn.disabled = false;
+                recordStatus.textContent = 'Recording...';
+            } catch (err) {
+                errorText.textContent = 'Error accessing microphone: ' + err.message;
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                recordBtn.disabled = false;
+                stopBtn.disabled = true;
+                recordStatus.textContent = 'Recording stopped.';
+            }
+        });
+
+        analyzeBtn.addEventListener('click', async () => {
+            errorText.textContent = '';
+            analyzeStatus.textContent = 'Analyzing...';
+            analyzeBtn.disabled = true;
+
+            // Prepare form data
+            const formData = new FormData();
+            let audioFile;
+
+            if (fileInput.files.length > 0) {
+                audioFile = fileInput.files[0];
+            } else if (recordedAudio.src) {
+                // Convert recorded blob url to blob
+                try {
+                    const response = await fetch(recordedBlobUrl);
+                    audioFile = await response.blob();
+                    audioFile.name = 'recorded.webm';
+                } catch (err) {
+                    errorText.textContent = 'Error preparing recorded audio.';
+                    analyzeStatus.textContent = 'Waiting to analyze.';
+                    analyzeBtn.disabled = false;
+                    return;
+                }
+            } else {
+                errorText.textContent = 'No audio file or recording available for analysis.';
+                analyzeStatus.textContent = 'Waiting to analyze.';
+                analyzeBtn.disabled = false;
+                return;
+            }
+            formData.append('audio', audioFile);
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.statusText}`);
+                }
+                const data = await response.json();
+                updateResults(data);
+                analyzeStatus.textContent = 'Analysis complete.';
+            } catch (err) {
+                errorText.textContent = 'Analysis failed: ' + err.message;
+                analyzeStatus.textContent = 'Waiting to analyze.';
+            }
+            analyzeBtn.disabled = false;
+        });
+
+        function updateResults(data) {
+            // Assume data has take1 and take2 with pitch data and scores
+            if (!data) return;
+
+            // Update Take 1 info
+            if (data.take1) {
+                take1Label.textContent = data.take1.name || 'Take 1';
+                score1.textContent = data.take1.score !== undefined ? data.take1.score.toFixed(2) : '--';
+                score1Label.textContent = data.take1.score_label || '';
+                mean1.textContent = data.take1.mean_error !== undefined ? data.take1.mean_error.toFixed(2) : '';
+                rms1.textContent = data.take1.rms_error !== undefined ? data.take1.rms_error.toFixed(2) : '';
+                dur1.textContent = data.take1.duration !== undefined ? data.take1.duration.toFixed(2) : '';
+                if (data.take1.audio_url) {
+                    audio1Source.src = data.take1.audio_url;
+                    audio1.load();
+                }
+                if (Array.isArray(data.take1.pitch_data)) {
+                    chartData.datasets[0].data = data.take1.pitch_data;
+                } else {
+                    chartData.datasets[0].data = [];
+                }
+            }
+
+            // Update Take 2 info
+            if (data.take2) {
+                take2Label.textContent = data.take2.name || 'Take 2';
+                score2.textContent = data.take2.score !== undefined ? data.take2.score.toFixed(2) : '--';
+                score2Label.textContent = data.take2.score_label || '';
+                mean2.textContent = data.take2.mean_error !== undefined ? data.take2.mean_error.toFixed(2) : '';
+                rms2.textContent = data.take2.rms_error !== undefined ? data.take2.rms_error.toFixed(2) : '';
+                dur2.textContent = data.take2.duration !== undefined ? data.take2.duration.toFixed(2) : '';
+                if (data.take2.audio_url) {
+                    audio2Source.src = data.take2.audio_url;
+                    audio2.load();
+                }
+                if (Array.isArray(data.take2.pitch_data)) {
+                    chartData.datasets[1].data = data.take2.pitch_data;
+                } else {
+                    chartData.datasets[1].data = [];
+                }
+            }
+
+            if (pitchChart) pitchChart.update();
+        }
+
+        btnTake1.addEventListener('click', () => {
+            chartData.datasets[0].hidden = false;
+            chartData.datasets[1].hidden = true;
+            btnTake1.classList.add('active');
+            btnTake2.classList.remove('active');
+            if (pitchChart) pitchChart.update();
+        });
+
+        btnTake2.addEventListener('click', () => {
+            chartData.datasets[0].hidden = true;
+            chartData.datasets[1].hidden = false;
+            btnTake1.classList.remove('active');
+            btnTake2.classList.add('active');
+            if (pitchChart) pitchChart.update();
+        });
+
+        window.onload = () => {
+            resetUI();
+            initChart();
+        };
+    </script>
+</body>
+
+</html>
