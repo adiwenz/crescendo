@@ -184,6 +184,7 @@ def analyze_take(path: str, fmin: float = 80.0, fmax: float = 1000.0, frame_leng
     if verbose:
         print(f"\n=== Analyzing {path} ===")
     y, sr = librosa.load(path, sr=None, mono=True)
+
     if verbose:
         duration = len(y) / sr
         print(f"Sample rate: {sr} Hz, duration: {duration:.2f} s")

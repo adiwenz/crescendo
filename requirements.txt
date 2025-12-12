@@ -9,5 +9,6 @@ midi2audio
 elevenlabs
 python-dotenv
 flask
+noisereduce
 
 # brew install fluidsynth   # macOS only

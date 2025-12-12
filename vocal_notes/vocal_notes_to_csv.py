@@ -73,14 +73,12 @@ def to_scalar(value: Any) -> str:
 def collect_note_rows(audio_paths: List[str], fmin: float, fmax: float, verbose: bool = True) -> List[Dict[str, Any]]:
     """Extract notes for each audio take and return flattened rows for CSV writing."""
     rows: List[Dict[str, Any]] = []
-    extend_rows = rows.extend
-    analyze = analyze_take
 
     for audio_path in audio_paths:
         take_name = os.path.splitext(os.path.basename(audio_path))[0]
-        notes = analyze(audio_path, fmin=fmin, fmax=fmax, verbose=verbose)
+        notes = analyze_take(audio_path, fmin=fmin, fmax=fmax, verbose=verbose)
         if notes:
-            extend_rows({"take": take_name, **n} for n in notes)
+            rows.extend({"take": take_name, **n} for n in notes)
 
     return rows
 

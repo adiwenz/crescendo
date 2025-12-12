@@ -11,3 +11,6 @@ __pycache__
 *.pyo
 *.pyd
 *.pycache
+
+# Tests
+tests/segmentation_debug/
