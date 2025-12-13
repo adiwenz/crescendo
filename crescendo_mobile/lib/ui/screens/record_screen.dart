@@ -35,6 +35,7 @@ class _RecordScreenState extends State<RecordScreen> {
   final AudioPlayer _player = AudioPlayer();
   double playhead = 0;
   StreamSubscription? _posSub;
+  StreamSubscription<PitchFrame>? _liveSub;
 
   @override
   void initState() {
@@ -47,6 +48,7 @@ class _RecordScreenState extends State<RecordScreen> {
   @override
   void dispose() {
     _posSub?.cancel();
+    _liveSub?.cancel();
     _player.dispose();
     super.dispose();
   }
@@ -58,11 +60,18 @@ class _RecordScreenState extends State<RecordScreen> {
       frames = [];
       metrics = null;
     });
+    _liveSub?.cancel();
+    _liveSub = recordingService.liveStream.listen((pf) {
+      setState(() {
+        frames = List.from(frames)..add(pf);
+      });
+    });
     await recordingService.start();
   }
 
   Future<void> _stopRecording() async {
     final result = await recordingService.stop();
+    await _liveSub?.cancel();
     final warmup = appState.selectedWarmup.value;
     final refSegments = warmup.buildPlan();
     final enriched = _attachCents(result.frames, refSegments);
@@ -78,16 +87,21 @@ class _RecordScreenState extends State<RecordScreen> {
   Future<void> _saveTake() async {
     if (recordedPath == null || metrics == null) return;
     final warmup = appState.selectedWarmup.value;
+    // Sanitize frames to avoid NaN in JSON.
+    final cleanFrames = frames
+        .map((f) => PitchFrame(time: f.time, hz: f.hz, midi: f.midi, centsError: f.centsError))
+        .toList();
     final take = Take(
       name: 'Take ${DateTime.now().toLocal()}',
       createdAt: DateTime.now(),
       warmupId: warmup.id,
       warmupName: warmup.name,
       audioPath: recordedPath!,
-      frames: frames,
-      metrics: scoring.score(frames),
+      frames: cleanFrames,
+      metrics: scoring.score(cleanFrames),
     );
     await repo.insert(take);
+    appState.takesVersion.value++;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved take')));
     }

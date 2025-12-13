@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_audio_capture/flutter_audio_capture.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
+import 'dart:math' as math;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -24,8 +26,12 @@ class RecordingService {
   final int hopSize;
 
   final _samples = <double>[];
+  final _streamFrames = <PitchFrame>[];
+  final _buffer = <double>[];
+  final StreamController<PitchFrame> _liveController = StreamController<PitchFrame>.broadcast();
   StreamSubscription? _sub;
   bool _initialized = false;
+  double _streamTime = 0.0;
 
   RecordingService({
     this.sampleRate = 44100,
@@ -43,12 +49,31 @@ class RecordingService {
   Future<void> start() async {
     await _ensureInit();
     _samples.clear();
+    _streamFrames.clear();
+    _buffer.clear();
+    _streamTime = 0.0;
     _sub?.cancel();
     _sub = null;
+    final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     await _capture.start(
       (obj) {
         final buffer = obj as List<double>;
         _samples.addAll(buffer);
+        _buffer.addAll(buffer);
+        while (_buffer.length >= frameSize) {
+          final frame = List<double>.from(_buffer.take(frameSize));
+          final currentTime = _streamTime;
+          detector.getPitchFromFloatBuffer(frame).then((result) {
+            final hzVal = result.pitch;
+            final hz = hzVal != null && hzVal > 0 ? hzVal.toDouble() : null;
+            final midi = hz != null && hz > 0 ? 69 + 12 * (math.log(hz / 440) / math.ln2) : null;
+            final pf = PitchFrame(time: currentTime, hz: hz, midi: midi);
+            _streamFrames.add(pf);
+            _liveController.add(pf);
+          });
+          _buffer.removeRange(0, hopSize);
+          _streamTime += hopSize / sampleRate;
+        }
       },
       (err) {},
       sampleRate: sampleRate,
@@ -60,12 +85,21 @@ class RecordingService {
     await _capture.stop();
     _sub?.cancel();
     _sub = null;
-    final frames = await pitchDetection.offlineFromSamples(_samples);
+    final frames = _streamFrames.isNotEmpty ? List<PitchFrame>.from(_streamFrames) : await pitchDetection.offlineFromSamples(_samples);
     final wavPath = await _writeWav(_samples);
     return RecordingResult(wavPath, frames);
   }
 
+  Stream<PitchFrame> get liveStream => _liveController.stream;
+
   Future<String> _writeWav(List<double> samples) async {
+    final fadeSamples = math.min(samples.length ~/ 2, (sampleRate * 0.005).round());
+    for (var i = 0; i < fadeSamples; i++) {
+      final gain = i / fadeSamples;
+      samples[i] *= gain;
+      samples[samples.length - 1 - i] *= gain;
+    }
+
     final dataSize = samples.length * 2;
     final bytes = ByteData(44 + dataSize);
     const channels = 1;

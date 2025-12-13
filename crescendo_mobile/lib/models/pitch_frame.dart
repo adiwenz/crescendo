@@ -6,11 +6,17 @@ class PitchFrame {
 
   PitchFrame({required this.time, this.hz, this.midi, this.centsError});
 
+  double? _safe(double? v) {
+    if (v == null) return null;
+    if (v.isNaN || v.isInfinite) return null;
+    return v;
+  }
+
   Map<String, dynamic> toJson() => {
         "time": time,
-        "hz": hz,
-        "midi": midi,
-        "centsError": centsError,
+        "hz": _safe(hz),
+        "midi": _safe(midi),
+        "centsError": _safe(centsError),
       };
 
   factory PitchFrame.fromJson(Map<String, dynamic> json) => PitchFrame(

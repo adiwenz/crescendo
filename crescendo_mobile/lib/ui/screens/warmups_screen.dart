@@ -105,7 +105,11 @@ class _WarmupsScreenState extends State<WarmupsScreen> {
                 ),
               ],
             ),
-            if (_lastPreview != null) Text('Last preview file: $_lastPreview', style: const TextStyle(fontSize: 12)),
+            if (_lastPreview != null)
+              Text(
+                'Last preview: ${(_buildCustomWarmup().notes).join(", ")}',
+                style: const TextStyle(fontSize: 12),
+              ),
           ],
         ),
       ),

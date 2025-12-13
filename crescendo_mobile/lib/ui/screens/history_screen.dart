@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/take.dart';
 import '../../services/storage/take_repository.dart';
+import '../state.dart';
 import '../widgets/pitch_graph.dart';
 import '../widgets/take_list_item.dart';
 
@@ -16,19 +17,35 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   final repo = TakeRepository();
   final _player = AudioPlayer();
+  final appState = AppState();
+  late final VoidCallback _takesListener;
   List<Take> takes = [];
   Take? selected;
   Take? compare;
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    _takesListener = () => _load();
+    appState.takesVersion.addListener(_takesListener);
     _load();
   }
 
+  @override
+  void dispose() {
+    appState.takesVersion.removeListener(_takesListener);
+    _player.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    setState(() => _loading = true);
     final data = await repo.fetchAll();
-    setState(() => takes = data);
+    setState(() {
+      takes = data;
+      _loading = false;
+    });
   }
 
   @override
@@ -38,25 +55,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              itemCount: takes.length,
-              itemBuilder: (context, idx) {
-                final t = takes[idx];
-                return TakeListItem(
-                  take: t,
-                  selected: selected?.id == t.id,
-                  onTap: () => setState(() {
-                    if (selected == null) {
-                      selected = t;
-                    } else if (compare == null && t.id != selected!.id) {
-                      compare = t;
-                    } else {
-                      selected = t;
-                      compare = null;
-                    }
-                  }),
-                );
-              },
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : takes.isEmpty
+                      ? const Center(child: Text('No takes yet. Save a take to see it here.'))
+                      : ListView.builder(
+                          itemCount: takes.length,
+                          itemBuilder: (context, idx) {
+                            final t = takes[idx];
+                            return TakeListItem(
+                              take: t,
+                              selected: selected?.id == t.id,
+                              onTap: () => setState(() {
+                                if (selected == null) {
+                                  selected = t;
+                                } else if (compare == null && t.id != selected!.id) {
+                                  compare = t;
+                                } else {
+                                  selected = t;
+                                  compare = null;
+                                }
+                              }),
+                            );
+                          },
+                        ),
             ),
           ),
           if (selected != null)
@@ -66,7 +90,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Selected: ${selected!.name} (${selected!.metrics.score.toStringAsFixed(1)})'),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       ElevatedButton(
                         onPressed: () async {
@@ -75,13 +102,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         },
                         child: const Text('Play'),
                       ),
-                      const SizedBox(width: 8),
                       if (compare != null)
                         Text('Compare vs ${compare!.name} (Δ ${(selected!.metrics.score - compare!.metrics.score).toStringAsFixed(1)})'),
+                      IconButton(
+                        tooltip: 'Refresh history',
+                        onPressed: _load,
+                        icon: const Icon(Icons.refresh),
+                      )
                     ],
                   ),
+                  const SizedBox(height: 8),
                   SizedBox(
-                    height: 220,
+                    height: 160,
                     child: PitchGraph(
                       frames: selected!.frames,
                       reference: const [],
@@ -90,7 +122,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   if (compare != null)
                     SizedBox(
-                      height: 220,
+                      height: 160,
                       child: PitchGraph(
                         frames: compare!.frames,
                         reference: const [],

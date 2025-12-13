@@ -9,4 +9,5 @@ class AppState {
 
   final ValueNotifier<WarmupDefinition> selectedWarmup = ValueNotifier(WarmupsLibrary.defaults.first);
   List<String> customNotes = [];
+  final ValueNotifier<int> takesVersion = ValueNotifier(0);
 }
