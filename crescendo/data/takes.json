@@ -226,6 +226,16 @@
         "pitch_accuracy_score": 0.0,
         "used_reference": true
       }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 306.86348267231824,
+        "pct_within_50": 0.3407079646017699,
+        "valid_frames": 678,
+        "pitch_accuracy_score": 34.07,
+        "used_reference": true
+      }
     }
   ]
 }

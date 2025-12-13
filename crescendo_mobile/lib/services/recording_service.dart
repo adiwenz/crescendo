@@ -25,6 +25,7 @@ class RecordingService {
 
   final _samples = <double>[];
   StreamSubscription? _sub;
+  bool _initialized = false;
 
   RecordingService({
     this.sampleRate = 44100,
@@ -33,7 +34,14 @@ class RecordingService {
     PitchDetectionService? pitchDetection,
   }) : pitchDetection = pitchDetection ?? PitchDetectionService(sampleRate: 44100, frameSize: 2048, hopSize: 256);
 
+  Future<void> _ensureInit() async {
+    if (_initialized) return;
+    await _capture.init();
+    _initialized = true;
+  }
+
   Future<void> start() async {
+    await _ensureInit();
     _samples.clear();
     _sub?.cancel();
     _sub = null;

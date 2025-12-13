@@ -12,6 +12,7 @@ class PitchDetectionService {
   final int sampleRate;
   final int frameSize;
   final int hopSize;
+  bool _initialized = false;
 
   PitchDetectionService({
     this.sampleRate = 44100,
@@ -19,7 +20,14 @@ class PitchDetectionService {
     this.hopSize = 256,
   });
 
+  Future<void> _ensureInit() async {
+    if (_initialized) return;
+    await _capture.init();
+    _initialized = true;
+  }
+
   Future<Stream<PitchFrame>> startStream() async {
+    await _ensureInit();
     final controller = StreamController<PitchFrame>();
     final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     double time = 0;

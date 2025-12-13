@@ -168,7 +168,9 @@ class _RecordScreenState extends State<RecordScreen> {
             ),
             const SizedBox(height: 12),
             if (metrics != null)
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   MetricCard(label: 'Score', value: metrics!.score),
                   MetricCard(label: 'Mean abs cents', value: metrics!.mean),

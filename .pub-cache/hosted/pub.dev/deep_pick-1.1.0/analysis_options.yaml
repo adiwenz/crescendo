@@ -1,0 +1,9 @@
+include: package:lint/analysis_options_package.yaml
+
+analyzer:
+  strong-mode:
+    implicit-casts: false
+
+linter:
+  rules:
+    prefer_single_quotes: true

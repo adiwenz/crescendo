@@ -1,0 +1,17 @@
+40 columns                              |
+>>> Line comment in combinator list.
+import 'foo.dart' hide First, //
+Second;
+<<<
+import 'foo.dart'
+    hide
+        First, //
+        Second;
+>>> Don't split `==` because of leading comment before left operand.
+import 'uri.dart' if (
+  // comment
+config == 'value') 'c';
+<<<
+import 'uri.dart'
+    if (// comment
+    config == 'value') 'c';

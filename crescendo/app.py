@@ -186,8 +186,8 @@ def api_analyze():
     ref_gap = float(request.form.get("ref_gap", "0.0") or 0.0) if use_reference else 0.0
 
     # Pitch estimator settings (match pipeline defaults to avoid octave inconsistencies)
-    # pitch_method = (request.form.get("pitch_method") or "yin").lower()
-    pitch_method = "pyin"
+    pitch_method = (request.form.get("pitch_method") or "yin").lower()
+    # pitch_method = "pyin"
     fmin = float(request.form.get("fmin", "80") or 80.0)
     fmax = float(request.form.get("fmax", "1000") or 1000.0)
     frame_length = int(request.form.get("frame_length", "2048") or 2048)

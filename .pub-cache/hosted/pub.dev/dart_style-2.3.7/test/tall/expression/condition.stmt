@@ -1,0 +1,64 @@
+40 columns                              |
+>>> Unsplit.
+condition  ?  thenBranch  :  elseBranch  ;
+<<<
+condition ? thenBranch : elseBranch;
+>>> Split because condition splits.
+veryLongElement != otherReallyLongElement ? longArgument : arg;
+<<<
+veryLongElement !=
+        otherReallyLongElement
+    ? longArgument
+    : arg;
+>>> Split because of split in then branch.
+condition ? veryLongExpression +
+    otherLongExpression : elseExpr;
+<<<
+condition
+    ? veryLongExpression +
+        otherLongExpression
+    : elseExpr;
+>>> Split because of split in else branch.
+condition ? thenExpression
+    : veryLongExpression +
+        otherLongExpression;
+<<<
+condition
+    ? thenExpression
+    : veryLongExpression +
+        otherLongExpression;
+>>> Force split all conditionals when nested.
+var kind = a ? b ? c : d : e;
+<<<
+var kind =
+    a
+        ? b
+            ? c
+            : d
+        : e;
+>>>
+var kind = a ? b : c ? d : e;
+<<<
+var kind =
+    a
+        ? b
+        : c
+        ? d
+        : e;
+>>> Don't force split conditionals when indirectly nested.
+var kind = a ? b : (c ? d : e);
+<<<
+var kind = a ? b : (c ? d : e);
+>>> Flatten a chain of else-if conditionals.
+var kind = c1 ? e1 : c2 ? e2 : c3 ? e3 : c4 ? e4 : e5;
+<<<
+var kind =
+    c1
+        ? e1
+        : c2
+        ? e2
+        : c3
+        ? e3
+        : c4
+        ? e4
+        : e5;
