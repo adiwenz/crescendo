@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crescendo Warmups</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: radial-gradient(circle at 20% 20%, #ffe0f3 0%, #f3e8ff 25%, #e0f2fe 60%, #fdf2f8 100%);
+      --panel: rgba(255, 255, 255, 0.65);
+      --text: #2d1b4c;
+      --accent: #ec4899;
+      --accent-2: #8b5cf6;
+      --accent-3: #22d3ee;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Poppins", "Avenir Next", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1.5rem;
+      min-height: 100vh;
+    }
+    h1 {
+      margin: 0 0 1rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+      text-shadow: 0 8px 24px rgba(236, 72, 153, 0.25);
+    }
+    .panel {
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      padding: 1.1rem;
+      border-radius: 16px;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(236, 72, 153, 0.15);
+      box-shadow: 0 20px 50px rgba(139, 92, 246, 0.18);
+    }
+    button {
+      background: linear-gradient(120deg, var(--accent), var(--accent-2));
+      color: white;
+      border: none;
+      padding: 0.55rem 0.95rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      box-shadow: 0 12px 24px rgba(236, 72, 153, 0.25);
+      transition: transform 0.08s ease, box-shadow 0.2s ease;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(139, 92, 246, 0.3); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    select, input:not([type="checkbox"]) {
+      background: rgba(255, 255, 255, 0.85);
+      color: var(--text);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 12px;
+      padding: 0.5rem 0.7rem;
+      box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
+    }
+    input[type="checkbox"] { width: auto; height: auto; accent-color: var(--accent); box-shadow: none; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+    .piano { display: flex; gap: 4px; margin-top: 0.5rem; flex-wrap: wrap; }
+    .key {
+      width: 44px;
+      height: 120px;
+      background: linear-gradient(180deg, #fff, #ffe4f0);
+      color: var(--text);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 10px;
+      text-align: center;
+      line-height: 120px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+      transition: transform 0.05s ease, box-shadow 0.1s ease;
+    }
+    .key:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(236, 72, 153, 0.25); }
+    .status { font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem; }
+    canvas { background: rgba(255, 255, 255, 0.7); border-radius: 12px; border: 1px solid rgba(139, 92, 246, 0.3); }
+  </style>
+</head>
+<body>
+  <h1>Crescendo</h1>
+
+  <div class="panel">
+    <h3>Warmups</h3>
+    <div class="row">
+      <label for="warmupSelect">Choose warmup:</label>
+      <select id="warmupSelect"></select>
+      <button id="playWarmup">Play warmup</button>
+    </div>
+    <div class="status" id="warmupStatus"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Create reference (piano)</h3>
+    <div>Click keys to add notes; they’ll be played back and sent as reference.</div>
+    <div class="piano" id="piano"></div>
+    <div class="row" style="margin-top:0.5rem;">
+      <button id="playReference">Play reference</button>
+      <button id="clearReference">Clear</button>
+      <span class="status" id="refStatus"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Record & Analyze</h3>
+    <div class="row">
+      <button id="recordBtn">Start Recording</button>
+      <input type="text" id="takeName" placeholder="Take name (optional)" />
+      <input type="file" id="fileInput" accept="audio/*" />
+      <button id="analyzeFile">Analyze File</button>
+    </div>
+    <label class="row" style="gap:0.4rem; margin-top:0.6rem;">
+      <input type="checkbox" id="compareReference" checked />
+      <span>Compare to reference (plot target)</span>
+    </label>
+    <audio id="recordedAudio" controls style="margin-top:0.5rem; display:none;"></audio>
+    <div class="status" id="recordStatus">Not recording.</div>
+  </div>
+
+  <div class="panel">
+    <h3>Results</h3>
+    <div id="summary"></div>
+    <canvas id="chart" height="240"></canvas>
+  </div>
+
+  <script>
+    const ctx = document.getElementById('chart').getContext('2d');
+    let chart;
+    let framesData = [];
+    let rafId = null;
+    const warmupSelect = document.getElementById('warmupSelect');
+    const warmupStatus = document.getElementById('warmupStatus');
+    const pianoEl = document.getElementById('piano');
+    const refStatus = document.getElementById('refStatus');
+    const recordBtn = document.getElementById('recordBtn');
+    const recordStatus = document.getElementById('recordStatus');
+    const recordedAudio = document.getElementById('recordedAudio');
+    const takeNameInput = document.getElementById('takeName');
+    const fileInput = document.getElementById('fileInput');
+    const analyzeFileBtn = document.getElementById('analyzeFile');
+    const compareReferenceCheckbox = document.getElementById('compareReference');
+
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let referenceNotes = [];
+    let referenceDurations = [];
+    let referenceGap = 0.0;
+    let warmups = [];
+
+    function midiFromName(name) {
+      return window.librosaNoteToMidi ? window.librosaNoteToMidi(name) : null;
+    }
+
+    // Simple client-side note->midi mapping for a few keys
+    const noteToMidi = {
+      "C4": 60, "D4": 62, "E4": 64, "F4": 65, "G4": 67, "A4": 69, "B4": 71, "C5": 72, "D5": 74, "E5": 76
+    };
+
+    function buildPiano() {
+      Object.keys(noteToMidi).forEach(note => {
+        const key = document.createElement('div');
+        key.className = 'key';
+        key.textContent = note;
+        key.onclick = () => {
+          referenceNotes.push(note);
+          referenceDurations.push(0.5);
+          refStatus.textContent = `Reference: ${referenceNotes.join(', ')}`;
+          playNote(noteToMidi[note], 0.5);
+        };
+        pianoEl.appendChild(key);
+      });
+    }
+
+    function playNote(midi, duration) {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const freq = 440 * Math.pow(2, (midi - 69) / 12);
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    }
+
+    function playReferenceSequence(notes, durations, gap) {
+      const ctx = new AudioContext();
+      let t = ctx.currentTime;
+      notes.forEach((note, i) => {
+        const midi = noteToMidi[note] ?? 60;
+        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.2, t);
+        const dur = durations[i] || 0.5;
+        osc.start(t);
+        osc.stop(t + dur);
+        t += dur + (gap || 0);
+      });
+    }
+
+    async function loadWarmups() {
+      const resp = await fetch('/api/warmups');
+      const data = await resp.json();
+      warmups = data.warmups || [];
+      warmupSelect.innerHTML = '';
+      warmups.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w.id;
+        opt.textContent = w.name;
+        warmupSelect.appendChild(opt);
+      });
+    }
+
+    function getSelectedWarmup() {
+      const id = warmupSelect.value;
+      return warmups.find(w => w.id === id);
+    }
+
+    async function analyzeBlob(blob, name) {
+      const form = new FormData();
+      form.append('audio', blob, name || 'recording.webm');
+      const compareToReference = compareReferenceCheckbox.checked;
+      form.append('use_reference', compareToReference ? 'true' : 'false');
+      if (compareToReference) {
+        if (referenceNotes.length) {
+          form.append('ref_notes', JSON.stringify(referenceNotes));
+          form.append('ref_durations', JSON.stringify(referenceDurations));
+          form.append('ref_gap', referenceGap.toString());
+        } else {
+          const w = getSelectedWarmup();
+          if (w) {
+            form.append('ref_notes', JSON.stringify(w.notes));
+            form.append('ref_durations', JSON.stringify(w.durations));
+            form.append('ref_gap', (w.gap || 0).toString());
+          }
+        }
+      }
+      if (name) form.append('name', name);
+
+      const resp = await fetch('/api/analyze', { method: 'POST', body: form });
+      const data = await resp.json();
+      if (!resp.ok) {
+        recordStatus.textContent = data.error || 'Analysis failed.';
+        return;
+      }
+      renderResults(data.summary, data.frames);
+    }
+
+    function midiToNoteName(m) {
+      const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      if (m === null || m === undefined || isNaN(m)) return '';
+      const n = Math.round(m);
+      const name = names[(n % 12 + 12) % 12];
+      const octave = Math.floor(n / 12) - 1;
+      return `${name}${octave}`;
+    }
+
+    function renderResults(summary, frames) {
+      const summaryEl = document.getElementById('summary');
+      summaryEl.innerHTML = `
+        <div>Pitch accuracy: ${summary.pitch_accuracy_score ?? 'N/A'}</div>
+        <div>Mean abs cents: ${summary.mean_abs_cents?.toFixed?.(2) ?? 'N/A'}</div>
+        <div>Pct within 50c: ${(summary.pct_within_50 !== null && summary.pct_within_50 !== undefined) ? (summary.pct_within_50 * 100).toFixed(1) + '%' : 'N/A'}</div>
+      `;
+      if (!summary.used_reference) {
+        summaryEl.innerHTML += `<div>Reference: none (comparison off)</div>`;
+      }
+
+      framesData = frames;
+      const times = frames.map(f => f.time);
+      const mids = frames.map(f => f.midi);
+      const target = frames.map(f => f.target_midi);
+      const hasTarget = target.some(v => v !== null && v !== undefined);
+      const colors = frames.map(f => {
+        const c = f.cents_error;
+        if (c === null || c === undefined || isNaN(c)) return 'rgba(148,163,184,0.8)';
+        const abs = Math.abs(c);
+        if (abs <= 25) return '#22c55e';      // green
+        if (abs <= 50) return '#fbbf24';      // yellow
+        return '#ef4444';                     // red
+      });
+
+      if (chart) chart.destroy();
+      const playheadPlugin = {
+        id: 'playhead',
+        afterDraw(chart, args, opts) {
+          const audio = recordedAudio;
+          if (!audio || !audio.src || chart.scales.x.type !== 'linear') return;
+          const xScale = chart.scales.x;
+          const t = audio.currentTime;
+          if (t < xScale.min || t > xScale.max) return;
+          const x = xScale.getPixelForValue(t);
+          const ctx = chart.ctx;
+          ctx.save();
+          ctx.strokeStyle = '#e5e7eb';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, chart.chartArea.top);
+          ctx.lineTo(x, chart.chartArea.bottom);
+          ctx.stroke();
+          ctx.restore();
+        }
+      };
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: times,
+          datasets: [
+            {
+              label: 'Pitch',
+              data: mids,
+              borderColor: '#22c55e',
+              backgroundColor: 'rgba(34,197,94,0.2)',
+              spanGaps: true,
+              pointRadius: 0,
+              tension: 0.2,
+            },
+            ...(hasTarget ? [{
+              label: 'Target',
+              data: target,
+              borderColor: '#fbbf24',
+              backgroundColor: 'rgba(251,191,36,0.15)',
+              spanGaps: true,
+              pointRadius: 0,
+              borderDash: [4, 3],
+            }] : []),
+            {
+              label: 'Cents error',
+              data: frames.map((f, idx) => ({ x: times[idx], y: mids[idx] })),
+              showLine: false,
+              pointRadius: 4,
+              pointBackgroundColor: colors,
+              pointBorderColor: colors,
+            }
+          ]
+        },
+        options: {
+          animation: false,
+          scales: {
+            x: { type: 'linear', title: { display: true, text: 'Time (s)', color: '#e5e7eb' }, ticks: { color: '#9ca3af' } },
+            y: { title: { display: true, text: 'Pitch', color: '#e5e7eb' }, ticks: {
+              color: '#9ca3af',
+              stepSize: 1,
+              autoSkip: false,
+              callback: (val) => midiToNoteName(val)
+            } }
+          },
+          plugins: { legend: { labels: { color: '#e5e7eb' } } }
+        },
+        plugins: [playheadPlugin]
+      });
+
+      const updatePlayhead = () => {
+        if (!chart) return;
+        chart.update('none');
+        rafId = requestAnimationFrame(updatePlayhead);
+      };
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updatePlayhead);
+    }
+
+    recordBtn.onclick = async () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.textContent = 'Start Recording';
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        recordStatus.textContent = 'Recording not supported.';
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      recordedChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+        recordedAudio.src = URL.createObjectURL(blob);
+        recordedAudio.style.display = 'block';
+        recordStatus.textContent = 'Recording stopped. Analyzing...';
+        await analyzeBlob(blob, takeNameInput.value || 'recording.webm');
+        recordStatus.textContent = 'Done.';
+      };
+      mediaRecorder.start();
+      recordBtn.textContent = 'Stop Recording';
+      recordStatus.textContent = 'Recording...';
+    };
+
+    document.getElementById('playWarmup').onclick = () => {
+      const w = getSelectedWarmup();
+      if (!w) return;
+      const dur = Array.isArray(w.durations) ? w.durations : Array(w.notes.length).fill(w.durations || 0.5);
+      referenceNotes = w.notes.slice();
+      referenceDurations = dur.slice();
+      referenceGap = w.gap || 0;
+      refStatus.textContent = `Reference from warmup: ${referenceNotes.join(', ')}`;
+      playReferenceSequence(referenceNotes, referenceDurations, referenceGap);
+    };
+
+    document.getElementById('playReference').onclick = () => {
+      if (!referenceNotes.length) return;
+      playReferenceSequence(referenceNotes, referenceDurations, referenceGap);
+    };
+
+    document.getElementById('clearReference').onclick = () => {
+      referenceNotes = [];
+      referenceDurations = [];
+      referenceGap = 0;
+      refStatus.textContent = 'Reference cleared.';
+    };
+
+    analyzeFileBtn.onclick = async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        recordStatus.textContent = 'Choose a file to analyze.';
+        return;
+      }
+      recordedAudio.src = URL.createObjectURL(file);
+      recordedAudio.style.display = 'block';
+      recordStatus.textContent = 'Analyzing file...';
+      await analyzeBlob(file, takeNameInput.value || file.name);
+      recordStatus.textContent = 'Done.';
+    };
+
+    // init
+    buildPiano();
+    loadWarmups();
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "takes": [
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 1005.0213770873685,
+        "pct_within_50": 0.0,
+        "valid_frames": 635,
+        "pitch_accuracy_score": 0.0,
+        "octave_correction": 0,
+        "debug_pitch_method": "pyin",
+        "debug_fmin": 196.21917397544897,
+        "debug_fmax": 706.3890263116164,
+        "debug_sr": 44100
+      }
+    },
+    {
+      "name": "sung_c_major.wav",
+      "summary": {
+        "mean_abs_cents": 234.34880732726148,
+        "pct_within_50": 0.34035087719298246,
+        "valid_frames": 570,
+        "pitch_accuracy_score": 34.04,
+        "octave_correction": 1,
+        "debug_pitch_method": "pyin",
+        "debug_fmin": 196.21917397544897,
+        "debug_fmax": 706.3890263116164,
+        "debug_sr": 44100
+      }
+    },
+    {
+      "name": "sung_c_major.wav",
+      "summary": {
+        "mean_abs_cents": 187.7397800239145,
+        "pct_within_50": 0.4107402031930334,
+        "valid_frames": 689,
+        "pitch_accuracy_score": 41.07,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 339.087194969056,
+        "pct_within_50": 0.3352685050798258,
+        "valid_frames": 689,
+        "pitch_accuracy_score": 33.53,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    }
+  ]
+}
