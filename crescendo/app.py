@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from dutils.pitch_utils import estimate_pitch_pyin, estimate_pitch_yin, compute_pitch_accuracy_score  # noqa: E402
+from dutils.analysis_utils import cents_error, gate_frames  # noqa: E402
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -81,11 +82,30 @@ def build_reference_timeline(
     return hz_track
 
 
-def compute_summary(times: np.ndarray, f0: np.ndarray, target_hz: np.ndarray) -> Tuple[dict, List[dict]]:
-    """Compute cents error vs target Hz and build per-frame payload for the UI."""
-    cents = np.full_like(f0, np.nan, dtype=float)
-    valid = (target_hz > 0) & (~np.isnan(f0)) & (f0 > 0)
-    cents[valid] = 1200.0 * np.log2(f0[valid] / target_hz[valid])
+def compute_summary(
+    times: np.ndarray,
+    f0: np.ndarray,
+    target_hz: np.ndarray,
+    rms: Optional[np.ndarray] = None,
+    rms_gate_ratio: float = 0.0,
+) -> Tuple[dict, List[dict]]:
+    """Compute cents error vs target Hz with optional RMS gating."""
+    min_len_candidates = [len(times), len(f0), len(target_hz)]
+    if rms is not None:
+        min_len_candidates.append(len(rms))
+    min_len = min(min_len_candidates)
+    times = times[:min_len]
+    f0 = f0[:min_len]
+    target_hz = target_hz[:min_len]
+    if rms is not None:
+        rms = rms[:min_len]
+
+    keep_mask = gate_frames(f0, rms if rms is not None else None, rms_gate_ratio=rms_gate_ratio, jump_gate_cents=0.0)
+    f0 = np.where(keep_mask, f0, np.nan)
+    target_hz = np.where(keep_mask, target_hz, np.nan)
+
+    cents = cents_error(f0, target_hz)
+    valid = np.isfinite(cents)
     abs_cents = np.abs(cents[valid]) if np.any(valid) else np.array([])
     summary = {
         "mean_abs_cents": float(np.mean(abs_cents)) if abs_cents.size else None,
@@ -166,12 +186,14 @@ def api_analyze():
     ref_gap = float(request.form.get("ref_gap", "0.0") or 0.0) if use_reference else 0.0
 
     # Pitch estimator settings (match pipeline defaults to avoid octave inconsistencies)
-    pitch_method = (request.form.get("pitch_method") or "yin").lower()
+    # pitch_method = (request.form.get("pitch_method") or "yin").lower()
+    pitch_method = "pyin"
     fmin = float(request.form.get("fmin", "80") or 80.0)
     fmax = float(request.form.get("fmax", "1000") or 1000.0)
     frame_length = int(request.form.get("frame_length", "2048") or 2048)
     hop_length = int(request.form.get("hop_length", "256") or 256)
     median_win = int(request.form.get("median_win", "3") or 3)
+    rms_gate_ratio = float(request.form.get("rms_gate_ratio", "0.02") or 0.02)
 
     if ref_notes:
         try:
@@ -190,6 +212,7 @@ def api_analyze():
 
     try:
         y, sr = librosa.load(tmp_path, sr=None, mono=True)
+        vocal_rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length, center=True)[0]
 
         # Match the offline pipeline defaults to reduce octave errors.
         if pitch_method == "pyin":
@@ -213,8 +236,10 @@ def api_analyze():
                 median_win=median_win,
             )
             # Keep API shape consistent with pYIN
+
             voiced_flag = np.isfinite(f0)
 
+        print(f"RAW VOCAL F0: {f0}") 
         voiced_mask = (~np.isnan(f0)) & (np.asarray(voiced_flag).astype(bool))
         if not np.any(voiced_mask):
             return jsonify({"error": "No voiced frames detected"}), 400
@@ -225,25 +250,13 @@ def api_analyze():
             # When no reference is provided, return raw pitch without auto-comparison to rounded MIDI.
             target_hz = np.full_like(times, np.nan, dtype=float)
 
-        # --- Octave correction (only when we have an explicit reference) ---
-        # YIN/pYIN can sometimes lock to a subharmonic (often exactly 1 octave down).
-        # When ref_notes are provided, we can detect that reliably and correct it.
-        octave_correction = 0
-        if ref_notes:
-            corr_valid = (~np.isnan(f0)) & (f0 > 0) & (~np.isnan(target_hz)) & (target_hz > 0)
-            if np.any(corr_valid):
-                ratio = np.median(f0[corr_valid] / target_hz[corr_valid])
-                # If we're consistently ~0.5x the target, shift up an octave.
-                if 0.45 <= ratio <= 0.55:
-                    f0 = f0 * 2.0
-                    octave_correction = +1
-                # If we're consistently ~2x the target, shift down an octave.
-                elif 1.8 <= ratio <= 2.2:
-                    f0 = f0 * 0.5
-                    octave_correction = -1
-
-        summary, frames = compute_summary(times, f0, target_hz)
-        summary["octave_correction"] = octave_correction
+        summary, frames = compute_summary(
+            times,
+            f0,
+            target_hz,
+            rms=vocal_rms,
+            rms_gate_ratio=rms_gate_ratio,
+        )
         summary["used_reference"] = bool(ref_notes)
         save_take(name, summary, frames)
         return jsonify({"summary": summary, "frames": frames})

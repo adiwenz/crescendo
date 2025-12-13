@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Unified pipeline without subprocesses:
+"""Unified pipeline without subprocesses:
  - Record (optional), with or without reference playback
  - Estimate pitch once and reuse for notes CSV, take CSV, and similarity JSON
  - Rebuild takes_index.json
@@ -36,9 +35,20 @@ def main():
     """Run unified record/analyze pipeline: optional record, analyze, write outputs."""
     ap = argparse.ArgumentParser(description="Unified record/analyze pipeline (no subprocess).")
     ap.add_argument("--take_name", required=True, help="Name for the take")
-    ap.add_argument("--reference", help="Reference WAV (optional). If provided, will be played during recording and used for similarity.")
-    ap.add_argument("--no_record", action="store_true", help="Skip recording and reuse existing audio_files/<take_name>.wav")
-    ap.add_argument("--no_play_reference", action="store_true", help="Do not play the reference while recording (even if provided)")
+    ap.add_argument(
+        "--reference",
+        help="Reference WAV (optional). If provided, will be played during recording and used for similarity.",
+    )
+    ap.add_argument(
+        "--no_record",
+        action="store_true",
+        help="Skip recording and reuse existing audio_files/<take_name>.wav",
+    )
+    ap.add_argument(
+        "--no_play_reference",
+        action="store_true",
+        help="Do not play the reference while recording (even if provided)",
+    )
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument("--channels", type=int, default=1)
     ap.add_argument("--trim_start", type=float, default=0.0, help="Seconds to trim from start for similarity")
@@ -46,7 +56,14 @@ def main():
     ap.add_argument("--rms_gate_ratio", type=float, default=0.0, help="RMS gate ratio for similarity (0 disables gating)")
     ap.add_argument("--jump_gate_cents", type=float, default=0.0, help="Jump gate for similarity (0 disables gating)")
     ap.add_argument("--score_max_abs_cents", type=float, default=300.0, help="Ignore frames beyond this |cents| for scoring (0 disables)")
-    ap.add_argument("--ignore_short_outliers_ms", type=float, default=120.0, help="If score_max_abs_cents is set, ignore outlier runs shorter than this duration (ms). Set 0 to disable.")
+    ap.add_argument(
+        "--ignore_short_outliers_ms",
+        type=float,
+        default=120.0,
+        help=(
+            "If score_max_abs_cents is set, ignore outlier runs shorter than this duration (ms). Set 0 to disable."
+        ),
+    )
     ap.add_argument("--takes_threshold", type=float, default=25.0, help="Cents threshold for takes_index.json")
     ap.add_argument("--fmin", type=float, default=80.0)
     ap.add_argument("--fmax", type=float, default=1000.0)
@@ -54,9 +71,22 @@ def main():
     ap.add_argument("--hop_length", type=int, default=256)
     ap.add_argument("--median_win", type=int, default=3)
     ap.add_argument("--pitch_method", choices=["yin", "pyin"], default="yin", help="Pitch estimator to use.")
-    ap.add_argument("--max_delay_ms", type=float, default=0.0, help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.")
-    ap.add_argument("--penalize_late_notes", action="store_true", help="If set, do not allow delay compensation (penalize lateness).")
-    ap.add_argument("--chatgpt_model", default=DEFAULT_MODEL, help="Model for ChatGPT feedback (must support audio input).")
+    ap.add_argument(
+        "--max_delay_ms",
+        type=float,
+        default=0.0,
+        help="Allow up to this delay (ms) when aligning vocal vs reference before scoring.",
+    )
+    ap.add_argument(
+        "--penalize_late_notes",
+        action="store_true",
+        help="If set, do not allow delay compensation (penalize lateness).",
+    )
+    ap.add_argument(
+        "--chatgpt_model",
+        default=DEFAULT_MODEL,
+        help="Model for ChatGPT feedback (must support audio input).",
+    )
     ap.add_argument("--mock_chatgpt", action="store_true", help="Force mock ChatGPT feedback instead of API call.")
     args = ap.parse_args()
 
@@ -118,7 +148,8 @@ def main():
             hop_length=args.hop_length,
             median_win=args.median_win,
         )
-
+    print(f"RAW VOCAL F0: {vocal_f0_raw}")
+    # Estimate reference pitch
     ref_f0 = None
     ref_times = None
     if ref_y is not None:
@@ -173,15 +204,13 @@ def main():
         penalize_late=args.penalize_late_notes,
     )
 
-    # Derive our own pitch accuracy score (0–100) from the similarity metrics,
-    # so we can show it alongside ChatGPT's pitch_accuracy in JSON/HTML.
+    # Derive our own pitch accuracy score (0–100) from the similarity metrics.
     local_pitch_score = compute_pitch_accuracy_score(summary)
     if local_pitch_score is not None:
         summary["local_pitch_accuracy_score"] = local_pitch_score
         print(f"local pitch score {local_pitch_score}")
     else:
         print("local pitch score: N/A")
-
 
     print("Getting ChatGPT feedback...")
     chatgpt_feedback = get_chatgpt_feedback(
@@ -195,7 +224,9 @@ def main():
     run = {
         "metadata": {
             "vocal_path": f"../audio_files/{vocal_wav.name}",
-            "reference_path": f"../audio_files/{ref_path.name}" if ref_path and ref_path.parent == AUDIO_DIR else (str(ref_path) if ref_path else None),
+            "reference_path": f"../audio_files/{ref_path.name}"
+            if ref_path and ref_path.parent == AUDIO_DIR
+            else (str(ref_path) if ref_path else None),
             "sample_rate": vocal_sr,
             "duration_vocal": len(vocal_y) / vocal_sr,
             "duration_reference": len(ref_y) / ref_sr if ref_y is not None else None,
@@ -219,10 +250,7 @@ def main():
         },
         "summary": summary,
         "frames": frames,
-        "volume": {
-            "summary": volume_summary,
-            "frames": volume_frames,
-        },
+        "volume": {"summary": volume_summary, "frames": volume_frames},
         "chatgpt_feedback": chatgpt_feedback,
     }
     upsert_similarity(run, args.take_name, SIM_JSON)
@@ -233,7 +261,9 @@ def main():
 
     # Rebuild takes index
     labels, scores = build_takes_index.build_index(str(TAKES_DIR), args.takes_threshold)
-    TAKES_INDEX_JSON.write_text(json.dumps({"labels": labels, "scores": scores, "threshold_cents": args.takes_threshold}, indent=2))
+    TAKES_INDEX_JSON.write_text(
+        json.dumps({"labels": labels, "scores": scores, "threshold_cents": args.takes_threshold}, indent=2)
+    )
 
     print("✅ Pipeline complete.")
 

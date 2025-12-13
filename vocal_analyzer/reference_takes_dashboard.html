@@ -757,6 +757,15 @@
       document.getElementById("toneTips").innerHTML = tips.join("<br>");
     }
 
+    function midiToNoteName(m) {
+      const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+      if (m === null || m === undefined || Number.isNaN(m)) return "";
+      const n = Math.round(m);
+      const name = names[(n % 12 + 12) % 12];
+      const octave = Math.floor(n / 12) - 1;
+      return `${name}${octave}`;
+    }
+
     function renderMelody(run) {
       const frames = run.frames || [];
       const vocalPoints = frames.map(f => ({ x: f.time, y: f.vocal_midi ?? null }));
@@ -780,7 +789,16 @@
           plugins: { legend: { labels: { color: "#fff" } } },
           scales: {
             x: { title: { display: true, text: "Time (s)", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.05)" }, min: timeMin, max: timeMax },
-            y: { title: { display: true, text: "MIDI", color: "#fff" }, ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } }
+            y: {
+              title: { display: true, text: "Pitch", color: "#fff" },
+              ticks: {
+                color: "#fff",
+                stepSize: 1,
+                autoSkip: false,
+                callback: (val) => midiToNoteName(val),
+              },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            }
           }
         }
       });

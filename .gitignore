@@ -6,11 +6,21 @@ webapp/uploads/
 .DS_Store
 
 # Python cache
-__pycache__
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
 *.pyd
 *.pycache
+
+# CSVs and JSONs
+vocal_analyzer/analysis_similarity.json
+crescendo/data/
+inter_take_analysis/takes/
+experimental/uploads/
+vocal_notes/vocal_notes_stats.csv
 
 # Tests
 tests/segmentation_debug/

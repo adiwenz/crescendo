@@ -10,5 +10,8 @@ elevenlabs
 python-dotenv
 flask
 noisereduce
+torchcodec
+demucs
 
 # brew install fluidsynth   # macOS only
+

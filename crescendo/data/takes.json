@@ -49,6 +49,183 @@
         "octave_correction": 0,
         "used_reference": true
       }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 339.087194969056,
+        "pct_within_50": 0.3352685050798258,
+        "valid_frames": 689,
+        "pitch_accuracy_score": 33.53,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 612.8380430129588,
+        "pct_within_50": 0.14893617021276595,
+        "valid_frames": 94,
+        "pitch_accuracy_score": 14.89,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 304.77808811270756,
+        "pct_within_50": 0.8735632183908046,
+        "valid_frames": 87,
+        "pitch_accuracy_score": 87.36,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 1144.6356297222908,
+        "pct_within_50": 0.0,
+        "valid_frames": 94,
+        "pitch_accuracy_score": 0.0,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 128.42677597797086,
+        "pct_within_50": 0.776595744680851,
+        "valid_frames": 94,
+        "pitch_accuracy_score": 77.66,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 304.87762847756454,
+        "pct_within_50": 0.0,
+        "valid_frames": 749,
+        "pitch_accuracy_score": 0.0,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 688.0789483417732,
+        "pct_within_50": 0.0267022696929239,
+        "valid_frames": 749,
+        "pitch_accuracy_score": 2.67,
+        "octave_correction": 0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 1658.4782477082676,
+        "pct_within_50": 0.0,
+        "valid_frames": 655,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 376.8339796006316,
+        "pct_within_50": 0.5212765957446809,
+        "valid_frames": 94,
+        "pitch_accuracy_score": 52.13,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 339.087194969056,
+        "pct_within_50": 0.3352685050798258,
+        "valid_frames": 689,
+        "pitch_accuracy_score": 33.53,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 1305.822007405407,
+        "pct_within_50": 0.0,
+        "valid_frames": 615,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 1305.822007405407,
+        "pct_within_50": 0.0,
+        "valid_frames": 615,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 1305.822007405407,
+        "pct_within_50": 0.0,
+        "valid_frames": 615,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "ONESHOT.wav",
+      "summary": {
+        "mean_abs_cents": 1305.822007405407,
+        "pct_within_50": 0.0,
+        "valid_frames": 615,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "recording.webm",
+      "summary": {
+        "mean_abs_cents": 1336.7147677615817,
+        "pct_within_50": 0.0,
+        "valid_frames": 63,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "sung_c_major.wav",
+      "summary": {
+        "mean_abs_cents": 1237.8804423647566,
+        "pct_within_50": 0.0,
+        "valid_frames": 32,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
+    },
+    {
+      "name": "SERIOUS.wav",
+      "summary": {
+        "mean_abs_cents": 1336.3255527148326,
+        "pct_within_50": 0.0,
+        "valid_frames": 657,
+        "pitch_accuracy_score": 0.0,
+        "used_reference": true
+      }
     }
   ]
 }
