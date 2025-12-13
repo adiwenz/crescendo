@@ -38,11 +38,11 @@ class RecordingService {
     _sub?.cancel();
     _sub = null;
     await _capture.start(
-      listener: (obj) {
-        final buffer = (obj as List<dynamic>).cast<double>();
+      (obj) {
+        final buffer = obj as List<double>;
         _samples.addAll(buffer);
       },
-      onError: (_) {},
+      (err) {},
       sampleRate: sampleRate,
       bufferSize: frameSize,
     );
@@ -52,7 +52,7 @@ class RecordingService {
     await _capture.stop();
     _sub?.cancel();
     _sub = null;
-    final frames = pitchDetection.offlineFromSamples(_samples);
+    final frames = await pitchDetection.offlineFromSamples(_samples);
     final wavPath = await _writeWav(_samples);
     return RecordingResult(wavPath, frames);
   }

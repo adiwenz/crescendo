@@ -21,19 +21,24 @@ class PitchDetectionService {
 
   Future<Stream<PitchFrame>> startStream() async {
     final controller = StreamController<PitchFrame>();
-    final detector = PitchDetector(sampleRate: sampleRate, bufferSize: frameSize);
+    final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     double time = 0;
-    await _capture.start(listener: (obj) {
-      final buffer = (obj as List<dynamic>).cast<double>();
+    await _capture.start((obj) {
+      final buffer = obj as List<double>;
       for (var i = 0; i + frameSize <= buffer.length; i += hopSize) {
         final frame = buffer.sublist(i, i + frameSize);
-        final pitch = detector.getPitch(frame);
-        final hz = pitch[0] > 0 ? pitch[0].toDouble() : null;
-        final midi = hz != null && hz > 0 ? _hzToMidi(hz) : null;
-        controller.add(PitchFrame(time: time, hz: hz, midi: midi));
+        final currentTime = time;
         time += hopSize / sampleRate;
+        detector.getPitchFromFloatBuffer(frame).then((result) {
+          final hzVal = result.pitch;
+          final hz = hzVal != null && hzVal > 0 ? hzVal.toDouble() : null;
+          final midi = hz != null && hz > 0 ? _hzToMidi(hz) : null;
+          controller.add(PitchFrame(time: currentTime, hz: hz, midi: midi));
+        }).catchError((err) {
+          controller.addError(err);
+        });
       }
-    }, onError: (e) {
+    }, (e) {
       controller.addError(e);
     }, sampleRate: sampleRate, bufferSize: frameSize);
     return controller.stream;
@@ -43,14 +48,15 @@ class PitchDetectionService {
     await _capture.stop();
   }
 
-  List<PitchFrame> offlineFromSamples(List<double> samples) {
-    final detector = PitchDetector(sampleRate: sampleRate, bufferSize: frameSize);
+  Future<List<PitchFrame>> offlineFromSamples(List<double> samples) async {
+    final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     final frames = <PitchFrame>[];
     double time = 0;
     for (var i = 0; i + frameSize <= samples.length; i += hopSize) {
       final frame = samples.sublist(i, i + frameSize);
-      final pitch = detector.getPitch(frame);
-      final hz = pitch[0] > 0 ? pitch[0].toDouble() : null;
+      final result = await detector.getPitchFromFloatBuffer(frame);
+      final hzVal = result.pitch;
+      final hz = hzVal != null && hzVal > 0 ? hzVal.toDouble() : null;
       final midi = hz != null && hz > 0 ? _hzToMidi(hz) : null;
       frames.add(PitchFrame(time: time, hz: hz, midi: midi));
       time += hopSize / sampleRate;

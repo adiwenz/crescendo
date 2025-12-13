@@ -49,12 +49,12 @@ class WarmupDefinition {
 
   static double noteToMidi(String note) {
     final match = RegExp(r'^([A-G])(#|b)?(\d)$').firstMatch(note);
-    if (match == null) return 60;
+    if (match == null) return 60.0;
     const order = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11};
     final base = order[match.group(1)] ?? 0;
     final acc = match.group(2) == '#' ? 1 : match.group(2) == 'b' ? -1 : 0;
     final octave = int.parse(match.group(3)!);
-    return (octave + 1) * 12 + base + acc;
+    return ((octave + 1) * 12 + base + acc).toDouble();
   }
 }
 
