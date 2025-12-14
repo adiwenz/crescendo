@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -29,6 +30,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_player.setVolume(1.0));
     _takesListener = () => _load();
     appState.takesVersion.addListener(_takesListener);
     _load();
@@ -108,6 +110,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             return;
                           }
                           await _player.stop();
+                          await _player.setVolume(1.0);
                           await _player.setReleaseMode(ReleaseMode.stop);
                           await _player.play(DeviceFileSource(path));
                         },

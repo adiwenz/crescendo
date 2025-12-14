@@ -54,11 +54,16 @@ class AudioSynthService {
 
   Future<void> playFile(String path) async {
     await _player.stop();
+    await _player.setVolume(1.0);
     await _player.play(DeviceFileSource(path));
   }
 
+  Stream<void> get onComplete => _player.onPlayerComplete;
+
+  Future<void> stop() => _player.stop();
+
   double _sine(double hz, double t) {
-    return 0.2 * sin(2 * pi * hz * t);
+    return 0.8 * sin(2 * pi * hz * t);
   }
 
   Uint8List _toWav(List<double> samples) {

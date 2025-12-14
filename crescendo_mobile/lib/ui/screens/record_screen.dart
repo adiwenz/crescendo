@@ -39,11 +39,14 @@ class _RecordScreenState extends State<RecordScreen> {
   StreamSubscription<PitchFrame>? _liveSub;
   final List<PitchFrame> _pendingFrames = [];
   Timer? _frameFlush;
+  StreamSubscription<void>? _referenceDoneSub;
+  Timer? _autoStopTimer;
   bool _stopping = false;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_player.setVolume(1.0));
     _posSub = _player.onPositionChanged.listen((p) {
       setState(() => playhead = p.inMilliseconds / 1000.0);
     });
@@ -54,6 +57,9 @@ class _RecordScreenState extends State<RecordScreen> {
     _posSub?.cancel();
     _liveSub?.cancel();
     _frameFlush?.cancel();
+    _referenceDoneSub?.cancel();
+    _autoStopTimer?.cancel();
+    unawaited(synth.stop());
     _player.dispose();
     super.dispose();
   }
@@ -67,16 +73,25 @@ class _RecordScreenState extends State<RecordScreen> {
     });
     _liveSub?.cancel();
     _frameFlush?.cancel();
+    _referenceDoneSub?.cancel();
+    _autoStopTimer?.cancel();
     _liveSub = recordingService.liveStream.listen((pf) {
       _pendingFrames.add(pf);
       _scheduleFrameFlush();
     });
     await recordingService.start();
+    final warmup = appState.selectedWarmup.value;
+    if (_hasReference(warmup)) {
+      await _playReferenceWithAutoStop(warmup);
+    }
   }
 
   Future<void> _stopRecording() async {
     if (_stopping) return;
     _stopping = true;
+    _referenceDoneSub?.cancel();
+    _autoStopTimer?.cancel();
+    await synth.stop();
     final result = await recordingService.stop();
     await _liveSub?.cancel();
     _frameFlush?.cancel();
@@ -128,6 +143,26 @@ class _RecordScreenState extends State<RecordScreen> {
     });
   }
 
+  bool _hasReference(WarmupDefinition warmup) => warmup.notes.isNotEmpty;
+
+  Future<void> _playReferenceWithAutoStop(WarmupDefinition warmup) async {
+    _referenceDoneSub?.cancel();
+    final path = await synth.renderWarmup(warmup);
+    await synth.playFile(path);
+    _referenceDoneSub = synth.onComplete.listen((_) => _scheduleAutoStop());
+    final fallbackDelay = Duration(milliseconds: (warmup.totalDuration * 1000).round() + 500);
+    _autoStopTimer = Timer(fallbackDelay, _scheduleAutoStop);
+  }
+
+  void _scheduleAutoStop() {
+    if (!recording || _stopping) return;
+    _autoStopTimer?.cancel();
+    _autoStopTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!recording || _stopping) return;
+      unawaited(_stopRecording());
+    });
+  }
+
   List<PitchFrame> _attachCents(List<PitchFrame> f, List<NoteSegment> ref) {
     return f.map((frame) {
       double? target;
@@ -161,6 +196,7 @@ class _RecordScreenState extends State<RecordScreen> {
       return;
     }
     await _player.stop();
+    await _player.setVolume(1.0);
     await _player.setReleaseMode(ReleaseMode.stop);
     await _player.play(DeviceFileSource(recordedPath!));
   }
