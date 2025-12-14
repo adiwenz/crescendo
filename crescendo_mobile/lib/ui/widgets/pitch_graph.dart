@@ -50,9 +50,12 @@ class _PitchPainter extends CustomPainter {
     final minT = times.first;
     final maxT = times.last;
     final midiVals = frames.map((f) => f.midi ?? 0).where((v) => v > 0).toList();
-    if (midiVals.isEmpty) return;
-    final minM = midiVals.reduce(math.min) - 2;
-    final maxM = midiVals.reduce(math.max) + 2;
+    double minM = 48; // C3
+    double maxM = 72; // C5
+    if (midiVals.isNotEmpty) {
+      minM = math.max(48, midiVals.reduce(math.min) - 2);
+      maxM = math.min(72, midiVals.reduce(math.max) + 2);
+    }
     double xForTime(double t) => ((t - minT) / (maxT - minT + 1e-6)) * size.width;
     double yForPitch(double m) => size.height - ((m - minM) / (maxM - minM + 1e-6)) * size.height;
 

@@ -16,8 +16,8 @@ class PitchDetectionService {
 
   PitchDetectionService({
     this.sampleRate = 44100,
-    this.frameSize = 2048,
-    this.hopSize = 128,
+    this.frameSize = 1024,
+    this.hopSize = 64,
   });
 
   Future<void> _ensureInit() async {

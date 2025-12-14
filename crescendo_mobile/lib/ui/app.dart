@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/history_screen.dart';
 import 'screens/record_screen.dart';
+import 'screens/realtime_pitch_screen.dart';
 import 'screens/warmups_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
@@ -29,6 +30,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
             WarmupsScreen(),
             RecordScreen(),
             HistoryScreen(),
+            RealtimePitchScreen(),
           ],
         ),
         bottomNavigationBar: NavigationBar(
@@ -38,6 +40,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
             NavigationDestination(icon: Icon(Icons.library_music), label: 'Warmups'),
             NavigationDestination(icon: Icon(Icons.mic), label: 'Record'),
             NavigationDestination(icon: Icon(Icons.history), label: 'History'),
+            NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'Realtime'),
           ],
         ),
       ),

@@ -13,6 +13,8 @@ flutter run
 ### Packages
 - flutter_audio_capture: mic PCM capture
 - pitch_detector_dart: on-device pitch estimation
+- mic_stream: realtime mic streaming for the SimplySing-style screen
+- permission_handler, wakelock_plus: mic permission + keep-awake for realtime pitch
 - audioplayers: playback for reference + takes
 - sqflite (+ sqflite_common_ffi for tests): local persistence
 - path_provider, path, collection, flutter_lints
@@ -29,3 +31,9 @@ flutter run
 - Audio capture/synthesis are simplified; tune buffer sizes if devices under/over-run.
 - Graph auto-scroll is basic; adjust in `PitchGraph` if you want sticky playhead behavior.
 - Reference synthesis is sine-only; swap out in `AudioSynthService` for richer timbre.
+
+### Realtime pitch screen
+- Screen: Realtime tab (RealtimePitchScreen) uses mic_stream + pitch_detector_dart for low-latency pitch.
+- Mic permission required on iOS; message set in Info.plist.
+- Pitch range defaults to C3–C6; adjust in `PitchTailPainter`.
+- If simulator audio is choppy, test on device for smoother updates.

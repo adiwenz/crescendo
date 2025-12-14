@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_audio_capture: ^1.0.1
+  mic_stream: ^0.7.2
+  permission_handler: ^11.3.0
+  wakelock_plus: ^1.2.4
   pitch_detector_dart: ^0.0.5
   audioplayers: ^6.0.0
   path_provider: ^2.1.2
