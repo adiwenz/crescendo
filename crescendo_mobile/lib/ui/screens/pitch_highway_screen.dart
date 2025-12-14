@@ -6,7 +6,12 @@ import 'package:flutter/scheduler.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
-import '../../services/pitch_detection_service.dart';
+import '../../models/take.dart';
+import '../../services/audio_synth_service.dart';
+import '../../services/recording_service.dart';
+import '../../services/scoring_service.dart';
+import '../../services/storage/take_repository.dart';
+import '../state.dart';
 import '../widgets/pitch_highway_painter.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
@@ -24,13 +29,21 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   final _timeNotifier = ValueNotifier<double>(0);
   final _pitchTail = <PitchFrame>[];
+  final _capturedFrames = <PitchFrame>[];
 
   late final Ticker _ticker;
   Duration? _lastTick;
   bool _playing = false;
+  bool _recordingActive = false;
 
-  late final PitchDetectionService _pitchService;
-  StreamSubscription<PitchFrame>? _pitchSub;
+  late final RecordingService _recording;
+  StreamSubscription<PitchFrame>? _liveSub;
+  late final AudioSynthService _synth;
+  late final ScoringService _scoring;
+  late final TakeRepository _repo;
+  final appState = AppState();
+  String? _referencePath;
+  String? _lastRecordingPath;
 
   List<ReferenceNote> get _stubNotes => const [
         ReferenceNote(startSec: 0, endSec: 1.2, midi: 60, lyric: 'A'),
@@ -49,15 +62,19 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _pitchService = PitchDetectionService();
+    _recording = RecordingService();
+    _synth = AudioSynthService();
+    _scoring = ScoringService();
+    _repo = TakeRepository();
     _ticker = createTicker(_onTick);
   }
 
   @override
   void dispose() {
     _ticker.dispose();
-    _pitchSub?.cancel();
-    _pitchService.stopStream();
+    _liveSub?.cancel();
+    _recording.stop();
+    _synth.stop();
     _timeNotifier.dispose();
     super.dispose();
   }
@@ -82,30 +99,40 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     final target = force ?? !_playing;
     if (target == _playing) return;
     if (target) {
+      if (_timeNotifier.value >= _totalDuration) {
+        _timeNotifier.value = 0;
+        _pitchTail.clear();
+        _capturedFrames.clear();
+        _lastRecordingPath = null;
+      }
       _playing = true;
       _lastTick = null;
       _ticker.start();
-      await _startPitchStream();
+      await _startRecording();
+      await _playReference();
     } else {
       _playing = false;
       _ticker.stop();
       _lastTick = null;
-      await _pitchService.stopStream();
-      await _pitchSub?.cancel();
-      _pitchSub = null;
+      await _stopRecording();
+      await _synth.stop();
     }
     setState(() {});
   }
 
-  Future<void> _startPitchStream() async {
-    await _pitchSub?.cancel();
-    final stream = await _pitchService.startStream();
-    _pitchSub = stream.listen((frame) {
+  Future<void> _startRecording() async {
+    _capturedFrames.clear();
+    await _liveSub?.cancel();
+    await _recording.start();
+    _recordingActive = true;
+    _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);
       if (midi == null) return;
-      _pitchTail.add(PitchFrame(time: _timeNotifier.value, hz: frame.hz, midi: midi));
+      final now = _timeNotifier.value;
+      final f = PitchFrame(time: now, hz: frame.hz, midi: midi);
+      _pitchTail.add(f);
+      _capturedFrames.add(f);
       _trimTail();
-      // Nudge repaint even if time doesn't change.
       _timeNotifier.value = _timeNotifier.value;
     });
   }
@@ -120,6 +147,63 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     }
   }
 
+  Future<void> _stopRecording() async {
+    if (!_recordingActive) return;
+    _recordingActive = false;
+    await _liveSub?.cancel();
+    _liveSub = null;
+    final result = await _recording.stop();
+    _lastRecordingPath = result.audioPath.isNotEmpty ? result.audioPath : _lastRecordingPath;
+  }
+
+  Future<String> _ensureReferenceAudio() async {
+    if (_referencePath != null) return _referencePath!;
+    _referencePath = await _synth.renderReferenceNotes(_stubNotes);
+    return _referencePath!;
+  }
+
+  Future<void> _playReference() async {
+    final path = await _ensureReferenceAudio();
+    await _synth.stop();
+    await _synth.playFile(path);
+  }
+
+  ReferenceNote? _noteAt(double t) {
+    for (final n in _stubNotes) {
+      if (t >= n.startSec && t <= n.endSec) return n;
+    }
+    return null;
+  }
+
+  List<PitchFrame> _attachCents(List<PitchFrame> frames) {
+    return frames.map((f) {
+      final note = _noteAt(f.time);
+      if (note == null || f.midi == null) return f;
+      final cents = (f.midi! - note.midi) * 100;
+      return PitchFrame(time: f.time, hz: f.hz, midi: f.midi, centsError: cents);
+    }).toList();
+  }
+
+  Future<void> _saveTake() async {
+    if (_lastRecordingPath == null || _capturedFrames.isEmpty) return;
+    final cleanFrames = _attachCents(_capturedFrames);
+    final metrics = _scoring.score(cleanFrames);
+    final take = Take(
+      name: 'Pitch Highway ${DateTime.now().toLocal()}',
+      createdAt: DateTime.now(),
+      warmupId: 'pitch_highway_stub',
+      warmupName: 'Pitch Highway',
+      audioPath: _lastRecordingPath!,
+      frames: cleanFrames,
+      metrics: metrics,
+    );
+    await _repo.insert(take);
+    appState.takesVersion.value++;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved take to history')));
+    }
+  }
+
   double _hzToMidi(double hz) => 69 + 12 * math.log(hz / 440) / math.ln2;
 
   String _formatTime(double t) {
@@ -127,6 +211,17 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _restart() async {
+    if (_playing) {
+      await _togglePlayback(force: false);
+    }
+    _timeNotifier.value = 0;
+    _pitchTail.clear();
+    _capturedFrames.clear();
+    _lastRecordingPath = null;
+    setState(() {});
   }
 
   @override
@@ -248,7 +343,25 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _restart(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Start over'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _lastRecordingPath != null ? _saveTake : null,
+                  icon: const Icon(Icons.save),
+                  label: const Text('Save take'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
