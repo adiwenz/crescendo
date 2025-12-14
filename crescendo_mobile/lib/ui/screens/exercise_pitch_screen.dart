@@ -55,6 +55,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   void initState() {
     super.initState();
     plan = ExercisePlan(
+      id: 'c_major_scale',
       title: 'Scale',
       keyLabel: 'C Major',
       bpm: 120,
@@ -166,7 +167,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     final stars = _starsForScore(score);
     final take = ExerciseTake(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      exerciseId: plan.title.toLowerCase(),
+      exerciseId: plan.id,
       title: '${plan.keyLabel} ${plan.title}',
       createdAt: DateTime.now(),
       score0to100: score,

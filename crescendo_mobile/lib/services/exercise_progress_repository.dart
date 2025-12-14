@@ -21,9 +21,12 @@ class ExerciseProgressRepository {
     final list = await loadTakes(take.exerciseId);
     list.add(take);
     await prefs.setString('$_keyPrefix${take.exerciseId}', ExerciseTake.listToJson(list));
+    // simple debug logging
+    // ignore: avoid_print
+    print('[progress] Saved take ${take.id} for ${take.exerciseId} total now: ${list.length}');
   }
 
-  Future<Map<String, List<ExerciseTake>>> loadAll() async {
+  Future<Map<String, List<ExerciseTake>>> loadAllTakes() async {
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys().where((k) => k.startsWith(_keyPrefix));
     final Map<String, List<ExerciseTake>> all = {};

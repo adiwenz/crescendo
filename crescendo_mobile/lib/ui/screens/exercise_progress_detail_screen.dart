@@ -49,7 +49,7 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : takes.isEmpty
-              ? const Center(child: Text('No takes yet'))
+              ? const Center(child: Text('No takes yet—complete this exercise to see progress'))
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
@@ -64,13 +64,14 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
                             const SizedBox(height: 12),
                             ScoreLineChart(takes: takes),
                             const SizedBox(height: 8),
-                            if (best != null) Row(
-                              children: [
-                                const Icon(Icons.star, color: Colors.amber),
-                                const SizedBox(width: 6),
-                                Text('Best: ${best.score0to100.toStringAsFixed(0)}'),
-                              ],
-                            ),
+                            if (best != null)
+                              Row(
+                                children: [
+                                  const Icon(Icons.star, color: Colors.amber),
+                                  const SizedBox(width: 6),
+                                  Text('Best: ${best.score0to100.toStringAsFixed(0)}'),
+                                ],
+                              ),
                           ],
                         ),
                       ),
