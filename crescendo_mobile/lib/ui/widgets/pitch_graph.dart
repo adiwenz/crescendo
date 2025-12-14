@@ -10,6 +10,7 @@ class PitchGraph extends StatelessWidget {
   final List<NoteSegment> reference;
   final double playheadTime;
   final bool showHz;
+  final bool showDots;
 
   const PitchGraph({
     super.key,
@@ -17,6 +18,7 @@ class PitchGraph extends StatelessWidget {
     required this.reference,
     required this.playheadTime,
     this.showHz = false,
+    this.showDots = true,
   });
 
   @override
@@ -25,7 +27,7 @@ class PitchGraph extends StatelessWidget {
       builder: (context, constraints) {
         return CustomPaint(
           size: Size(constraints.maxWidth, constraints.maxHeight),
-          painter: _PitchPainter(frames, reference, playheadTime, showHz: showHz),
+          painter: _PitchPainter(frames, reference, playheadTime, showHz: showHz, showDots: showDots),
         );
       },
     );
@@ -37,8 +39,9 @@ class _PitchPainter extends CustomPainter {
   final List<NoteSegment> reference;
   final double playheadTime;
   final bool showHz;
+  final bool showDots;
 
-  _PitchPainter(this.frames, this.reference, this.playheadTime, {required this.showHz});
+  _PitchPainter(this.frames, this.reference, this.playheadTime, {required this.showHz, required this.showDots});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -82,16 +85,18 @@ class _PitchPainter extends CustomPainter {
       ..color = Colors.blue;
     canvas.drawPath(path, linePaint);
 
-    for (final f in frames) {
-      if (f.midi == null) continue;
-      final x = xForTime(f.time);
-      final y = yForPitch(f.midi!);
-      final c = f.centsError == null
-          ? Colors.grey
-          : (f.centsError!.abs() <= 20
-              ? Colors.green
-              : (f.centsError!.abs() <= 50 ? Colors.yellow.shade700 : Colors.red));
-      canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = c);
+    if (showDots) {
+      for (final f in frames) {
+        if (f.midi == null) continue;
+        final x = xForTime(f.time);
+        final y = yForPitch(f.midi!);
+        final c = f.centsError == null
+            ? Colors.grey
+            : (f.centsError!.abs() <= 20
+                ? Colors.green
+                : (f.centsError!.abs() <= 50 ? Colors.yellow.shade700 : Colors.red));
+        canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = c);
+      }
     }
 
     final playX = xForTime(playheadTime);

@@ -36,6 +36,8 @@ class _RecordScreenState extends State<RecordScreen> {
   double playhead = 0;
   StreamSubscription? _posSub;
   StreamSubscription<PitchFrame>? _liveSub;
+  final List<PitchFrame> _pendingFrames = [];
+  Timer? _frameFlush;
 
   @override
   void initState() {
@@ -49,6 +51,7 @@ class _RecordScreenState extends State<RecordScreen> {
   void dispose() {
     _posSub?.cancel();
     _liveSub?.cancel();
+    _frameFlush?.cancel();
     _player.dispose();
     super.dispose();
   }
@@ -61,10 +64,10 @@ class _RecordScreenState extends State<RecordScreen> {
       metrics = null;
     });
     _liveSub?.cancel();
+    _frameFlush?.cancel();
     _liveSub = recordingService.liveStream.listen((pf) {
-      setState(() {
-        frames = List.from(frames)..add(pf);
-      });
+      _pendingFrames.add(pf);
+      _scheduleFrameFlush();
     });
     await recordingService.start();
   }
@@ -72,6 +75,7 @@ class _RecordScreenState extends State<RecordScreen> {
   Future<void> _stopRecording() async {
     final result = await recordingService.stop();
     await _liveSub?.cancel();
+    _frameFlush?.cancel();
     final warmup = appState.selectedWarmup.value;
     final refSegments = warmup.buildPlan();
     final enriched = _attachCents(result.frames, refSegments);
@@ -105,6 +109,18 @@ class _RecordScreenState extends State<RecordScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved take')));
     }
+  }
+
+  void _scheduleFrameFlush() {
+    if (_frameFlush?.isActive ?? false) return;
+    _frameFlush = Timer(const Duration(milliseconds: 16), () {
+      if (_pendingFrames.isEmpty) return;
+      final toAdd = List<PitchFrame>.from(_pendingFrames);
+      _pendingFrames.clear();
+      setState(() {
+        frames = [...frames, ...toAdd];
+      });
+    });
   }
 
   List<PitchFrame> _attachCents(List<PitchFrame> f, List<NoteSegment> ref) {
@@ -198,6 +214,7 @@ class _RecordScreenState extends State<RecordScreen> {
                 frames: frames,
                 reference: appState.selectedWarmup.value.buildPlan(),
                 playheadTime: playhead,
+                showDots: false,
               ),
             ),
           ],

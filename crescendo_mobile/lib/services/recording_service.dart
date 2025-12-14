@@ -36,9 +36,9 @@ class RecordingService {
   RecordingService({
     this.sampleRate = 44100,
     this.frameSize = 2048,
-    this.hopSize = 256,
+    this.hopSize = 128,
     PitchDetectionService? pitchDetection,
-  }) : pitchDetection = pitchDetection ?? PitchDetectionService(sampleRate: 44100, frameSize: 2048, hopSize: 256);
+  }) : pitchDetection = pitchDetection ?? PitchDetectionService(sampleRate: 44100, frameSize: 2048, hopSize: 128);
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
