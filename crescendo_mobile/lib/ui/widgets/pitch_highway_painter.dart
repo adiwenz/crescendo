@@ -86,12 +86,18 @@ class PitchHighwayPainter extends CustomPainter {
     const baseColor = Colors.cyanAccent;
     if (tailFrames.length > 1) {
       final path = Path();
-      final offsets = tailFrames
-          .map((f) => Offset(
-                playheadX + (f.time - currentTime) * pixelsPerSecond,
-                _midiToY(f.midi!, size.height),
-              ))
-          .toList();
+      final offsets = <Offset>[];
+      for (var i = 0; i < tailFrames.length; i++) {
+        final f = tailFrames[i];
+        final age = (currentTime - f.time).clamp(0.0, tailWindowSec);
+        final baseY = _midiToY(f.midi!, size.height);
+        final wiggleAmp = (1 - age / tailWindowSec) * 8;
+        final wiggle = math.sin((age * 9) + i * 0.6) * wiggleAmp;
+        offsets.add(Offset(
+          playheadX + (f.time - currentTime) * pixelsPerSecond,
+          baseY + wiggle,
+        ));
+      }
       path.moveTo(offsets.first.dx, offsets.first.dy);
       for (var i = 1; i < offsets.length; i++) {
         path.lineTo(offsets[i].dx, offsets[i].dy);
@@ -100,7 +106,7 @@ class PitchHighwayPainter extends CustomPainter {
       for (var i = 0; i < 3; i++) {
         final paint = Paint()
           ..color = baseColor.withOpacity(0.5 - i * 0.15)
-          ..strokeWidth = 8 - i * 2
+          ..strokeWidth = 10 - i * 2
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round;
         canvas.drawPath(path, paint);
@@ -108,7 +114,8 @@ class PitchHighwayPainter extends CustomPainter {
 
       final head = offsets.last;
       canvas.drawCircle(head, 8, Paint()..color = baseColor);
-      canvas.drawCircle(head, 16, Paint()..color = baseColor.withOpacity(0.2));
+      canvas.drawCircle(head, 16, Paint()..color = baseColor.withOpacity(0.25));
+      canvas.drawCircle(head, 24, Paint()..color = baseColor.withOpacity(0.12));
     }
 
     final playheadPaint = Paint()
