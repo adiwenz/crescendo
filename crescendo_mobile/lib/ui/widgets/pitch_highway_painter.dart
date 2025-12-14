@@ -37,10 +37,10 @@ class PitchHighwayPainter extends CustomPainter {
 
     final playheadX = size.width * playheadFraction;
     final noteColor = Colors.white.withOpacity(0.45);
-    final highlightColor = Colors.white.withOpacity(0.8);
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
+    final currentStatus = _statusForTime(currentTime);
 
     for (final n in notes) {
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
@@ -54,7 +54,17 @@ class PitchHighwayPainter extends CustomPainter {
         y + barHeight / 2,
         radius,
       );
-      final paint = Paint()..color = identical(n, currentNote) ? highlightColor : noteColor;
+      final Color barColor;
+      if (identical(n, currentNote)) {
+        barColor = switch (currentStatus) {
+          PitchMatch.good => Colors.cyanAccent.withOpacity(0.85),
+          PitchMatch.near => Colors.amberAccent.withOpacity(0.85),
+          PitchMatch.off => Colors.pinkAccent.withOpacity(0.85),
+        };
+      } else {
+        barColor = noteColor;
+      }
+      final paint = Paint()..color = barColor;
       canvas.drawRRect(rect, paint);
 
       if (n.lyric != null && n.lyric!.isNotEmpty) {
@@ -73,7 +83,7 @@ class PitchHighwayPainter extends CustomPainter {
         .where((f) => f.midi != null && f.time >= currentTime - tailWindowSec && f.time <= currentTime + 1)
         .toList();
     tailFrames.sort((a, b) => a.time.compareTo(b.time));
-    final status = _statusForTime(currentTime);
+    const baseColor = Colors.cyanAccent;
     if (tailFrames.length > 1) {
       final path = Path();
       final offsets = tailFrames
@@ -87,11 +97,6 @@ class PitchHighwayPainter extends CustomPainter {
         path.lineTo(offsets[i].dx, offsets[i].dy);
       }
 
-      final Color baseColor = switch (status) {
-        PitchMatch.good => Colors.cyanAccent,
-        PitchMatch.near => Colors.amberAccent,
-        PitchMatch.off => Colors.pinkAccent,
-      };
       for (var i = 0; i < 3; i++) {
         final paint = Paint()
           ..color = baseColor.withOpacity(0.5 - i * 0.15)
