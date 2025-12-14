@@ -9,7 +9,6 @@ import '../../models/exercise_plan.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/take.dart';
-import '../../services/pitch_detection_service.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/exercise_scoring_service.dart';
 import '../../services/recording_service.dart';
@@ -28,7 +27,6 @@ class ExercisePitchScreen extends StatefulWidget {
 
 class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTickerProviderStateMixin {
   late final ExercisePlan plan;
-  late final PitchDetectionService _pitchService;
   late final AudioSynthService _synth;
   late final ExerciseScoringService _scoring;
   late final RecordingService _recording;
@@ -43,7 +41,6 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   double _elapsed = 0;
   bool _stopping = false;
 
-  StreamSubscription? _pitchSub;
   StreamSubscription<PitchFrame>? _liveSub;
   StreamSubscription<void>? _referenceSub;
   final ValueNotifier<double?> _pitchMidi = ValueNotifier<double?>(null);
@@ -64,7 +61,6 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
         for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) ExerciseNote(midi: midi, durationSec: 0.5),
       ],
     );
-    _pitchService = PitchDetectionService();
     _synth = AudioSynthService();
     _scoring = ExerciseScoringService();
     _recording = RecordingService();
@@ -77,10 +73,8 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   @override
   void dispose() {
     _ticker.dispose();
-    _pitchSub?.cancel();
     _liveSub?.cancel();
     _referenceSub?.cancel();
-    _pitchService.stopStream();
     _recording.stop();
     _synth.stop();
     _player.dispose();
@@ -143,15 +137,6 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     await _startExercise();
   }
 
-  Future<void> _startPitch() async {
-    await _pitchSub?.cancel();
-    final stream = await _pitchService.startStream();
-    _pitchSub = stream.listen((pf) {
-      final midi = pf.midi ?? (pf.hz != null ? _hzToMidi(pf.hz!) : null);
-      _pitchMidi.value = midi;
-    });
-  }
-
   Future<void> _stop() async {
     if (_stopping) return;
     _stopping = true;
@@ -160,8 +145,6 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _lastTick = null;
     _referenceSub?.cancel();
     await _synth.stop();
-    await _pitchSub?.cancel();
-    await _pitchService.stopStream();
     await _liveSub?.cancel();
     final result = await _recording.stop();
     if (result.audioPath.isNotEmpty) {
@@ -176,7 +159,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _running = false;
     _ticker.stop();
     _lastTick = null;
-    _pitchSub?.cancel();
+    _liveSub?.cancel();
     setState(() {});
   }
 
@@ -219,7 +202,6 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   }
 
   Future<void> _startExercise() async {
-    await _startPitch();
     await _liveSub?.cancel();
     await _recording.start();
     _liveSub = _recording.liveStream.listen((frame) {

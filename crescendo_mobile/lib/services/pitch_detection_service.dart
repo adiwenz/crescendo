@@ -13,6 +13,7 @@ class PitchDetectionService {
   final int frameSize;
   final int hopSize;
   bool _initialized = false;
+  bool _streaming = false;
 
   PitchDetectionService({
     this.sampleRate = 44100,
@@ -49,11 +50,18 @@ class PitchDetectionService {
     }, (e) {
       controller.addError(e);
     }, sampleRate: sampleRate, bufferSize: frameSize);
+    _streaming = true;
     return controller.stream;
   }
 
   Future<void> stopStream() async {
-    await _capture.stop();
+    if (!_streaming) return;
+    _streaming = false;
+    try {
+      await _capture.stop();
+    } catch (_) {
+      // Ignore if the platform channel reports no active stream.
+    }
   }
 
   Future<List<PitchFrame>> offlineFromSamples(List<double> samples) async {

@@ -33,6 +33,7 @@ class RecordingService {
   bool _initialized = false;
   bool _isRecording = false;
   bool _isStopping = false;
+  bool _streaming = false;
   double _streamTime = 0.0;
 
   RecordingService({
@@ -58,6 +59,7 @@ class RecordingService {
     _sub?.cancel();
     _sub = null;
     _isRecording = true;
+    _streaming = true;
     final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     await _capture.start(
       (obj) {
@@ -89,7 +91,14 @@ class RecordingService {
     if (!_isRecording || _isStopping) return RecordingResult('', const []);
     _isStopping = true;
     try {
-      await _capture.stop();
+      if (_streaming) {
+        try {
+          await _capture.stop();
+        } catch (_) {
+          // ignore if plugin reports no active stream
+        }
+      }
+      _streaming = false;
       await _sub?.cancel();
       _sub = null;
       final frames = _streamFrames.isNotEmpty
