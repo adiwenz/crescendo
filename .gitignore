@@ -5,6 +5,12 @@ webapp/uploads/
 .env
 .DS_Store
 
+# Flutter
+.dart-tool-home/
+.pub-cache/hosted/pub.dev/_discoveryapis_commons-1.0.6/.dart_tool/
+.pub-cache/hosted/pub.dev/_discoveryapis_commons-1.0.6/pubspec.lock
+.vscode/
+
 # Python cache
 __pycache__/
 **/__pycache__/
