@@ -11,6 +11,7 @@ class PitchGraph extends StatelessWidget {
   final double playheadTime;
   final bool showHz;
   final bool showDots;
+  final double? windowSeconds;
 
   const PitchGraph({
     super.key,
@@ -19,6 +20,7 @@ class PitchGraph extends StatelessWidget {
     required this.playheadTime,
     this.showHz = false,
     this.showDots = true,
+    this.windowSeconds,
   });
 
   @override
@@ -27,7 +29,14 @@ class PitchGraph extends StatelessWidget {
       builder: (context, constraints) {
         return CustomPaint(
           size: Size(constraints.maxWidth, constraints.maxHeight),
-          painter: _PitchPainter(frames, reference, playheadTime, showHz: showHz, showDots: showDots),
+          painter: _PitchPainter(
+            frames,
+            reference,
+            playheadTime,
+            showHz: showHz,
+            showDots: showDots,
+            windowSeconds: windowSeconds,
+          ),
         );
       },
     );
@@ -40,27 +49,36 @@ class _PitchPainter extends CustomPainter {
   final double playheadTime;
   final bool showHz;
   final bool showDots;
+  final double? windowSeconds;
 
-  _PitchPainter(this.frames, this.reference, this.playheadTime, {required this.showHz, required this.showDots});
+  _PitchPainter(
+    this.frames,
+    this.reference,
+    this.playheadTime, {
+    required this.showHz,
+    required this.showDots,
+    required this.windowSeconds,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (frames.isEmpty) return;
     final times = frames.map((f) => f.time).toList();
-    final minT = times.first;
     final maxT = times.last;
-    final midiVals = frames.map((f) => f.midi ?? 0).where((v) => v > 0).toList();
+    final window = windowSeconds ?? (maxT - times.first);
+    final minT = math.max(times.first, maxT - window);
     double minM = 48; // C3
     double maxM = 72; // C5
-    if (midiVals.isNotEmpty) {
-      minM = math.max(48, midiVals.reduce(math.min) - 2);
-      maxM = math.min(72, midiVals.reduce(math.max) + 2);
+    double xForTime(double t) {
+      final clamped = t.clamp(minT, maxT);
+      return ((clamped - minT) / (maxT - minT + 1e-6)) * size.width;
     }
-    double xForTime(double t) => ((t - minT) / (maxT - minT + 1e-6)) * size.width;
     double yForPitch(double m) => size.height - ((m - minM) / (maxM - minM + 1e-6)) * size.height;
 
     final refPaint = Paint()..color = Colors.amber.withOpacity(0.35);
     for (final seg in reference) {
+      // Skip references outside window
+      if (seg.end < minT || seg.start > maxT) continue;
       final left = xForTime(seg.start);
       final right = xForTime(seg.end);
       final top = yForPitch(seg.targetMidi + 0.3);
@@ -72,7 +90,10 @@ class _PitchPainter extends CustomPainter {
     final path = Path();
     bool started = false;
     for (final f in frames) {
-      if (f.midi == null) continue;
+      if (f.midi == null) {
+        started = false;
+        continue;
+      }
       final x = xForTime(f.time);
       final y = yForPitch(f.midi!);
       if (!started) {

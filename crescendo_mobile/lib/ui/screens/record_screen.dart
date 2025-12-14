@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +39,7 @@ class _RecordScreenState extends State<RecordScreen> {
   StreamSubscription<PitchFrame>? _liveSub;
   final List<PitchFrame> _pendingFrames = [];
   Timer? _frameFlush;
+  bool _stopping = false;
 
   @override
   void initState() {
@@ -73,6 +75,8 @@ class _RecordScreenState extends State<RecordScreen> {
   }
 
   Future<void> _stopRecording() async {
+    if (_stopping) return;
+    _stopping = true;
     final result = await recordingService.stop();
     await _liveSub?.cancel();
     _frameFlush?.cancel();
@@ -86,6 +90,7 @@ class _RecordScreenState extends State<RecordScreen> {
       frames = enriched;
       metrics = MetricsDisplay.fromMetrics(m);
     });
+    _stopping = false;
   }
 
   Future<void> _saveTake() async {
@@ -148,7 +153,15 @@ class _RecordScreenState extends State<RecordScreen> {
 
   Future<void> _playTake() async {
     if (recordedPath == null) return;
+    if (!await File(recordedPath!).exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Audio file not found at $recordedPath')));
+      }
+      return;
+    }
     await _player.stop();
+    await _player.setReleaseMode(ReleaseMode.stop);
     await _player.play(DeviceFileSource(recordedPath!));
   }
 
@@ -180,7 +193,7 @@ class _RecordScreenState extends State<RecordScreen> {
                   label: const Text('Start Recording'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: recording ? _stopRecording : null,
+                  onPressed: recording && !_stopping ? _stopRecording : null,
                   icon: const Icon(Icons.stop),
                   label: const Text('Stop'),
                 ),
@@ -212,9 +225,10 @@ class _RecordScreenState extends State<RecordScreen> {
             Expanded(
               child: PitchGraph(
                 frames: frames,
-                reference: appState.selectedWarmup.value.buildPlan(),
+                reference: const [],
                 playheadTime: playhead,
                 showDots: false,
+                windowSeconds: 3.0,
               ),
             ),
           ],

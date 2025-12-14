@@ -31,6 +31,8 @@ class RecordingService {
   final StreamController<PitchFrame> _liveController = StreamController<PitchFrame>.broadcast();
   StreamSubscription? _sub;
   bool _initialized = false;
+  bool _isRecording = false;
+  bool _isStopping = false;
   double _streamTime = 0.0;
 
   RecordingService({
@@ -38,7 +40,8 @@ class RecordingService {
     this.frameSize = 1024,
     this.hopSize = 64,
     PitchDetectionService? pitchDetection,
-  }) : pitchDetection = pitchDetection ?? PitchDetectionService(sampleRate: 44100, frameSize: 1024, hopSize: 64);
+  }) : pitchDetection = pitchDetection ??
+            PitchDetectionService(sampleRate: sampleRate, frameSize: frameSize, hopSize: hopSize);
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
@@ -54,6 +57,7 @@ class RecordingService {
     _streamTime = 0.0;
     _sub?.cancel();
     _sub = null;
+    _isRecording = true;
     final detector = PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
     await _capture.start(
       (obj) {
@@ -82,12 +86,21 @@ class RecordingService {
   }
 
   Future<RecordingResult> stop() async {
-    await _capture.stop();
-    _sub?.cancel();
-    _sub = null;
-    final frames = _streamFrames.isNotEmpty ? List<PitchFrame>.from(_streamFrames) : await pitchDetection.offlineFromSamples(_samples);
-    final wavPath = await _writeWav(_samples);
-    return RecordingResult(wavPath, frames);
+    if (!_isRecording || _isStopping) return RecordingResult('', const []);
+    _isStopping = true;
+    try {
+      await _capture.stop();
+      await _sub?.cancel();
+      _sub = null;
+      final frames = _streamFrames.isNotEmpty
+          ? List<PitchFrame>.from(_streamFrames)
+          : await pitchDetection.offlineFromSamples(_samples);
+      final wavPath = await _writeWav(_samples);
+      return RecordingResult(wavPath, frames);
+    } finally {
+      _isRecording = false;
+      _isStopping = false;
+    }
   }
 
   Stream<PitchFrame> get liveStream => _liveController.stream;
@@ -122,8 +135,10 @@ class RecordingService {
       offset += 2;
     }
     final dir = await getApplicationDocumentsDirectory();
+    await dir.create(recursive: true);
     final path = p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
     final file = File(path);
+    await file.parent.create(recursive: true);
     await file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
     return file.path;
   }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
@@ -97,8 +99,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     children: [
                       ElevatedButton(
                         onPressed: () async {
+                          final path = selected!.audioPath;
+                          if (!await File(path).exists()) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(content: Text('Audio file not found at $path')));
+                            }
+                            return;
+                          }
                           await _player.stop();
-                          await _player.play(DeviceFileSource(selected!.audioPath));
+                          await _player.setReleaseMode(ReleaseMode.stop);
+                          await _player.play(DeviceFileSource(path));
                         },
                         child: const Text('Play'),
                       ),

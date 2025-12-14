@@ -58,8 +58,12 @@ class AudioCaptureService {
           _time += hopSize / sampleRate;
         }
       }, onError: (e) {
-        if (!_controller!.isClosed) {
+        if (_controller != null && !_controller!.isClosed) {
           _controller!.addError(e);
+        }
+      }, onDone: () {
+        if (_controller != null && !_controller!.isClosed) {
+          _controller!.close();
         }
       });
     } catch (e) {
