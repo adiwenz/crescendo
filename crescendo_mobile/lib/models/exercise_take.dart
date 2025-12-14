@@ -9,6 +9,7 @@ class ExerciseTake {
   final double onPitchPct;
   final double? avgCentsAbs;
   final int stars; // 1-5
+  final int offsetMsUsed;
 
   ExerciseTake({
     required this.id,
@@ -19,6 +20,7 @@ class ExerciseTake {
     required this.onPitchPct,
     this.avgCentsAbs,
     required this.stars,
+    this.offsetMsUsed = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -30,6 +32,7 @@ class ExerciseTake {
         'onPitchPct': onPitchPct,
         'avgCentsAbs': avgCentsAbs,
         'stars': stars,
+        'offsetMsUsed': offsetMsUsed,
       };
 
   factory ExerciseTake.fromJson(Map<String, dynamic> json) => ExerciseTake(
@@ -40,7 +43,8 @@ class ExerciseTake {
         score0to100: (json['score0to100'] as num).toDouble(),
         onPitchPct: (json['onPitchPct'] as num).toDouble(),
         avgCentsAbs: (json['avgCentsAbs'] as num?)?.toDouble(),
-        stars: json['stars'] as int,
+        stars: json['stars'] as int? ?? 1,
+        offsetMsUsed: (json['offsetMsUsed'] as num?)?.toInt() ?? 0,
       );
 
   static List<ExerciseTake> listFromJson(String raw) {

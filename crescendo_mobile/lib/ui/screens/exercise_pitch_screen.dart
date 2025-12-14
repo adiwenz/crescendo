@@ -10,6 +10,7 @@ import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/take.dart';
 import '../../models/exercise_take.dart';
+import '../../services/exercise_run_scoring_service.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/exercise_scoring_service.dart';
 import '../../services/recording_service.dart';
@@ -36,6 +37,8 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   late final TakeRepository _repo;
   final appState = AppState();
   final AudioPlayer _player = AudioPlayer();
+  int _offsetMs = 80;
+  String _centsReadout = '—';
 
   late final Ticker _ticker;
   Duration? _lastTick;
@@ -60,10 +63,12 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
       keyLabel: 'C Major',
       bpm: 120,
       gapSec: 0.1,
+      scoreOffsetMs: 80,
       notes: [
         for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) ExerciseNote(midi: midi, durationSec: 0.5),
       ],
     );
+    _offsetMs = plan.scoreOffsetMs;
     _synth = AudioSynthService();
     _scoring = ExerciseScoringService();
     _recording = RecordingService();
@@ -163,17 +168,22 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _ticker.stop();
     _lastTick = null;
     _liveSub?.cancel();
-    final score = _overallScore();
-    final stars = _starsForScore(score);
+    final scored = ExerciseRunScoringService().score(
+      plan: plan,
+      frames: _capturedFrames,
+      startedAt: DateTime.now(),
+      offsetMs: _offsetMs,
+    );
     final take = ExerciseTake(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       exerciseId: plan.id,
       title: '${plan.keyLabel} ${plan.title}',
       createdAt: DateTime.now(),
-      score0to100: score,
-      onPitchPct: score / 100.0,
-      avgCentsAbs: null,
-      stars: stars,
+      score0to100: scored.overallScore0to100,
+      onPitchPct: scored.overallScore0to100 / 100.0,
+      avgCentsAbs: scored.avgAbsCents,
+      stars: scored.stars,
+      offsetMsUsed: _offsetMs,
     );
     if (mounted) {
       Navigator.push(
@@ -181,7 +191,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
         MaterialPageRoute(
           builder: (_) => ExerciseResultsScreen(
             take: take,
-            exerciseId: plan.title.toLowerCase(),
+            exerciseId: plan.id,
           ),
         ),
       );
@@ -195,6 +205,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     if (midi == null) return;
     final diff = midi - plan.notes[idx].midi;
     final cents = diff * 100;
+    _centsReadout = '${cents >= 0 ? '+' : ''}${cents.toStringAsFixed(0)}c';
     final score = _scores[idx];
     if (cents.abs() <= 25) {
       score.on++;
@@ -343,46 +354,78 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
                     Text('${plan.keyLabel} — ${plan.title}',
                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    Container(
-                      height: 60,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.centerLeft,
-                      child: Text('Pitch trace (live)', style: TextStyle(color: Colors.grey.shade600)),
-                    ),
+            Container(
+              height: 60,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Pitch trace (live)', style: TextStyle(color: Colors.grey.shade600)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Offset: ${_offsetMs}ms', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(_centsReadout, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  )
+                ],
+              ),
+            ),
                     const SizedBox(height: 12),
-                    Card(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 0,
-                      color: Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: StaffExerciseView(
-                          notes: plan.notes,
-                          currentIndex: _currentIndex,
-                          pitchMidi: _pitchMidi,
-                          statuses: List.generate(plan.notes.length, (i) {
-                            if (i < _scores.length && !_running && _elapsed >= _totalDuration) {
-                              return _noteStatus(_scores[i]);
-                            }
-                            if (i < _scores.length && i < _noteIndexAt(_elapsed)) {
-                              return _noteStatus(_scores[i]);
-                            }
-                            return NoteStatus.pending;
-                          }),
-                          midiCenter: 64,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Text('Note ${math.min(_currentIndex.value + 1, plan.notes.length)} of ${plan.notes.length}'),
-                        const SizedBox(width: 12),
-                        Wrap(
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 0,
+              color: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: StaffExerciseView(
+                  notes: plan.notes,
+                  currentIndex: _currentIndex,
+                  pitchMidi: _pitchMidi,
+                  statuses: List.generate(plan.notes.length, (i) {
+                    if (i < _scores.length && !_running && _elapsed >= _totalDuration) {
+                      return _noteStatus(_scores[i]);
+                    }
+                    if (i < _scores.length && i < _noteIndexAt(_elapsed)) {
+                      return _noteStatus(_scores[i]);
+                    }
+                    return NoteStatus.pending;
+                  }),
+                  midiCenter: 64,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('Timing offset'),
+                Expanded(
+                  child: Slider(
+                    value: _offsetMs.toDouble(),
+                    min: -200,
+                    max: 250,
+                    divisions: 45,
+                    label: '${_offsetMs}ms',
+                    onChanged: _running
+                        ? null
+                        : (v) {
+                            setState(() => _offsetMs = v.round());
+                          },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('Note ${math.min(_currentIndex.value + 1, plan.notes.length)} of ${plan.notes.length}'),
+                const SizedBox(width: 12),
+                Wrap(
                           spacing: 6,
                           children: [
                             for (var i = 0; i < plan.notes.length; i++)

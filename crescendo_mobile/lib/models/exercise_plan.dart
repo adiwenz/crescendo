@@ -6,6 +6,7 @@ class ExercisePlan {
   final String keyLabel;
   final double bpm;
   final double gapSec;
+  final int scoreOffsetMs;
   final List<ExerciseNote> notes;
 
   const ExercisePlan({
@@ -14,6 +15,7 @@ class ExercisePlan {
     required this.keyLabel,
     required this.bpm,
     required this.gapSec,
+    this.scoreOffsetMs = 0,
     required this.notes,
   });
 }
