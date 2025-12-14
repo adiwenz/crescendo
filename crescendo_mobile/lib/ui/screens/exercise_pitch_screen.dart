@@ -9,11 +9,13 @@ import '../../models/exercise_plan.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/take.dart';
+import '../../models/exercise_take.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/exercise_scoring_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/scoring_service.dart';
 import '../../services/storage/take_repository.dart';
+import 'exercise_results_screen.dart';
 import '../state.dart';
 import '../widgets/staff_exercise_view.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -160,6 +162,29 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _ticker.stop();
     _lastTick = null;
     _liveSub?.cancel();
+    final score = _overallScore();
+    final stars = _starsForScore(score);
+    final take = ExerciseTake(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      exerciseId: plan.title.toLowerCase(),
+      title: '${plan.keyLabel} ${plan.title}',
+      createdAt: DateTime.now(),
+      score0to100: score,
+      onPitchPct: score / 100.0,
+      avgCentsAbs: null,
+      stars: stars,
+    );
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExerciseResultsScreen(
+            take: take,
+            exerciseId: plan.title.toLowerCase(),
+          ),
+        ),
+      );
+    }
     setState(() {});
   }
 
@@ -188,6 +213,14 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     if (_scores.isEmpty) return 0;
     final avg = _scores.map((s) => s.onPct).fold(0.0, (a, b) => a + b) / _scores.length;
     return avg;
+  }
+
+  int _starsForScore(double s) {
+    if (s >= 90) return 5;
+    if (s >= 75) return 4;
+    if (s >= 60) return 3;
+    if (s >= 40) return 2;
+    return 1;
   }
 
   Future<void> _playReference() async {

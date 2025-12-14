@@ -19,6 +19,7 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.8.3
   collection: ^1.18.0
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
