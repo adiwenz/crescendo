@@ -30,8 +30,11 @@ class PitchTailPainter extends CustomPainter {
     if (voiced.isEmpty) return;
 
     double xForIndex(int idx) {
-      final maxPts = frames.length;
-      return size.width * (idx / math.max(1, maxPts - 1));
+      final maxPts = math.max(1, frames.length);
+      final anchorX = size.width * 0.7;
+      final span = size.width * 0.7;
+      final t = (maxPts - 1 - idx) / math.max(1, maxPts - 1);
+      return anchorX - span * t;
     }
 
     double yForHz(double hz) {
