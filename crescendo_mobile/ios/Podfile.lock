@@ -4,6 +4,8 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
   - Flutter (1.0.0)
+  - flutter_pitch_detection (0.0.1):
+    - Flutter
   - flutter_sound (9.30.0):
     - Flutter
     - flutter_sound_core (= 9.30.0)
@@ -30,6 +32,7 @@ DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
   - Flutter (from `Flutter`)
+  - flutter_pitch_detection (from `.symlinks/plugins/flutter_pitch_detection/ios`)
   - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
   - mic_stream (from `.symlinks/plugins/mic_stream/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
@@ -50,6 +53,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/audioplayers_darwin/ios"
   Flutter:
     :path: Flutter
+  flutter_pitch_detection:
+    :path: ".symlinks/plugins/flutter_pitch_detection/ios"
   flutter_sound:
     :path: ".symlinks/plugins/flutter_sound/ios"
   mic_stream:
@@ -71,6 +76,7 @@ SPEC CHECKSUMS:
   audio_session: 19e9480dbdd4e5f6c4543826b2e8b0e4ab6145fe
   audioplayers_darwin: 877d9a4d06331c5c374595e46e16453ac7eafa40
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_pitch_detection: 547c0754a167559cae38b6734700194c682e1f21
   flutter_sound: 0e2f5015f122fc8be5ab9afd9e4b7f2aefbd65c8
   flutter_sound_core: 7f2626d249d3a57bfa6da892ef7e22d234482c1a
   mic_stream: 28787bfcfcfc68e17fad15050baf5929f1d10901

@@ -13,7 +13,7 @@ dependencies:
   mic_stream: ^0.7.2
   permission_handler: ^11.3.0
   wakelock_plus: ^1.2.4
-  pitch_detector_dart: ^0.0.5
+  flutter_pitch_detection: ^1.1.0
   audioplayers: ^6.0.0
   path_provider: ^2.1.2
   sqflite: ^2.3.0

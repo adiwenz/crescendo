@@ -1,37 +1,63 @@
+import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:pitch_detector_dart/pitch_detector.dart';
+import 'package:flutter_pitch_detection/flutter_pitch_detection.dart';
 
-import '../models/pitch_frame.dart';
-import '../models/warmup.dart';
+class PitchData {
+  final double frequency;
+  final String note;
+  final double cents;
+  final double probability;
+
+  PitchData({
+    required this.frequency,
+    required this.note,
+    required this.cents,
+    required this.probability,
+  });
+}
 
 class PitchDetectionService {
-  final int sampleRate;
-  final int frameSize;
-  final int hopSize;
+  final FlutterPitchDetection _detector = FlutterPitchDetection();
+  final _controller = StreamController<PitchData>.broadcast();
+  StreamSubscription<Map<String, dynamic>>? _sub;
+  bool _running = false;
 
-  PitchDetectionService({
-    this.sampleRate = 44100,
-    this.frameSize = 1024,
-    this.hopSize = 64,
-  });
+  Stream<PitchData> get pitchStream => _controller.stream;
 
-  Future<List<PitchFrame>> offlineFromSamples(List<double> samples) async {
-    final detector =
-        PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: frameSize);
-    final frames = <PitchFrame>[];
-    double time = 0;
-    for (var i = 0; i + frameSize <= samples.length; i += hopSize) {
-      final frame = samples.sublist(i, i + frameSize);
-      final result = await detector.getPitchFromFloatBuffer(frame);
-      final hzVal = result.pitch;
-      final hz = hzVal != null && hzVal > 0 ? hzVal.toDouble() : null;
-      final midi = hz != null && hz > 0 ? _hzToMidi(hz) : null;
-      frames.add(PitchFrame(time: time, hz: hz, midi: midi));
-      time += hopSize / sampleRate;
-    }
-    return frames;
+  Future<void> start({int sampleRate = 44100, int bufferSize = 8192}) async {
+    if (_running) return;
+    _running = true;
+    await _detector.startDetection(sampleRate: sampleRate, bufferSize: bufferSize);
+    _sub = _detector.onPitchDetected.listen((event) {
+      final freq = (event['frequency'] as num?)?.toDouble() ?? 0.0;
+      if (freq <= 0 || !freq.isFinite) return;
+      final midi = 69 + 12 * math.log(freq / 440.0) / math.ln2;
+      final rounded = midi.round();
+      final cents = (midi - rounded) * 100;
+      final name = _noteName(rounded);
+      final prob = (event['accuracy'] as num?)?.toDouble() ?? 0.0;
+      _controller.add(PitchData(
+        frequency: freq,
+        note: name,
+        cents: cents,
+        probability: prob,
+      ));
+    });
   }
 
-  double _hzToMidi(double hz) => 69 + 12 * math.log(hz / 440) / math.ln2;
+  Future<void> stop() async {
+    if (!_running) return;
+    _running = false;
+    await _sub?.cancel();
+    _sub = null;
+    await _detector.stopDetection();
+  }
+
+  String _noteName(int midi) {
+    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    final name = names[midi % 12];
+    final octave = (midi ~/ 12) - 1;
+    return '$name$octave';
+  }
 }
