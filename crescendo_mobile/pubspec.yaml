@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_audio_capture: ^1.0.1
+  flutter_sound: ^9.30.0
   mic_stream: ^0.7.2
   permission_handler: ^11.3.0
   wakelock_plus: ^1.2.4

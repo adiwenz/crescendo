@@ -11,7 +11,7 @@ flutter run
 ```
 
 ### Packages
-- flutter_audio_capture: mic PCM capture
+- flutter_sound: mic PCM capture/record
 - pitch_detector_dart: on-device pitch estimation
 - mic_stream: realtime mic streaming for the SimplySing-style screen
 - permission_handler, wakelock_plus: mic permission + keep-awake for realtime pitch

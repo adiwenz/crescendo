@@ -2,8 +2,10 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
   - Flutter (1.0.0)
-  - flutter_audio_capture (1.1.4):
+  - flutter_sound (9.30.0):
     - Flutter
+    - flutter_sound_core (= 9.30.0)
+  - flutter_sound_core (9.30.0)
   - mic_stream (0.0.1):
     - Flutter
   - package_info_plus (0.4.5):
@@ -25,7 +27,7 @@ PODS:
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
   - Flutter (from `Flutter`)
-  - flutter_audio_capture (from `.symlinks/plugins/flutter_audio_capture/ios`)
+  - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
   - mic_stream (from `.symlinks/plugins/mic_stream/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
@@ -34,13 +36,17 @@ DEPENDENCIES:
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
   - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
+SPEC REPOS:
+  trunk:
+    - flutter_sound_core
+
 EXTERNAL SOURCES:
   audioplayers_darwin:
     :path: ".symlinks/plugins/audioplayers_darwin/ios"
   Flutter:
     :path: Flutter
-  flutter_audio_capture:
-    :path: ".symlinks/plugins/flutter_audio_capture/ios"
+  flutter_sound:
+    :path: ".symlinks/plugins/flutter_sound/ios"
   mic_stream:
     :path: ".symlinks/plugins/mic_stream/ios"
   package_info_plus:
@@ -58,8 +64,9 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   audioplayers_darwin: 877d9a4d06331c5c374595e46e16453ac7eafa40
-  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  flutter_audio_capture: 93ef890ac148f093d168c33258c3a161b8f5e04b
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_sound: 0e2f5015f122fc8be5ab9afd9e4b7f2aefbd65c8
+  flutter_sound_core: 7f2626d249d3a57bfa6da892ef7e22d234482c1a
   mic_stream: 28787bfcfcfc68e17fad15050baf5929f1d10901
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46

@@ -79,7 +79,38 @@ class _RecordScreenState extends State<RecordScreen> {
       _pendingFrames.add(pf);
       _scheduleFrameFlush();
     });
-    await recordingService.start();
+    try {
+      await recordingService.start();
+    } on StateError catch (e) {
+      await _liveSub?.cancel();
+      _liveSub = null;
+      _frameFlush?.cancel();
+      _pendingFrames.clear();
+      if (mounted) {
+        setState(() {
+          recording = false;
+          recordedPath = null;
+          frames = [];
+          metrics = null;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message ?? 'Microphone permission not granted')));
+      }
+      return;
+    } catch (e) {
+      await _liveSub?.cancel();
+      _liveSub = null;
+      _frameFlush?.cancel();
+      _pendingFrames.clear();
+      if (mounted) {
+        setState(() {
+          recording = false;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to start recording: $e')));
+      }
+      return;
+    }
     final warmup = appState.selectedWarmup.value;
     if (_hasReference(warmup)) {
       await _playReferenceWithAutoStop(warmup);
