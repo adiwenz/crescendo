@@ -18,6 +18,7 @@ import '../../services/scoring_service.dart';
 import '../../services/storage/take_repository.dart';
 import 'exercise_results_screen.dart';
 import '../state.dart';
+import 'hold_stability_screen.dart';
 import '../widgets/staff_exercise_view.dart';
 import 'package:audioplayers/audioplayers.dart';
 
@@ -192,6 +193,8 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
           builder: (_) => ExerciseResultsScreen(
             take: take,
             exerciseId: plan.id,
+            plan: plan,
+            frames: List<PitchFrame>.from(_capturedFrames),
           ),
         ),
       );

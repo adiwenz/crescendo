@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
 
+import '../../models/exercise_plan.dart';
 import '../../models/exercise_take.dart';
+import '../../models/pitch_frame.dart';
 import '../../services/exercise_progress_repository.dart';
 import '../widgets/progress_star_row.dart';
+import 'hold_stability_screen.dart';
 import 'exercise_progress_detail_screen.dart';
 
 class ExerciseResultsScreen extends StatefulWidget {
   final ExerciseTake take;
   final String exerciseId;
+  final ExercisePlan plan;
+  final List<PitchFrame> frames;
 
-  const ExerciseResultsScreen({super.key, required this.take, required this.exerciseId});
+  const ExerciseResultsScreen({
+    super.key,
+    required this.take,
+    required this.exerciseId,
+    required this.plan,
+    required this.frames,
+  });
 
   @override
   State<ExerciseResultsScreen> createState() => _ExerciseResultsScreenState();
@@ -95,6 +106,21 @@ class _ExerciseResultsScreenState extends State<ExerciseResultsScreen> with Sing
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context, 'retry'),
                     child: const Text('Try again'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HoldStabilityScreen(
+                            plan: widget.plan,
+                            frames: widget.frames,
+                            previousHoldMetrics: null,
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Hold stability'),
                   ),
                   ElevatedButton(
                     onPressed: () {

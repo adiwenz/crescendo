@@ -32,6 +32,8 @@ class RecordingService {
   final _buffer = <double>[];
   final StreamController<PitchFrame> _liveController =
       StreamController<PitchFrame>.broadcast();
+  final StreamController<List<double>> _pcmController =
+      StreamController<List<double>>.broadcast();
   StreamSubscription<Uint8List>? _recorderSub;
   bool _initialized = false;
   bool _isRecording = false;
@@ -77,6 +79,7 @@ class RecordingService {
       final pcmData = _extractPcmData(data);
       if (pcmData.isEmpty) return;
       final buffer = _pcm16BytesToDoubles(pcmData);
+      _pcmController.add(buffer);
       _appendWithBoundarySmoothing(buffer);
       while (_buffer.length >= frameSize) {
         final frame = List<double>.from(_buffer.take(frameSize));
@@ -152,6 +155,7 @@ class RecordingService {
   }
 
   Stream<PitchFrame> get liveStream => _liveController.stream;
+  Stream<List<double>> get rawPcmStream => _pcmController.stream;
 
   Uint8List _extractPcmData(Uint8List data) => data;
 

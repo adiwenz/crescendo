@@ -6,6 +6,7 @@ import 'screens/exercise_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
 import 'screens/record_screen.dart';
 import 'screens/warmups_screen.dart';
+import 'screens/exercises_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -33,7 +34,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
             RecordScreen(),
             HistoryScreen(),
             PitchHighwayScreen(),
-            ExercisePitchScreen(),
+            ExercisesScreen(),
             ProgressHomeScreen(),
           ],
         ),
