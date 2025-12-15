@@ -60,16 +60,16 @@ class RecordingService {
   }
 
   Future<void> start() async {
-    var micStatus = await Permission.microphone.status;
-    if (micStatus.isDenied || micStatus.isRestricted) {
-      micStatus = await Permission.microphone.request();
-    }
-    if (!micStatus.isGranted) {
-      final msg = micStatus.isPermanentlyDenied
-          ? 'Microphone permission is blocked. Enable it in Settings > Crescendo Mobile > Microphone.'
-          : 'Microphone permission is required to record.';
-      throw StateError(msg);
-    }
+    final status = await Permission.microphone.request();
+    // if (!status.isGranted) {
+    //   // ignore: avoid_print
+    //   print('[recording] microphone permission status=$status');
+    //   if (status.isPermanentlyDenied) {
+    //     throw StateError(
+    //         'Microphone permission permanently denied. Enable it in Settings > Privacy & Security > Microphone.');
+    //   }
+    //   throw StateError('Microphone permission not granted (status=$status).');
+    // }
     await _ensureInit();
     _samples.clear();
     _streamFrames.clear();

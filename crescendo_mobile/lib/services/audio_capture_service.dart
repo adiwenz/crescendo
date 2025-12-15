@@ -1,37 +1,31 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:mic_stream/mic_stream.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-class AudioFrame {
-  final List<double> samples;
-  final double timestampSec;
-  final double rms;
-  AudioFrame(
-      {required this.samples, required this.timestampSec, required this.rms});
-}
-
-class AudioCaptureService {
+class RecordingService {
   final int sampleRate;
   final int frameSize;
   final int hopSize;
   StreamSubscription<dynamic>? _sub;
+  final _samples = <double>[];
   final _buffer = <double>[];
-  double _time = 0;
-  StreamController<AudioFrame>? _controller;
+  double _streamTime = 0;
 
-  AudioCaptureService(
+  // Buffer-boundary click reduction.
+  static const int _joinFadeSamples = 32; // ~0.7ms @ 44.1k
+  static const double _joinJumpThreshold = 0.04; // in [-1,1] float domain
+
+  RecordingService(
       {this.sampleRate = 44100, this.frameSize = 2048, this.hopSize = 256});
 
-  Future<Stream<AudioFrame>> start() async {
+  Future<void> start() async {
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
       throw StateError('Microphone permission not granted');
     }
-    final controller = StreamController<AudioFrame>();
-    _controller = controller;
     try {
       final rawStream = await MicStream.microphone(
           sampleRate: sampleRate,
@@ -40,56 +34,63 @@ class AudioCaptureService {
           audioFormat: AudioFormat.ENCODING_PCM_16BIT);
       final stream = rawStream.transform(MicStream.toSampleStream);
       _sub = stream.listen((sample) {
+        final buffer = <double>[];
         if (sample is num) {
-          _buffer.add(sample.toDouble() / 32768.0);
+          buffer.add(sample.toDouble() / 32768.0);
         } else if (sample is List) {
           for (final s in sample) {
             if (s is num) {
-              _buffer.add(s.toDouble() / 32768.0);
+              buffer.add(s.toDouble() / 32768.0);
             }
           }
         }
-        while (_buffer.length >= frameSize) {
-          final frame = _buffer.sublist(0, frameSize);
-          _buffer.removeRange(0, hopSize);
-          final rms = _computeRms(frame);
-          controller
-              .add(AudioFrame(samples: frame, timestampSec: _time, rms: rms));
-          _time += hopSize / sampleRate;
-        }
+        if (buffer.isEmpty) return;
+
+        _appendWithBoundarySmoothing(buffer);
+
+        _streamTime += buffer.length / sampleRate;
       }, onError: (e) {
-        if (_controller != null && !_controller!.isClosed) {
-          _controller!.addError(e);
-        }
+        // Handle error
       }, onDone: () {
-        if (_controller != null && !_controller!.isClosed) {
-          _controller!.close();
-        }
+        // Handle done
       });
     } catch (e) {
       throw StateError('Failed to start microphone stream: $e');
     }
-    controller.onCancel = () async {
-      await stop();
-    };
-    return controller.stream;
   }
 
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
+    _samples.clear();
     _buffer.clear();
-    _time = 0;
-    await _controller?.close();
-    _controller = null;
+    _streamTime = 0;
   }
 
-  double _computeRms(List<double> frame) {
-    if (frame.isEmpty) return 0;
-    var sum = 0.0;
-    for (final v in frame) {
-      sum += v * v;
+  void _appendWithBoundarySmoothing(List<double> buffer) {
+    if (buffer.isEmpty) return;
+
+    // If we already have samples, check for a discontinuity between the last
+    // sample we recorded and the first sample of the incoming buffer.
+    if (_samples.isNotEmpty) {
+      final last = _samples.last;
+      final first = buffer.first;
+      final jump = (first - last).abs();
+
+      if (jump > _joinJumpThreshold && jump.isFinite) {
+        // Insert a very short ramp to bridge the discontinuity.
+        // This removes the time-domain step that produces an audible click.
+        final n = _joinFadeSamples;
+        for (var i = 1; i <= n; i++) {
+          final t = i / (n + 1);
+          final v = last + (first - last) * t;
+          _samples.add(v);
+          _buffer.add(v);
+        }
+      }
     }
-    return math.sqrt(sum / frame.length);
+
+    _samples.addAll(buffer);
+    _buffer.addAll(buffer);
   }
 }
