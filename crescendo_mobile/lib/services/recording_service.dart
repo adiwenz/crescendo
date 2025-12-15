@@ -61,15 +61,6 @@ class RecordingService {
 
   Future<void> start() async {
     final status = await Permission.microphone.request();
-    // if (!status.isGranted) {
-    //   // ignore: avoid_print
-    //   print('[recording] microphone permission status=$status');
-    //   if (status.isPermanentlyDenied) {
-    //     throw StateError(
-    //         'Microphone permission permanently denied. Enable it in Settings > Privacy & Security > Microphone.');
-    //   }
-    //   throw StateError('Microphone permission not granted (status=$status).');
-    // }
     await _ensureInit();
     _samples.clear();
     _streamFrames.clear();
