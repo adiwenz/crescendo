@@ -50,6 +50,7 @@ class HoldExerciseController {
   final double requiredHoldSec;
   final LoudnessMeter loudness;
   final void Function(HoldExerciseState) onState;
+  final double rmsOnThreshold;
 
   double _onPitchAccum = 0;
   double _lastTime = 0;
@@ -60,6 +61,7 @@ class HoldExerciseController {
     this.toleranceCents = 30,
     this.requiredHoldSec = 3.0,
     LoudnessMeter? loudness,
+    this.rmsOnThreshold = 0.02,
     required this.onState,
   }) : loudness = loudness ?? LoudnessMeter();
 
@@ -75,18 +77,21 @@ class HoldExerciseController {
   }
 
   /// Call this for each new pitch frame. Expects monotonic time (seconds).
-  void addFrame(PitchFrame frame, {List<double>? rawBuffer}) {
+  void addFrame(PitchFrame frame, {List<double>? rawBuffer, double? rmsOverride}) {
     if (!_running) return;
     final dt = _lastTime == 0 ? 0 : math.max(0, frame.time - _lastTime);
     _lastTime = frame.time;
 
-    double rms = loudness.addSamples(rawBuffer ?? const []);
+    double rms = rmsOverride ?? loudness.addSamples(rawBuffer ?? const []);
 
     double? centsError;
     bool onPitch = false;
     if (frame.hz != null && frame.hz! > 0) {
       centsError = 1200 * (math.log(frame.hz! / targetHz) / math.ln2);
       onPitch = centsError.abs() <= toleranceCents;
+    } else {
+      // When no pitch detector is available, treat sustained loudness as "on".
+      onPitch = rms >= rmsOnThreshold;
     }
 
     if (onPitch) {

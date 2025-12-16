@@ -9,11 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_sound: ^9.30.0
+  record: ^5.0.5
   mic_stream: ^0.7.2
   permission_handler: ^11.3.0
   wakelock_plus: ^1.2.4
-  flutter_pitch_detection: ^1.1.0
   audioplayers: ^6.0.0
   path_provider: ^2.1.2
   sqflite: ^2.3.0

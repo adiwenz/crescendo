@@ -1,17 +1,22 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
-import '../../audio/wav_writer.dart';
 import '../../models/hold_exercise_result.dart';
+import '../../models/metrics.dart';
 import '../../models/pitch_frame.dart';
+import '../../models/take.dart';
 import '../../services/hold_exercise_controller.dart';
 import '../../services/hold_exercise_repository.dart';
 import '../../services/loudness_meter.dart';
-import '../../services/recording_service.dart';
+import '../../services/storage/take_repository.dart';
+import '../state.dart';
+import '../../audio/wav_writer.dart';
 
 class HoldExerciseScreen extends StatefulWidget {
   const HoldExerciseScreen({super.key});
@@ -25,9 +30,11 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
   static const double _defaultTolerance = 30;
   static const List<int> _targetMidi = [57, 60, 62]; // A3, C4, D4
 
-  late final RecordingService _rec;
+  final AudioRecorder _recorder = AudioRecorder();
   late HoldExerciseController _controller;
   late final HoldExerciseRepository _repo;
+  late final TakeRepository _takeRepo;
+  final _appState = AppState();
   final _player = AudioPlayer();
 
   double _targetHz = 440 / math.pow(2, 9 / 12); // default A3
@@ -41,16 +48,16 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     success: false,
   );
   bool _running = false;
-  StreamSubscription<PitchFrame>? _liveSub;
-  StreamSubscription<List<double>>? _pcmSub;
-  List<double> _lastPcm = const [];
+  StreamSubscription<Uint8List>? _pcmSub;
+  final _samples = <double>[];
+  double _timeCursor = 0.0;
   final _frames = <PitchFrame>[];
 
   @override
   void initState() {
     super.initState();
-    _rec = RecordingService();
     _repo = HoldExerciseRepository();
+    _takeRepo = TakeRepository();
     _resetController();
   }
 
@@ -75,15 +82,24 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
 
   @override
   void dispose() {
-    _liveSub?.cancel();
     _pcmSub?.cancel();
-    _rec.stop();
+    _stopRecording();
+    _recorder.dispose();
     _player.dispose();
     super.dispose();
   }
 
   Future<void> _start() async {
+    if (!await _recorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Mic permission required')));
+      }
+      return;
+    }
     _frames.clear();
+    _samples.clear();
+    _timeCursor = 0;
     setState(() {
       _running = true;
       _state = _state.copyWith(onPitchSeconds: 0, progress: 0, success: false);
@@ -91,34 +107,47 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     _resetController();
     _controller.start();
     await _playTargetTone();
-    _liveSub?.cancel();
     _pcmSub?.cancel();
-    _pcmSub = _rec.rawPcmStream.listen((buf) {
-      _lastPcm = buf;
-    });
-    _liveSub = _rec.liveStream.listen((pf) {
+    final stream = await _recorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 44100,
+        numChannels: 1,
+      ),
+    );
+    _pcmSub = stream.listen((data) async {
+      final buf = _pcm16BytesToDoubles(data);
+      _samples.addAll(buf);
+      final dt = buf.isEmpty ? 0.0 : buf.length / 44100;
+      _timeCursor += dt;
+      final pf = PitchFrame(time: _timeCursor);
       _frames.add(pf);
-      _controller.addFrame(pf, rawBuffer: _lastPcm);
+      double? rms;
+      try {
+        final amp = await _recorder.getAmplitude();
+        final db = amp.current;
+        if (db != null && db.isFinite) {
+          rms = math.pow(10, db / 20).toDouble().clamp(0.0, 1.0);
+        }
+      } catch (_) {}
+      _controller.addFrame(pf, rawBuffer: buf, rmsOverride: rms);
       if (_state.success) {
         _onSuccess();
       }
     });
-    await _rec.start();
   }
 
-  Future<void> _stop() async {
-    await _liveSub?.cancel();
-    _liveSub = null;
+  Future<void> _stopRecording() async {
     await _pcmSub?.cancel();
     _pcmSub = null;
-    await _rec.stop();
-    setState(() {
-      _running = false;
-    });
+    try {
+      await _recorder.stop();
+    } catch (_) {}
+    setState(() => _running = false);
   }
 
   Future<void> _onSuccess() async {
-    await _stop();
+    await _stopRecording();
     final elapsed = _state.onPitchSeconds;
     final double avgCents = _frames.isNotEmpty
         ? _frames
@@ -136,8 +165,26 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       avgCentsError: avgCents,
       avgRms: _state.rms,
     ));
+    final take = Take(
+      name: 'Hold ${_hzLabel(_targetHz)} ${DateTime.now().toIso8601String()}',
+      createdAt: DateTime.now(),
+      warmupId: 'hold',
+      warmupName: 'Hold Exercise',
+      audioPath: '',
+      frames: List<PitchFrame>.from(_frames),
+      metrics: Metrics(
+        score: (_state.progress * 100).clamp(0, 100),
+        meanAbsCents: avgCents.abs(),
+        pctWithin20: 0,
+        pctWithin50: 0,
+        validFrames: _frames.length,
+      ),
+    );
+    await _takeRepo.insert(take);
+    _appState.takesVersion.value++;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Hold complete!')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Hold complete!')));
     }
   }
 
@@ -151,9 +198,20 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     }
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/hold_tone_${_targetHz.toStringAsFixed(1)}.wav';
-    await WavWriter.writePcm16Mono(samples: samples, sampleRate: sr, path: path);
+    await WavWriter.writePcm16Mono(
+        samples: samples, sampleRate: sr, path: path);
     await _player.stop();
     await _player.play(DeviceFileSource(path), volume: 0.5);
+  }
+
+  List<double> _pcm16BytesToDoubles(Uint8List bytes) {
+    final bd = ByteData.sublistView(bytes);
+    final out = <double>[];
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      final v = bd.getInt16(i, Endian.little);
+      out.add(v / 32768.0);
+    }
+    return out;
   }
 
   void _pickTarget() {
@@ -165,7 +223,8 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final on = _state.centsError != null && _state.centsError!.abs() <= _defaultTolerance;
+    final on = _state.centsError != null &&
+        _state.centsError!.abs() <= _defaultTolerance;
     final pct = (_state.progress * 100).clamp(0, 100).toStringAsFixed(0);
     return Scaffold(
       appBar: AppBar(title: const Text('Hold Exercise')),
@@ -174,13 +233,15 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('Target: ${_hzLabel(_targetHz)}', style: Theme.of(context).textTheme.titleLarge),
+            Text('Target: ${_hzLabel(_targetHz)}',
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             Text('Tolerance: ±$_defaultTolerance cents'),
             const SizedBox(height: 12),
             _ProgressRing(progress: _state.progress),
             const SizedBox(height: 8),
-            Text('Hold ${_requiredHoldSec.toStringAsFixed(1)}s • Progress: $pct%'),
+            Text(
+                'Hold ${_requiredHoldSec.toStringAsFixed(1)}s • Progress: $pct%'),
             const SizedBox(height: 16),
             _BreathBall(rms: _state.rms),
             const SizedBox(height: 16),
@@ -200,7 +261,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton(
-                  onPressed: _running ? _stop : null,
+                  onPressed: _running ? _stopRecording : null,
                   child: const Text('Stop'),
                 ),
               ],
@@ -305,7 +366,20 @@ class _OnPitchIndicator extends StatelessWidget {
 String _hzLabel(double hz) {
   final midi = 69 + 12 * (math.log(hz / 440.0) / math.ln2);
   final rounded = midi.round();
-  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const names = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B'
+  ];
   final name = names[rounded % 12];
   final octave = (rounded ~/ 12) - 1;
   return '$name$octave (${hz.toStringAsFixed(1)} Hz)';

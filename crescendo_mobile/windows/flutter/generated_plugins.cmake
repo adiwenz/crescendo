@@ -4,8 +4,8 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
-  flutter_sound
   permission_handler_windows
+  record_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
