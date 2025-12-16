@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:wav/wav.dart';
 
 import '../../models/hold_exercise_result.dart';
 import '../../models/metrics.dart';
@@ -16,7 +18,6 @@ import '../../services/hold_exercise_repository.dart';
 import '../../services/loudness_meter.dart';
 import '../../services/storage/take_repository.dart';
 import '../state.dart';
-import '../../audio/wav_writer.dart';
 
 class HoldExerciseScreen extends StatefulWidget {
   const HoldExerciseScreen({super.key});
@@ -165,12 +166,19 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       avgCentsError: avgCents,
       avgRms: _state.rms,
     ));
+    final dir = await getTemporaryDirectory();
+    final audioPath =
+        '${dir.path}/hold_${DateTime.now().millisecondsSinceEpoch}.wav';
+    final intSamples =
+        _samples.map((s) => (s.clamp(-1.0, 1.0) * 32767).round()).toList();
+    await _writeWav(audioPath, intSamples, 44100);
+
     final take = Take(
       name: 'Hold ${_hzLabel(_targetHz)} ${DateTime.now().toIso8601String()}',
       createdAt: DateTime.now(),
       warmupId: 'hold',
       warmupName: 'Hold Exercise',
-      audioPath: '',
+      audioPath: audioPath,
       frames: List<PitchFrame>.from(_frames),
       metrics: Metrics(
         score: (_state.progress * 100).clamp(0, 100),
@@ -198,8 +206,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     }
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/hold_tone_${_targetHz.toStringAsFixed(1)}.wav';
-    await WavWriter.writePcm16Mono(
-        samples: samples, sampleRate: sr, path: path);
+    await _writeWav(path, samples, sr);
     await _player.stop();
     await _player.play(DeviceFileSource(path), volume: 0.5);
   }
@@ -212,6 +219,20 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       out.add(v / 32768.0);
     }
     return out;
+  }
+
+  Future<String> _writeWav(String path, List<int> samples, int sampleRate) async {
+    final pcm16 = Int16List.fromList(samples);
+    final floats = Float64List(pcm16.length);
+    for (var i = 0; i < pcm16.length; i++) {
+      floats[i] = pcm16[i] / 32768.0;
+    }
+    final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
+    final bytes = wav.write();
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
   }
 
   void _pickTarget() {

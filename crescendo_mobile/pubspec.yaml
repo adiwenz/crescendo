@@ -20,6 +20,7 @@ dependencies:
   collection: ^1.18.0
   shared_preferences: ^2.2.3
   audio_session: ^0.1.16
+  wav: ^1.2.1
 
 dev_dependencies:
   flutter_test:
