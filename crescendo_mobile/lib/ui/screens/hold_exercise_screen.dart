@@ -215,7 +215,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
   }
 
   void _pickTarget() {
-    final midi = (_targetMidi..shuffle()).first;
+    final midi = (List<int>.from(_targetMidi)..shuffle()).first;
     _targetHz = 440.0 * math.pow(2, (midi - 69) / 12.0);
     _resetController();
     setState(() {});
