@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
+import 'package:wav/wav.dart';
 
-import '../audio/wav_writer.dart';
 import '../models/pitch_frame.dart';
 
 class RecordingResult {
@@ -20,8 +22,11 @@ class RecordingResult {
 class RecordingService {
   final AudioRecorder _recorder = AudioRecorder();
   final int sampleRate;
+  final int bufferSize;
 
+  final PitchDetector _pitchDetector;
   final _samples = <double>[];
+  final _pitchBuffer = <double>[];
   final _frames = <PitchFrame>[];
   final StreamController<PitchFrame> _liveController =
       StreamController<PitchFrame>.broadcast();
@@ -30,7 +35,9 @@ class RecordingService {
   bool _isRecording = false;
   double _timeCursor = 0;
 
-  RecordingService({this.sampleRate = 44100});
+  RecordingService({this.sampleRate = 44100, this.bufferSize = 2048})
+      : _pitchDetector =
+            PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: bufferSize);
 
   Stream<PitchFrame> get liveStream => _liveController.stream;
   Stream<List<double>> get rawPcmStream =>
@@ -44,6 +51,7 @@ class RecordingService {
       return;
     }
     _samples.clear();
+    _pitchBuffer.clear();
     _frames.clear();
     _timeCursor = 0;
     await _pcmController?.close();
@@ -58,13 +66,33 @@ class RecordingService {
       ),
     );
 
-    _sub = stream.listen((data) {
+    _sub = stream.listen((data) async {
       final buf = _pcm16BytesToDoubles(data);
       _pcmController?.add(buf);
       _samples.addAll(buf);
+      _pitchBuffer.addAll(buf);
+      // keep pitch buffer bounded
+      if (_pitchBuffer.length > bufferSize * 4) {
+        _pitchBuffer.removeRange(0, _pitchBuffer.length - bufferSize * 2);
+      }
       final dt = buf.isEmpty ? 0.0 : buf.length / sampleRate;
       _timeCursor += dt;
-      final pf = PitchFrame(time: _timeCursor);
+      double? hz;
+      double? midi;
+      try {
+        if (_pitchBuffer.length >= bufferSize) {
+          final window =
+              _pitchBuffer.sublist(_pitchBuffer.length - bufferSize);
+          final res = await _pitchDetector.getPitchFromFloatBuffer(window);
+          if (res.pitched && res.pitch.isFinite && res.pitch > 0) {
+            hz = res.pitch;
+            midi = 69 + 12 * (math.log(hz / 440.0) / math.ln2);
+          }
+        }
+      } catch (_) {
+        // ignore pitch detection errors
+      }
+      final pf = PitchFrame(time: _timeCursor, hz: hz, midi: midi);
       _frames.add(pf);
       _liveController.add(pf);
     });
@@ -81,13 +109,12 @@ class RecordingService {
 
     final dir = await getApplicationDocumentsDirectory();
     final path = p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
-    final intSamples =
-        _samples.map((s) => (s.clamp(-1.0, 1.0) * 32767).round()).toList();
-    await WavWriter.writePcm16Mono(
-      samples: intSamples,
-      sampleRate: sampleRate,
-      path: path,
-    );
+    final floats = Float64List.fromList(_samples);
+    final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
+    final bytes = wav.write();
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes, flush: true);
 
     return RecordingResult(path, List<PitchFrame>.from(_frames));
   }

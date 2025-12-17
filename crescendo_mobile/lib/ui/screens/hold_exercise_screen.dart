@@ -184,7 +184,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       avgCentsError: avgCents,
       avgRms: _state.rms,
     ));
-    final dir = await getTemporaryDirectory();
+    final dir = await getApplicationDocumentsDirectory();
     final audioPath =
         '${dir.path}/hold_${DateTime.now().millisecondsSinceEpoch}.wav';
     final intSamples =

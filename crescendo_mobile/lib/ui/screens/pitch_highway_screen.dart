@@ -206,6 +206,12 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   double _hzToMidi(double hz) => 69 + 12 * math.log(hz / 440) / math.ln2;
 
+  double _accuracyPercent() {
+    if (_capturedFrames.isEmpty) return 0;
+    final metrics = _scoring.score(_attachCents(_capturedFrames));
+    return metrics.pctWithin50.clamp(0, 100);
+  }
+
   String _formatTime(double t) {
     final totalSeconds = t.clamp(0, 24 * 60 * 60).floor();
     final minutes = totalSeconds ~/ 60;
@@ -335,9 +341,12 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                 const Spacer(),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: const [
-                    Text('Accuracy', style: TextStyle(color: Colors.white70)),
-                    Text('50%', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  children: [
+                    const Text('Accuracy', style: TextStyle(color: Colors.white70)),
+                    Text(
+                      '${_accuracyPercent().toStringAsFixed(0)}%',
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
                   ],
                 ),
               ],
