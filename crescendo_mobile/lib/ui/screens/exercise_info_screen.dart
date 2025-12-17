@@ -40,8 +40,11 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   @override
   Widget build(BuildContext context) {
     final exercise = _repo.getExercise(widget.exerciseId);
-    final durationText = exercise.durationSeconds != null
-        ? '${exercise.durationSeconds}s'
+    final durationSeconds = exercise.durationSeconds;
+    final timeChip = durationSeconds != null
+        ? (durationSeconds < 60
+            ? '${durationSeconds}s'
+            : '${exercise.estimatedMinutes} min')
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
     return Scaffold(
@@ -69,8 +72,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             children: [
               _InfoChip(label: typeLabel),
               _InfoChip(label: _difficultyLabel(exercise.difficulty)),
-              _InfoChip(label: '${exercise.estimatedMinutes} min'),
-              _InfoChip(label: durationText),
+              _InfoChip(label: timeChip),
             ],
           ),
           const SizedBox(height: 16),

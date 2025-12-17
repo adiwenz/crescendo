@@ -520,7 +520,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -554,7 +554,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
@@ -700,7 +700,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -734,7 +734,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
@@ -796,7 +796,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final duration = widget.exercise.durationSeconds ?? 120;
+    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     final remaining = math.max(0, duration - _elapsed);
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1236,7 +1236,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -1270,7 +1270,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
   }
@@ -1431,7 +1431,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -1522,7 +1522,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
 
   double _computeScore() {
     if (_sampleTimes.isEmpty || _sampleRms.isEmpty) return 0.0;
-    final duration = (widget.exercise.durationSeconds ?? 120).toDouble();
+    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     double sumDiff = 0.0;
     for (var i = 0; i < _sampleTimes.length; i++) {
       final progress = (_sampleTimes[i] / duration).clamp(0.0, 1.0);
@@ -1558,7 +1558,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final duration = widget.exercise.durationSeconds ?? 120;
+    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     final progress = (_elapsed / duration).clamp(0.0, 1.0);
     final ramp = progress <= 0.5 ? (progress * 2) : (1 - (progress - 0.5) * 2);
     return Padding(
