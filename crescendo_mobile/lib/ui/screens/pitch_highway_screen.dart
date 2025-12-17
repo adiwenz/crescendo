@@ -232,145 +232,101 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFF4020B8);
+    const bgGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFFFD6B3),
+        Color(0xFFFFC7C2),
+        Color(0xFFF8B3DD),
+      ],
+    );
     return Scaffold(
-      backgroundColor: bg,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Pitch Highway'),
-        backgroundColor: bg,
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('CHORUS 1', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1.2)),
-                Row(
-                  children: [
-                    Icon(Icons.favorite_border, color: Colors.white70),
-                    SizedBox(width: 12),
-                    Icon(Icons.mobile_screen_share, color: Colors.white70),
-                    SizedBox(width: 12),
-                    Icon(Icons.close, color: Colors.white70),
-                  ],
-                )
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 260,
-            child: CustomPaint(
-              painter: PitchHighwayPainter(
-                notes: _stubNotes,
-                pitchTail: _pitchTail,
-                time: _timeNotifier,
-                pixelsPerSecond: pixelsPerSecond,
-                playheadFraction: playheadFraction,
-                midiMin: midiRange.min,
-                midiMax: midiRange.max,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Container(
+        decoration: const BoxDecoration(gradient: bgGradient),
+        child: SafeArea(
+          bottom: false,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _togglePlayback,
+            child: Stack(
               children: [
-                ValueListenableBuilder<double>(
-                  valueListenable: _timeNotifier,
-                  builder: (_, v, __) => Text(_formatTime(v), style: const TextStyle(color: Colors.white70)),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Container(
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: Colors.white30,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      alignment: Alignment.centerLeft,
-                      child: ValueListenableBuilder<double>(
-                        valueListenable: _timeNotifier,
-                        builder: (_, v, __) {
-                          final pct = (v / _totalDuration).clamp(0.0, 1.0);
-                          return FractionallySizedBox(
-                            widthFactor: pct,
-                            child: Container(
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: PitchHighwayPainter(
+                      notes: _stubNotes,
+                      pitchTail: _pitchTail,
+                      time: _timeNotifier,
+                      pixelsPerSecond: pixelsPerSecond,
+                      playheadFraction: playheadFraction,
+                      drawBackground: false,
+                      midiMin: midiRange.min,
+                      midiMax: midiRange.max,
                     ),
                   ),
                 ),
-                Text(_formatTime(_totalDuration), style: const TextStyle(color: Colors.white70)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => _togglePlayback(),
-                  iconSize: 40,
-                  color: Colors.white,
-                  icon: Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_fill),
-                ),
-                const SizedBox(width: 12),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('Pitch offset', style: TextStyle(color: Colors.white70)),
-                    Text('+0.0 c', style: TextStyle(color: Colors.white, fontSize: 16)),
-                  ],
-                ),
-                const Spacer(),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('Accuracy', style: TextStyle(color: Colors.white70)),
-                    Text(
-                      '${_accuracyPercent().toStringAsFixed(0)}%',
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                  const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          ValueListenableBuilder<double>(
+                            valueListenable: _timeNotifier,
+                            builder: (_, v, __) =>
+                                Text(_formatTime(v), style: const TextStyle(color: Colors.white70)),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Colors.white30,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: ValueListenableBuilder<double>(
+                                  valueListenable: _timeNotifier,
+                                  builder: (_, v, __) {
+                                    final pct = (v / _totalDuration).clamp(0.0, 1.0);
+                                    return FractionallySizedBox(
+                                      widthFactor: pct,
+                                      child: Container(
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          Text(_formatTime(_totalDuration), style: const TextStyle(color: Colors.white70)),
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _restart(),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Start over'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _lastRecordingPath != null ? _saveTake : null,
-                  icon: const Icon(Icons.save),
-                  label: const Text('Save take'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
+        ),
       ),
     );
   }

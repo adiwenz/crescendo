@@ -15,6 +15,7 @@ class PitchHighwayPainter extends CustomPainter {
   final double pixelsPerSecond;
   final double playheadFraction;
   final double smoothingWindowSec;
+  final bool? drawBackground;
   final int midiMin;
   final int midiMax;
 
@@ -25,6 +26,7 @@ class PitchHighwayPainter extends CustomPainter {
     this.pixelsPerSecond = 160,
     this.playheadFraction = 0.45,
     this.smoothingWindowSec = 0.2,
+    this.drawBackground = true,
     this.midiMin = 48,
     this.midiMax = 72,
   }) : super(repaint: time);
@@ -32,8 +34,19 @@ class PitchHighwayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final currentTime = time.value;
-    final bg = Paint()..color = const Color(0xFF4020B8);
-    canvas.drawRect(Offset.zero & size, bg);
+    if (drawBackground ?? true) {
+      final bg = Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFD6B3),
+            Color(0xFFFFC7C2),
+            Color(0xFFF8B3DD),
+          ],
+        ).createShader(Offset.zero & size);
+      canvas.drawRect(Offset.zero & size, bg);
+    }
 
     final playheadX = size.width * playheadFraction;
     final noteColor = Colors.white.withOpacity(0.45);
@@ -81,16 +94,16 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     if (smoothedMidi != null) {
-      const baseColor = Colors.cyanAccent;
+      const baseColor = Color(0xFFFFF3C2);
       final y = _midiToY(smoothedMidi, size.height);
       final head = Offset(playheadX, y);
-      canvas.drawCircle(head, 16, Paint()..color = baseColor.withOpacity(0.18));
-      canvas.drawCircle(head, 10, Paint()..color = baseColor.withOpacity(0.35));
-      canvas.drawCircle(head, 6, Paint()..color = baseColor);
+      canvas.drawCircle(head, 22, Paint()..color = baseColor.withOpacity(0.18));
+      canvas.drawCircle(head, 14, Paint()..color = baseColor.withOpacity(0.35));
+      canvas.drawCircle(head, 8, Paint()..color = baseColor);
     }
 
     final playheadPaint = Paint()
-      ..color = Colors.tealAccent
+      ..color = const Color(0xFFFFF3C2)
       ..strokeWidth = 3;
     canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
   }
@@ -153,6 +166,7 @@ class PitchHighwayPainter extends CustomPainter {
         oldDelegate.pitchTail != pitchTail ||
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
         oldDelegate.playheadFraction != playheadFraction ||
+        (oldDelegate.drawBackground ?? true) != (drawBackground ?? true) ||
         oldDelegate.smoothingWindowSec != smoothingWindowSec;
   }
 }
