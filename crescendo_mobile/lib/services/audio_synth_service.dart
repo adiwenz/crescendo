@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -31,6 +32,10 @@ class AudioSynthService {
       }
       cursor = n.endSec;
     }
+    if (samples.isEmpty) {
+      final frames = (0.1 * sampleRate).toInt();
+      samples.addAll(List.filled(frames, 0.0));
+    }
 
     final bytes = _toWav(samples);
     final dir = await getTemporaryDirectory();
@@ -41,9 +46,23 @@ class AudioSynthService {
   }
 
   Future<void> playFile(String path) async {
+    final file = File(path);
+    if (!await file.exists()) return;
+    final size = await file.length();
+    if (size <= 0) return;
     await _player.stop();
     await _player.setVolume(1.0);
-    await _player.play(DeviceFileSource(path));
+    try {
+      await _player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+    } on PlatformException {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      await _player.play(BytesSource(bytes, mimeType: 'audio/wav'));
+    } on AudioPlayerException {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      await _player.play(BytesSource(bytes, mimeType: 'audio/wav'));
+    }
   }
 
   Stream<void> get onComplete => _player.onPlayerComplete;

@@ -1,3 +1,4 @@
+import 'exercise_note_segment.dart';
 import 'pitch_highway_spec.dart';
 
 enum ExerciseType {
@@ -64,5 +65,46 @@ class VocalExercise {
     if (durationSeconds == null || durationSeconds <= 0) return 2;
     final mins = (durationSeconds / 60).round();
     return mins.clamp(1, 60);
+  }
+
+  List<ExerciseNoteSegment> buildPreviewSegments({int maxSegments = 10}) {
+    final spec = highwaySpec;
+    if (spec == null || spec.segments.isEmpty) return const [];
+    final segments = <ExerciseNoteSegment>[];
+    for (final seg in spec.segments) {
+      final startSec = seg.startMs / 1000.0;
+      final durationSec = (seg.endMs - seg.startMs) / 1000.0;
+      if (seg.isGlide) {
+        final startMidi = seg.startMidi ?? seg.midiNote;
+        final endMidi = seg.endMidi ?? seg.midiNote;
+        final steps = (durationSec / 0.2).round().clamp(3, 6);
+        final stepDur = durationSec / steps;
+        for (var i = 0; i < steps; i++) {
+          final ratio = i / (steps - 1);
+          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
+          segments.add(ExerciseNoteSegment(
+            midi: midi,
+            startSec: startSec + stepDur * i,
+            durationSec: stepDur,
+            syllable: seg.label,
+          ));
+        }
+      } else {
+        segments.add(ExerciseNoteSegment(
+          midi: seg.midiNote,
+          startSec: startSec,
+          durationSec: durationSec,
+          syllable: seg.label,
+        ));
+      }
+    }
+    if (segments.length <= maxSegments) return segments;
+    final stride = segments.length / maxSegments;
+    final sampled = <ExerciseNoteSegment>[];
+    for (var i = 0; i < maxSegments; i++) {
+      final idx = (i * stride).floor().clamp(0, segments.length - 1);
+      sampled.add(segments[idx]);
+    }
+    return sampled;
   }
 }

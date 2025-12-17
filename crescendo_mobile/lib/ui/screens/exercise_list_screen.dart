@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
+import '../widgets/exercise_preview_mini.dart';
 import '../widgets/exercise_tile.dart';
 import 'exercise_info_screen.dart';
 
@@ -36,6 +37,7 @@ class ExerciseListScreen extends StatelessWidget {
             subtitle: _typeLabel(exercise.type),
             iconKey: exercise.iconKey,
             chipLabel: _typeLabel(exercise.type),
+            preview: ExercisePreviewMini(exercise: exercise),
             onTap: () => _openExercise(context, exercise),
           );
         },
