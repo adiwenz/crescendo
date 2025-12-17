@@ -7,11 +7,14 @@ import 'package:flutter/scheduler.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
+import '../../models/last_take.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
 import '../widgets/pitch_highway_painter.dart';
+import '../../utils/pitch_math.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -70,6 +73,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final List<PitchFrame> _tail = [];
   final List<PitchFrame> _captured = [];
   final ProgressService _progress = ProgressService();
+  final LastTakeStore _lastTakeStore = LastTakeStore();
   final _tailWindowSec = 4.0;
   Ticker? _ticker;
   Duration? _lastTick;
@@ -187,12 +191,36 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _lastTick = null;
     await _sub?.cancel();
     _sub = null;
-    await _recording?.stop();
+    final recordingResult = _recording == null ? null : await _recording!.stop();
     _recording = null;
     await _synth.stop();
+    await _saveLastTake(recordingResult?.audioPath);
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
     await _completeAndPop(score, {'intonation': score});
+  }
+
+  Future<void> _saveLastTake(String? audioPath) async {
+    if (_captured.isEmpty) return;
+    final duration = _time.value.isFinite ? _time.value : 0.0;
+    final sanitized = _captured.map((f) {
+      final midi = f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
+      return PitchFrame(
+        time: f.time,
+        hz: f.hz,
+        midi: midi,
+        voicedProb: f.voicedProb,
+        rms: f.rms,
+      );
+    }).toList();
+    final take = LastTake(
+      exerciseId: widget.exercise.id,
+      recordedAt: DateTime.now(),
+      frames: sanitized,
+      durationSec: duration.clamp(0.0, _durationSec),
+      audioPath: (audioPath != null && audioPath.isNotEmpty) ? audioPath : null,
+    );
+    await _lastTakeStore.saveLastTake(take);
   }
 
   void _simulatePitch(double t) {

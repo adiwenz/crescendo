@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../data/progress_repository.dart';
+import '../../models/last_take.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
+import '../../services/last_take_store.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_navigation.dart';
+import 'pitch_highway_review_screen.dart';
 
 class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
@@ -18,12 +21,16 @@ class ExerciseInfoScreen extends StatefulWidget {
 class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _repo = ExerciseRepository();
   final _progress = ProgressRepository();
+  final _lastTakeStore = LastTakeStore();
   double? _lastScore;
+  LastTake? _lastTake;
+  bool _lastTakeLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadLastScore();
+    _loadLastTake();
   }
 
   Future<void> _loadLastScore() async {
@@ -37,6 +44,15 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     setState(() => _lastScore = attempts.first.overallScore);
   }
 
+  Future<void> _loadLastTake() async {
+    final take = await _lastTakeStore.getLastTake(widget.exerciseId);
+    if (!mounted) return;
+    setState(() {
+      _lastTake = take;
+      _lastTakeLoaded = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercise = _repo.getExercise(widget.exerciseId);
@@ -47,6 +63,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             : '${exercise.estimatedMinutes} min')
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
+    final canReview = exercise.type == ExerciseType.pitchHighway && _lastTake != null;
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
@@ -107,10 +124,40 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               } else {
                 await _loadLastScore();
               }
+              await _loadLastTake();
             },
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Exercise'),
           ),
+          if (exercise.type == ExerciseType.pitchHighway) ...[
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: canReview
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PitchHighwayReviewScreen(
+                            exercise: exercise,
+                            lastTake: _lastTake!,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.replay),
+              label: const Text('Review last take'),
+            ),
+            if (_lastTakeLoaded && !canReview)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'No last take recorded yet.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Back'),

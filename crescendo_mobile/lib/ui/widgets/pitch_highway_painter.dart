@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
+import '../../utils/pitch_math.dart';
 
 enum PitchMatch { good, near, off }
 
@@ -16,6 +17,8 @@ class PitchHighwayPainter extends CustomPainter {
   final double playheadFraction;
   final double smoothingWindowSec;
   final bool? drawBackground;
+  final bool showLivePitch;
+  final bool showPlayheadLine;
   final int midiMin;
   final int midiMax;
 
@@ -27,6 +30,8 @@ class PitchHighwayPainter extends CustomPainter {
     this.playheadFraction = 0.45,
     this.smoothingWindowSec = 0.2,
     this.drawBackground = true,
+    this.showLivePitch = true,
+    this.showPlayheadLine = true,
     this.midiMin = 48,
     this.midiMax = 72,
   }) : super(repaint: time);
@@ -60,7 +65,12 @@ class PitchHighwayPainter extends CustomPainter {
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
       final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;
       if (endX < -32 || startX > size.width + 32) continue;
-      final y = _midiToY(n.midi.toDouble(), size.height);
+      final y = PitchMath.midiToY(
+        midi: n.midi.toDouble(),
+        height: size.height,
+        midiMin: midiMin,
+        midiMax: midiMax,
+      );
       final rect = RRect.fromLTRBR(
         startX,
         y - barHeight / 2,
@@ -93,40 +103,49 @@ class PitchHighwayPainter extends CustomPainter {
       }
     }
 
-    _drawPitchTrail(canvas, size, currentTime, playheadX);
+    if (showLivePitch) {
+      _drawPitchTrail(canvas, size, currentTime, playheadX);
 
-    if (smoothedMidi != null) {
-      final y = _midiToY(smoothedMidi, size.height);
-      final head = Offset(playheadX, y);
-      canvas.drawCircle(
-        head,
-        16,
-        Paint()
-          ..color = Colors.white.withOpacity(0.28)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-      );
-      canvas.drawCircle(
-        head,
-        10,
-        Paint()
-          ..color = Colors.white.withOpacity(0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-      canvas.drawCircle(head, 7, Paint()..color = Colors.white);
+      if (smoothedMidi != null) {
+        final y = PitchMath.midiToY(
+          midi: smoothedMidi,
+          height: size.height,
+          midiMin: midiMin,
+          midiMax: midiMax,
+        );
+        final head = Offset(playheadX, y);
+        canvas.drawCircle(
+          head,
+          16,
+          Paint()
+            ..color = Colors.white.withOpacity(0.28)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+        );
+        canvas.drawCircle(
+          head,
+          10,
+          Paint()
+            ..color = Colors.white.withOpacity(0.4)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
+        canvas.drawCircle(head, 7, Paint()..color = Colors.white);
+      }
     }
 
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.08)
-      ..strokeWidth = 2.0;
-    canvas.drawLine(
-      Offset(playheadX + 0.5, 0),
-      Offset(playheadX + 0.5, size.height),
-      shadowPaint,
-    );
-    final playheadPaint = Paint()
-      ..color = Colors.white.withOpacity(0.85)
-      ..strokeWidth = 2.0;
-    canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
+    if (showPlayheadLine) {
+      final shadowPaint = Paint()
+        ..color = Colors.black.withOpacity(0.08)
+        ..strokeWidth = 2.0;
+      canvas.drawLine(
+        Offset(playheadX + 0.5, 0),
+        Offset(playheadX + 0.5, size.height),
+        shadowPaint,
+      );
+      final playheadPaint = Paint()
+        ..color = Colors.white.withOpacity(0.85)
+        ..strokeWidth = 2.0;
+      canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
+    }
   }
 
   ReferenceNote? _noteAtTime(double t) {
@@ -175,12 +194,6 @@ class PitchHighwayPainter extends CustomPainter {
     return null;
   }
 
-  double _midiToY(double midi, double height) {
-    final clamped = midi.clamp(midiMin.toDouble(), midiMax.toDouble());
-    final ratio = (clamped - midiMin) / (midiMax - midiMin);
-    return height - ratio * height;
-  }
-
   void _drawPitchTrail(Canvas canvas, Size size, double t, double playheadX) {
     if (pitchTail.isEmpty) return;
     const trailWindowSec = 3.0;
@@ -197,7 +210,12 @@ class PitchHighwayPainter extends CustomPainter {
       if (midi == null) continue;
       if (f.voicedProb != null && f.voicedProb! < 0.6) continue;
       if (f.rms != null && f.rms! < 0.02) continue;
-      final y = _midiToY(midi, size.height);
+      final y = PitchMath.midiToY(
+        midi: midi,
+        height: size.height,
+        midiMin: midiMin,
+        midiMax: midiMax,
+      );
       if (lastY != null && (y - lastY!).abs() > maxJumpPx) continue;
       lastY = y;
       raw.add(_PitchSample(time: f.time, y: y));
@@ -313,7 +331,9 @@ class PitchHighwayPainter extends CustomPainter {
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
         oldDelegate.playheadFraction != playheadFraction ||
         (oldDelegate.drawBackground ?? true) != (drawBackground ?? true) ||
-        oldDelegate.smoothingWindowSec != smoothingWindowSec;
+        oldDelegate.smoothingWindowSec != smoothingWindowSec ||
+        oldDelegate.showLivePitch != showLivePitch ||
+        oldDelegate.showPlayheadLine != showPlayheadLine;
   }
 }
 
