@@ -187,9 +187,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     await _recording?.stop();
     _recording = null;
     await _synth.stop();
-    _scorePct = _scorePct ?? _computeScore();
-    _saveAttempt(score: _scorePct, subScores: {'intonation': _scorePct ?? 0});
-    setState(() {});
+    final score = _scorePct ?? _computeScore();
+    _scorePct = score;
+    await _completeAndPop(score, {'intonation': score});
   }
 
   void _simulatePitch(double t) {
@@ -299,7 +299,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return result.overallScorePct;
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -310,7 +310,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   String _formatTime(double t) {
@@ -548,8 +556,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _finish() {
@@ -557,8 +564,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _beginPrepCountdown() {
@@ -586,7 +592,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     await _synth.playFile(path);
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -597,7 +603,15 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override
@@ -722,8 +736,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _finish() {
@@ -731,8 +744,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _beginPrepCountdown() {
@@ -760,7 +772,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     await _synth.playFile(path);
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -771,7 +783,15 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override
@@ -896,8 +916,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _listening = false;
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
     _scorePct = (stability.clamp(0.0, 1.0) * 100.0);
-    _saveAttempt(score: _scorePct, subScores: {'stability': _scorePct ?? 0});
-    setState(() {});
+    await _completeAndPop(_scorePct ?? 0, {'stability': _scorePct ?? 0});
   }
 
   void _beginPrepCountdown() {
@@ -925,7 +944,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     await _synth.playFile(path);
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -936,7 +955,15 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override
@@ -1067,8 +1094,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       final mean = _absErrors.reduce((a, b) => a + b) / _absErrors.length;
       _scorePct = (1.0 - math.min(mean / 100.0, 1.0)) * 100.0;
     }
-    _saveAttempt(score: _scorePct, subScores: {'intonation': _scorePct ?? 0});
-    setState(() {});
+    await _completeAndPop(_scorePct ?? 0, {'intonation': _scorePct ?? 0});
   }
 
   void _beginPrepCountdown() {
@@ -1090,7 +1116,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     _prepRemaining = 0;
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1101,7 +1127,15 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override
@@ -1238,8 +1272,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'timing': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
   }
 
   void _finish() {
@@ -1247,8 +1280,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'timing': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
   }
 
   void _beginPrepCountdown() {
@@ -1276,7 +1308,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     await _synth.playFile(path);
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1287,7 +1319,15 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   List<String> get _syllables {
@@ -1440,10 +1480,9 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _lastTick = null;
     _running = false;
     _scorePct = _computeScore();
-    _saveAttempt(score: _scorePct, subScores: {'dynamics': _scorePct ?? 0});
     _sub?.cancel();
     _recording.stop();
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
   }
 
   void _finish() {
@@ -1451,10 +1490,9 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = _computeScore();
-    _saveAttempt(score: _scorePct, subScores: {'dynamics': _scorePct ?? 0});
     _sub?.cancel();
     _recording.stop();
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
   }
 
   void _beginPrepCountdown() {
@@ -1496,7 +1534,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     return (1.0 - meanDiff.clamp(0.0, 1.0)) * 100.0;
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1507,7 +1545,15 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override
@@ -1627,8 +1673,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 90).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _finish() {
@@ -1636,8 +1681,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
-    setState(() {});
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
 
   void _beginPrepCountdown() {
@@ -1665,7 +1709,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     await _synth.playFile(path);
   }
 
-  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1676,7 +1720,15 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
       subScores: subScores,
     );
     _attemptSaved = true;
-    unawaited(_progress.saveAttempt(attempt));
+    await _progress.saveAttempt(attempt);
+  }
+
+  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+    await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(score);
+    }
   }
 
   @override

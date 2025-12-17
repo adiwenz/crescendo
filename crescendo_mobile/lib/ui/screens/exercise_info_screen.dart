@@ -1,19 +1,45 @@
 import 'package:flutter/material.dart';
 
+import '../../data/progress_repository.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_navigation.dart';
 
-class ExerciseInfoScreen extends StatelessWidget {
+class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
 
   const ExerciseInfoScreen({super.key, required this.exerciseId});
 
   @override
+  State<ExerciseInfoScreen> createState() => _ExerciseInfoScreenState();
+}
+
+class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
+  final _repo = ExerciseRepository();
+  final _progress = ProgressRepository();
+  double? _lastScore;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastScore();
+  }
+
+  Future<void> _loadLastScore() async {
+    final attempts = await _progress.fetchAttemptsForExercise(widget.exerciseId);
+    if (!mounted) return;
+    if (attempts.isEmpty) {
+      setState(() => _lastScore = null);
+      return;
+    }
+    attempts.sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    setState(() => _lastScore = attempts.first.overallScore);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final repo = ExerciseRepository();
-    final exercise = repo.getExercise(exerciseId);
+    final exercise = _repo.getExercise(widget.exerciseId);
     final durationText = exercise.durationSeconds != null
         ? '${exercise.durationSeconds}s'
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
@@ -69,11 +95,16 @@ class ExerciseInfoScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              final result = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => buildExerciseScreen(exercise)),
               );
+              if (result is double) {
+                setState(() => _lastScore = result);
+              } else {
+                await _loadLastScore();
+              }
             },
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Exercise'),
@@ -81,6 +112,12 @@ class ExerciseInfoScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Back'),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Last score: ${_lastScore?.toStringAsFixed(0) ?? '—'}%',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
       ),
