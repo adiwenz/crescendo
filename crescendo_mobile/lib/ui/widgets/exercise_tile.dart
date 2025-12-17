@@ -8,6 +8,7 @@ class ExerciseTile extends StatelessWidget {
   final String iconKey;
   final String? chipLabel;
   final Widget? preview;
+  final Widget? badge;
   final VoidCallback onTap;
 
   const ExerciseTile({
@@ -17,6 +18,7 @@ class ExerciseTile extends StatelessWidget {
     required this.iconKey,
     this.chipLabel,
     this.preview,
+    this.badge,
     required this.onTap,
   });
 
@@ -49,6 +51,12 @@ class ExerciseTile extends StatelessWidget {
                   alignment: const Alignment(0, -0.25),
                   child: ExerciseIcon(iconKey: iconKey, size: 62),
                 ),
+                if (badge != null)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: badge!,
+                  ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -95,80 +103,90 @@ class ExerciseTile extends StatelessWidget {
         onTap: onTap,
         child: Ink(
           decoration: cardDecoration,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              if (preview != null)
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: SizedBox(
-                    height: 72,
-                    width: double.infinity,
-                    child: preview,
-                  ),
-                ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (preview != null)
+                    ClipRRect(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(16)),
+                      child: SizedBox(
+                        height: 72,
+                        width: double.infinity,
+                        child: preview,
+                      ),
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          ExerciseIcon(iconKey: iconKey, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              title,
+                          Row(
+                            children: [
+                              ExerciseIcon(iconKey: iconKey, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: Colors.grey[600]),
                             ),
-                          ),
-                        ],
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: Colors.grey[600]),
-                        ),
-                      ],
-                      if (chipLabel != null) ...[
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    theme.colorScheme.primary.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                chipLabel!,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
+                          ],
+                          if (chipLabel != null) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    chipLabel!,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
-                    ],
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
+              if (badge != null)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: badge!,
+                ),
             ],
           ),
         ),

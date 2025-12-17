@@ -8,6 +8,7 @@ import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/last_take_store.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/unlock_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_navigation.dart';
@@ -27,7 +28,10 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _progress = ProgressRepository();
   final _lastTakeStore = LastTakeStore();
   final AudioSynthService _synth = AudioSynthService();
+  final UnlockService _unlockService = UnlockService();
   PitchHighwayDifficulty _tempoDifficulty = PitchHighwayDifficulty.medium;
+  int _maxUnlocked = 0;
+  bool _unlockLoaded = false;
   double? _lastScore;
   LastTake? _lastTake;
   bool _lastTakeLoaded = false;
@@ -37,6 +41,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     super.initState();
     _loadLastScore();
     _loadLastTake();
+    _loadUnlock();
   }
 
   @override
@@ -65,6 +70,19 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     });
   }
 
+  Future<void> _loadUnlock() async {
+    final maxUnlocked = await _unlockService.getMaxUnlocked(widget.exerciseId);
+    if (!mounted) return;
+    setState(() {
+      _maxUnlocked = maxUnlocked;
+      _unlockLoaded = true;
+      final currentIdx = pitchHighwayDifficultyIndex(_tempoDifficulty);
+      if (currentIdx > _maxUnlocked) {
+        _tempoDifficulty = pitchHighwayDifficultyFromIndex(_maxUnlocked);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercise = _repo.getExercise(widget.exerciseId);
@@ -79,6 +97,8 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     final canPreviewAudio = isPitchHighway &&
         exercise.highwaySpec?.segments.isNotEmpty == true;
     final canReview = isPitchHighway && _lastTake != null;
+    final selectedIdx = pitchHighwayDifficultyIndex(_tempoDifficulty);
+    final selectionLocked = isPitchHighway && selectedIdx > _maxUnlocked;
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
@@ -115,13 +135,35 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               spacing: 8,
               children: PitchHighwayDifficulty.values.map((difficulty) {
                 final selected = _tempoDifficulty == difficulty;
+                final idx = pitchHighwayDifficultyIndex(difficulty);
+                final unlocked = idx <= _maxUnlocked;
                 return ChoiceChip(
                   label: Text(pitchHighwayDifficultyLabel(difficulty)),
                   selected: selected,
-                  onSelected: (_) => setState(() => _tempoDifficulty = difficulty),
+                  labelStyle: unlocked
+                      ? null
+                      : Theme.of(context)
+                          .textTheme
+                          .labelLarge
+                          ?.copyWith(color: Colors.grey[500]),
+                  onSelected: (_) {
+                    if (!unlocked) {
+                      _showLockedHint(idx);
+                      return;
+                    }
+                    setState(() => _tempoDifficulty = difficulty);
+                  },
                 );
               }).toList(),
             ),
+            if (_unlockLoaded && selectionLocked)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _lockedHint(pitchHighwayDifficultyIndex(_tempoDifficulty)),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
           ],
           const SizedBox(height: 16),
           _SectionHeader(title: 'How to do it'),
@@ -151,7 +193,9 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           ),
           const SizedBox(height: 8),
           ElevatedButton.icon(
-            onPressed: () async {
+            onPressed: selectionLocked
+                ? null
+                : () async {
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -165,6 +209,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
                 await _loadLastScore();
               }
               await _loadLastTake();
+              await _loadUnlock();
             },
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Exercise'),
@@ -211,6 +256,28 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         ],
       ),
     );
+  }
+
+  void _showLockedHint(int difficultyIdx) {
+    final nextLabel = pitchHighwayDifficultyLabel(
+      pitchHighwayDifficultyFromIndex(difficultyIdx),
+    );
+    final requiredLabel = pitchHighwayDifficultyLabel(
+      pitchHighwayDifficultyFromIndex((difficultyIdx - 1).clamp(0, 2)),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Score 90% on $requiredLabel to unlock $nextLabel.')),
+    );
+  }
+
+  String _lockedHint(int difficultyIdx) {
+    final nextLabel = pitchHighwayDifficultyLabel(
+      pitchHighwayDifficultyFromIndex(difficultyIdx),
+    );
+    final requiredLabel = pitchHighwayDifficultyLabel(
+      pitchHighwayDifficultyFromIndex((difficultyIdx - 1).clamp(0, 2)),
+    );
+    return 'Score 90% on $requiredLabel to unlock $nextLabel.';
   }
 
   List<String> _targetsForExercise(VocalExercise exercise) {

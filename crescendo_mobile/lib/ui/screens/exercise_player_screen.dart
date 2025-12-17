@@ -15,9 +15,11 @@ import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
+import '../../services/unlock_service.dart';
 import '../widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import 'level_up_screen.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -85,6 +87,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final List<PitchFrame> _captured = [];
   final ProgressService _progress = ProgressService();
   final LastTakeStore _lastTakeStore = LastTakeStore();
+  final UnlockService _unlockService = UnlockService();
   final _tailWindowSec = 4.0;
   Ticker? _ticker;
   Duration? _lastTick;
@@ -375,6 +378,23 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
+    if (!mounted) return;
+    final levelResult = await _unlockService.applyResult(
+      exerciseId: widget.exercise.id,
+      difficulty: widget.pitchDifficulty,
+      score: score.round(),
+    );
+    if (levelResult.levelUp && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LevelUpScreen(
+            exerciseName: widget.exercise.name,
+            score: score.round(),
+            unlockedDifficulty: levelResult.unlockedDifficulty,
+          ),
+        ),
+      );
+    }
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);

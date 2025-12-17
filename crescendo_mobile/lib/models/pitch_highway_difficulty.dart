@@ -16,3 +16,19 @@ PitchHighwayDifficulty? pitchHighwayDifficultyFromName(String? raw) {
     _ => null,
   };
 }
+
+int pitchHighwayDifficultyIndex(PitchHighwayDifficulty difficulty) {
+  return switch (difficulty) {
+    PitchHighwayDifficulty.easy => 0,
+    PitchHighwayDifficulty.medium => 1,
+    PitchHighwayDifficulty.hard => 2,
+  };
+}
+
+PitchHighwayDifficulty pitchHighwayDifficultyFromIndex(int index) {
+  return switch (index) {
+    0 => PitchHighwayDifficulty.easy,
+    1 => PitchHighwayDifficulty.medium,
+    _ => PitchHighwayDifficulty.hard,
+  };
+}
