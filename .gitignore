@@ -7,8 +7,8 @@ webapp/uploads/
 
 # Flutter
 .dart-tool-home/
-.pub-cache/hosted/pub.dev/_discoveryapis_commons-1.0.6/.dart_tool/
-.pub-cache/hosted/pub.dev/_discoveryapis_commons-1.0.6/pubspec.lock
+flutter_sdk/
+.pub-cache/
 .vscode/
 
 # Python cache
