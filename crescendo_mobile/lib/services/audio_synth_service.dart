@@ -7,51 +7,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/reference_note.dart';
-import '../models/warmup.dart';
 
 class AudioSynthService {
   final int sampleRate;
   final AudioPlayer _player;
 
   AudioSynthService({this.sampleRate = 44100}) : _player = AudioPlayer();
-
-  Future<String> renderWarmup(WarmupDefinition warmup) async {
-    final samples = <double>[];
-    final plan = warmup.buildPlan();
-    double t = 0;
-    for (var i = 0; i < warmup.notes.length; i++) {
-      final midi = warmup.glide && i < warmup.notes.length - 1 ? null : plan[i].targetMidi;
-      final dur = warmup.durations[i];
-      if (warmup.glide && i < warmup.notes.length - 1) {
-        final startMidi = WarmupDefinition.noteToMidi(warmup.notes[i]);
-        final endMidi = WarmupDefinition.noteToMidi(warmup.notes[i + 1]);
-        final frames = (dur * sampleRate).toInt();
-        for (var f = 0; f < frames; f++) {
-          final ratio = f / frames;
-          final midiVal = startMidi + (endMidi - startMidi) * ratio;
-          final hz = midiToHz(midiVal);
-          samples.add(_pianoSample(hz, f / sampleRate));
-        }
-      } else {
-        final hz = midiToHz(midi ?? 60);
-        final frames = (dur * sampleRate).toInt();
-        for (var f = 0; f < frames; f++) {
-          samples.add(_pianoSample(hz, f / sampleRate));
-        }
-      }
-      t += dur;
-      final gapFrames = (warmup.gap * sampleRate).toInt();
-      samples.addAll(List.filled(gapFrames, 0.0));
-      t += warmup.gap;
-    }
-
-    final bytes = _toWav(samples);
-    final dir = await getTemporaryDirectory();
-    final path = p.join(dir.path, '${warmup.id}_${DateTime.now().millisecondsSinceEpoch}.wav');
-    final file = File(path);
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
-  }
 
   Future<String> renderReferenceNotes(List<ReferenceNote> notes) async {
     final samples = <double>[];
@@ -64,7 +25,7 @@ class AudioSynthService {
       }
       final dur = max(0.01, n.endSec - n.startSec);
       final frames = (dur * sampleRate).toInt();
-      final hz = midiToHz(n.midi.toDouble());
+      final hz = _midiToHz(n.midi.toDouble());
       for (var f = 0; f < frames; f++) {
         samples.add(_pianoSample(hz, f / sampleRate));
       }
@@ -88,6 +49,8 @@ class AudioSynthService {
   Stream<void> get onComplete => _player.onPlayerComplete;
 
   Future<void> stop() => _player.stop();
+
+  double _midiToHz(double midi) => 440.0 * pow(2.0, (midi - 69.0) / 12.0);
 
   double _pianoSample(double hz, double noteTime) {
     // Simple additive "piano-ish" timbre: fast attack with exponential decay.

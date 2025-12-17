@@ -3,7 +3,18 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../models/pitch_frame.dart';
-import '../../models/warmup.dart';
+
+class NoteSegment {
+  final double start;
+  final double end;
+  final double targetMidi;
+
+  const NoteSegment({
+    required this.start,
+    required this.end,
+    required this.targetMidi,
+  });
+}
 
 class PitchGraph extends StatelessWidget {
   final List<PitchFrame> frames;
