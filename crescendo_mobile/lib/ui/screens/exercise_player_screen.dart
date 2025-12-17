@@ -20,7 +20,10 @@ class ExercisePlayerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(exercise.name)),
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: Text(exercise.name),
+      ),
       body: switch (exercise.type) {
         ExerciseType.pitchHighway => PitchHighwayPlayer(exercise: exercise),
         ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),

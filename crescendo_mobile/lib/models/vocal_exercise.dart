@@ -26,8 +26,10 @@ class VocalExercise {
   final List<String> tags;
   final PitchHighwaySpec? highwaySpec;
   final DateTime createdAt;
+  final String iconKey;
+  final int estimatedMinutes;
 
-  const VocalExercise({
+  VocalExercise({
     required this.id,
     required this.name,
     required this.categoryId,
@@ -37,8 +39,30 @@ class VocalExercise {
     required this.difficulty,
     required this.tags,
     required this.createdAt,
+    String? iconKey,
+    int? estimatedMinutes,
     this.durationSeconds,
     this.reps,
     this.highwaySpec,
-  });
+  })  : iconKey = iconKey ?? _defaultIconKey(type),
+        estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds);
+
+  static String _defaultIconKey(ExerciseType type) {
+    return switch (type) {
+      ExerciseType.pitchHighway => 'pitch',
+      ExerciseType.breathTimer => 'breath',
+      ExerciseType.sovtTimer => 'sovt',
+      ExerciseType.sustainedPitchHold => 'hold',
+      ExerciseType.pitchMatchListening => 'listen',
+      ExerciseType.articulationRhythm => 'articulation',
+      ExerciseType.dynamicsRamp => 'dynamics',
+      ExerciseType.cooldownRecovery => 'recovery',
+    };
+  }
+
+  static int _estimateMinutes(int? durationSeconds) {
+    if (durationSeconds == null || durationSeconds <= 0) return 2;
+    final mins = (durationSeconds / 60).round();
+    return mins.clamp(1, 60);
+  }
 }

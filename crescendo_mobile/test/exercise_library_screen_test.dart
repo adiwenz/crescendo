@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:crescendo_mobile/ui/screens/exercise_library_screen.dart';
+import 'package:crescendo_mobile/ui/screens/exercise_categories_screen.dart';
 
 void main() {
-  testWidgets('ExerciseLibraryScreen shows categories and opens details',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(const MaterialApp(home: ExerciseLibraryScreen()));
+  testWidgets('Exercise categories flow to info screen', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: ExerciseCategoriesScreen()));
 
     expect(find.text('Exercise Library'), findsOneWidget);
     expect(find.text('Breathing & Support'), findsOneWidget);

@@ -4,7 +4,7 @@ import 'screens/history_screen.dart';
 import 'screens/pitch_highway_screen.dart';
 import 'screens/progress_home_screen.dart';
 import 'screens/warmups_screen.dart';
-import 'screens/exercise_library_screen.dart';
+import 'screens/exercise_categories_screen.dart';
 import 'screens/hold_exercise_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
@@ -32,7 +32,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
             WarmupsScreen(),
             HistoryScreen(),
             PitchHighwayScreen(),
-            ExerciseLibraryScreen(),
+            ExerciseCategoriesScreen(),
             HoldExerciseScreen(),
             ProgressHomeScreen(),
           ],

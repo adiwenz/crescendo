@@ -11,78 +11,91 @@ List<ExerciseCategory> seedExerciseCategories() => const [
         title: 'Breathing & Support',
         description: 'Build steady airflow and efficient support habits.',
         sortOrder: 1,
+        iconKey: 'breath',
       ),
       ExerciseCategory(
         id: 'sovt',
         title: 'SOVT (Semi-Occluded Vocal Tract)',
         description: 'Reduce tension and balance airflow with occlusion.',
         sortOrder: 2,
+        iconKey: 'sovt',
       ),
       ExerciseCategory(
         id: 'onset_release',
         title: 'Onset & Release',
         description: 'Train clean starts and relaxed releases.',
         sortOrder: 3,
+        iconKey: 'onset',
       ),
       ExerciseCategory(
         id: 'resonance_placement',
         title: 'Resonance & Placement',
         description: 'Find forward resonance and reduce throat tension.',
         sortOrder: 4,
+        iconKey: 'resonance',
       ),
       ExerciseCategory(
         id: 'range_building',
         title: 'Range Building',
         description: 'Connect registers while extending range.',
         sortOrder: 5,
+        iconKey: 'range',
       ),
       ExerciseCategory(
         id: 'register_balance',
         title: 'Register Balance (Chest/Mix/Head)',
         description: 'Smooth transitions across registers.',
         sortOrder: 6,
+        iconKey: 'register',
       ),
       ExerciseCategory(
         id: 'vowel_shaping',
         title: 'Vowel Shaping & Modification',
         description: 'Keep tone consistent across vowels and pitch.',
         sortOrder: 7,
+        iconKey: 'vowel',
       ),
       ExerciseCategory(
         id: 'intonation',
         title: 'Intonation & Pitch Accuracy',
         description: 'Improve pitch memory and accuracy.',
         sortOrder: 8,
+        iconKey: 'intonation',
       ),
       ExerciseCategory(
         id: 'agility_runs',
         title: 'Agility & Riffs/Runs',
         description: 'Build speed and coordination for runs.',
         sortOrder: 9,
+        iconKey: 'agility',
       ),
       ExerciseCategory(
         id: 'articulation_diction',
         title: 'Articulation & Diction',
         description: 'Clarify consonants and rhythmic precision.',
         sortOrder: 10,
+        iconKey: 'articulation',
       ),
       ExerciseCategory(
         id: 'dynamics_control',
         title: 'Dynamics & Control',
         description: 'Develop expressive control of volume.',
         sortOrder: 11,
+        iconKey: 'dynamics',
       ),
       ExerciseCategory(
         id: 'endurance',
         title: 'Endurance & Stamina',
         description: 'Build stamina for longer phrases.',
         sortOrder: 12,
+        iconKey: 'endurance',
       ),
       ExerciseCategory(
         id: 'recovery_therapy',
         title: 'Recovery & Therapy',
         description: 'Gentle recovery and tension release.',
         sortOrder: 13,
+        iconKey: 'recovery',
       ),
     ];
 
@@ -222,6 +235,12 @@ List<VocalExercise> seedVocalExercises() {
     return PitchHighwaySpec(segments: segmentList);
   }
 
+  int _minutesFromSeconds(int? seconds, {int fallback = 2}) {
+    if (seconds == null || seconds <= 0) return fallback;
+    final mins = (seconds / 60).round();
+    return mins.clamp(1, 60);
+  }
+
   return [
     VocalExercise(
       id: 'appoggio_breathing',
@@ -233,6 +252,8 @@ List<VocalExercise> seedVocalExercises() {
       durationSeconds: 180,
       difficulty: ExerciseDifficulty.beginner,
       tags: const ['support', 'breath', 'stability'],
+      iconKey: 'breath',
+      estimatedMinutes: _minutesFromSeconds(180),
       createdAt: createdAt,
     ),
     VocalExercise(
