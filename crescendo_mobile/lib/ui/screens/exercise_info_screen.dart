@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../data/progress_repository.dart';
 import '../../models/last_take.dart';
+import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/last_take_store.dart';
+import '../../services/audio_synth_service.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_navigation.dart';
 import 'pitch_highway_review_screen.dart';
@@ -22,6 +24,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _repo = ExerciseRepository();
   final _progress = ProgressRepository();
   final _lastTakeStore = LastTakeStore();
+  final AudioSynthService _synth = AudioSynthService();
   double? _lastScore;
   LastTake? _lastTake;
   bool _lastTakeLoaded = false;
@@ -31,6 +34,12 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     super.initState();
     _loadLastScore();
     _loadLastTake();
+  }
+
+  @override
+  void dispose() {
+    _synth.stop();
+    super.dispose();
   }
 
   Future<void> _loadLastScore() async {
@@ -63,6 +72,8 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             : '${exercise.estimatedMinutes} min')
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
+    final canPreviewAudio = exercise.type == ExerciseType.pitchHighway &&
+        exercise.highwaySpec?.segments.isNotEmpty == true;
     final canReview = exercise.type == ExerciseType.pitchHighway && _lastTake != null;
     return Scaffold(
       appBar: AppBar(
@@ -113,6 +124,12 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             children: exercise.tags.map((t) => Chip(label: Text(t))).toList(),
           ),
           const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: canPreviewAudio ? () => _playPreview(exercise) : null,
+            icon: const Icon(Icons.volume_up),
+            label: const Text('Preview Exercise'),
+          ),
+          const SizedBox(height: 8),
           ElevatedButton.icon(
             onPressed: () async {
               final result = await Navigator.push(
@@ -215,6 +232,54 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       ExerciseType.dynamicsRamp => 'Dynamics Ramp',
       ExerciseType.cooldownRecovery => 'Recovery',
     };
+  }
+
+  Future<void> _playPreview(VocalExercise exercise) async {
+    final notes = _buildReferenceNotes(exercise);
+    if (notes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No preview available for this exercise.')),
+      );
+      return;
+    }
+    await _synth.stop();
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
+  }
+
+  List<ReferenceNote> _buildReferenceNotes(VocalExercise exercise) {
+    final spec = exercise.highwaySpec;
+    if (spec == null) return const [];
+    final notes = <ReferenceNote>[];
+    for (final seg in spec.segments) {
+      if (seg.isGlide) {
+        final startMidi = seg.startMidi ?? seg.midiNote;
+        final endMidi = seg.endMidi ?? seg.midiNote;
+        final durationMs = seg.endMs - seg.startMs;
+        final steps = (durationMs / 200).round().clamp(4, 24);
+        for (var i = 0; i < steps; i++) {
+          final ratio = i / steps;
+          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
+          final stepStart = seg.startMs + (durationMs * ratio).round();
+          final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
+          notes.add(ReferenceNote(
+            startSec: stepStart / 1000.0,
+            endSec: stepEnd / 1000.0,
+            midi: midi,
+            lyric: seg.label,
+          ));
+        }
+      } else {
+        notes.add(ReferenceNote(
+          startSec: seg.startMs / 1000.0,
+          endSec: seg.endMs / 1000.0,
+          midi: seg.midiNote,
+          lyric: seg.label,
+        ));
+      }
+    }
+    return notes;
   }
 }
 
