@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../models/reference_note.dart';
+import '../../services/audio_synth_service.dart';
 import '../../services/pitch_service.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
@@ -15,6 +17,7 @@ class PianoPitchScreen extends StatefulWidget {
 }
 
 class _PianoPitchScreenState extends State<PianoPitchScreen> {
+  final AudioSynthService _synth = AudioSynthService();
   late final PitchService _service;
   late final PitchTracker _tracker;
   StreamSubscription<PitchFrame>? _sub;
@@ -36,6 +39,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   void dispose() {
     _sub?.cancel();
     _service.dispose();
+    _synth.stop();
     _tracker.dispose();
     super.dispose();
   }
@@ -58,7 +62,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
                     startMidi: _tracker.rangeStartNote,
                     endMidi: _tracker.rangeEndNote,
                     highlightedMidi: _tracker.currentMidi,
-                    onKeyTap: _tracker.setManualMidi,
+                    onKeyTap: _handleKeyTap,
                   ),
                 ),
               ),
@@ -119,6 +123,17 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
         },
       ),
     );
+  }
+
+  void _handleKeyTap(int midi) {
+    _tracker.setManualMidi(midi);
+    unawaited(_playTapTone(midi));
+  }
+
+  Future<void> _playTapTone(int midi) async {
+    final notes = [ReferenceNote(startSec: 0, endSec: 0.6, midi: midi)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 }
 
