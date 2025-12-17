@@ -28,7 +28,7 @@ class PianoKeyboard extends StatelessWidget {
           for (var i = 0; i < whiteKeys.length; i++) whiteKeys[i]: i
         };
 
-        return SizedBox(
+        final content = SizedBox(
           height: keyHeight * whiteKeys.length,
           child: Stack(
             children: [
@@ -61,6 +61,11 @@ class PianoKeyboard extends StatelessWidget {
               }),
             ],
           ),
+        );
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: content,
         );
       },
     );
