@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/exercise_plan.dart';
 import '../../models/exercise_take.dart';
 import '../../models/pitch_frame.dart';
+import '../../services/exercise_repository.dart';
 import '../../services/exercise_progress_repository.dart';
+import '../../services/progress_service.dart';
 import '../widgets/progress_star_row.dart';
 import 'hold_stability_screen.dart';
-import 'exercise_progress_detail_screen.dart';
+import 'progress_exercise_screen.dart';
 
 class ExerciseResultsScreen extends StatefulWidget {
   final ExerciseTake take;
@@ -30,6 +34,8 @@ class _ExerciseResultsScreenState extends State<ExerciseResultsScreen> with Sing
   late final AnimationController _controller;
   late final Animation<double> _scale;
   final repo = ExerciseProgressRepository();
+  final ProgressService _progress = ProgressService();
+  final ExerciseRepository _exerciseRepo = ExerciseRepository();
   bool _saved = false;
 
   @override
@@ -46,6 +52,26 @@ class _ExerciseResultsScreenState extends State<ExerciseResultsScreen> with Sing
   Future<void> _saveTake() async {
     if (_saved) return;
     await repo.addTake(widget.take);
+    final exercise =
+        _exerciseRepo.getExercises().where((e) => e.id == widget.exerciseId).toList();
+    final exerciseDef = exercise.isNotEmpty ? exercise.first : null;
+    if (exerciseDef != null) {
+      final subs = <String, double>{
+        'onPitch': widget.take.onPitchPct,
+      };
+      if (widget.take.avgCentsAbs != null) {
+        subs['avgCentsAbs'] = widget.take.avgCentsAbs!;
+      }
+      final attempt = _progress.buildAttempt(
+        exerciseId: exerciseDef.id,
+        categoryId: exerciseDef.categoryId,
+        startedAt: widget.take.createdAt,
+        completedAt: widget.take.createdAt,
+        overallScore: widget.take.score0to100,
+        subScores: subs,
+      );
+      unawaited(_progress.saveAttempt(attempt));
+    }
     setState(() => _saved = true);
   }
 
@@ -124,16 +150,18 @@ class _ExerciseResultsScreenState extends State<ExerciseResultsScreen> with Sing
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      Navigator.popUntil(context, (r) => r.isFirst);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ExerciseProgressDetailScreen(
-                            exerciseId: widget.exerciseId,
-                            title: widget.take.title,
+                      final exercise =
+                          _exerciseRepo.getExercises().where((e) => e.id == widget.exerciseId).toList();
+                      if (exercise.isNotEmpty) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ProgressExerciseScreen(exercise: exercise.first),
                           ),
-                        ),
-                      );
+                        );
+                      } else {
+                        Navigator.pop(context);
+                      }
                     },
                     child: const Text('View progress'),
                   ),

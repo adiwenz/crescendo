@@ -8,6 +8,7 @@ import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
 import '../widgets/pitch_highway_painter.dart';
@@ -68,6 +69,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final List<PitchFrame> _tail = [];
   final List<PitchFrame> _captured = [];
+  final ProgressService _progress = ProgressService();
   final _tailWindowSec = 4.0;
   Ticker? _ticker;
   Duration? _lastTick;
@@ -82,6 +84,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   RecordingService? _recording;
   StreamSubscription<PitchFrame>? _sub;
   double? _scorePct;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   double get _durationSec =>
       (widget.exercise.highwaySpec?.totalMs ?? 0) / 1000.0;
@@ -133,6 +137,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _prepRunId += 1;
     final runId = _prepRunId;
     _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _captured.clear();
     _tail.clear();
     _captureEnabled = false;
@@ -182,6 +188,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _recording = null;
     await _synth.stop();
     _scorePct = _scorePct ?? _computeScore();
+    _saveAttempt(score: _scorePct, subScores: {'intonation': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -290,6 +297,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (notes.isEmpty || _captured.isEmpty) return 0.0;
     final result = RobustNoteScoringService().score(notes: notes, frames: _captured);
     return result.overallScorePct;
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   String _formatTime(double t) {
@@ -454,6 +475,7 @@ class BreathTimerPlayer extends StatefulWidget {
 class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
+  final ProgressService _progress = ProgressService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
@@ -463,6 +485,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
   int _prepRunId = 0;
   double _elapsed = 0;
   double? _scorePct;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
   final _phases = const [
     _BreathPhase('Inhale', 4),
     _BreathPhase('Hold', 4),
@@ -508,6 +532,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     await _playCueTone();
     _elapsed = 0;
     _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _running = true;
     _lastTick = null;
     _ticker?.start();
@@ -522,6 +548,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -530,6 +557,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -556,6 +584,20 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override
@@ -611,6 +653,7 @@ class SovtTimerPlayer extends StatefulWidget {
 class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
+  final ProgressService _progress = ProgressService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
@@ -621,6 +664,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
   double _elapsed = 0;
   double? _scorePct;
   bool _phonationOn = true;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void initState() {
@@ -661,6 +706,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     await _playCueTone();
     _elapsed = 0;
     _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _running = true;
     _lastTick = null;
     _ticker?.start();
@@ -675,6 +722,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -683,6 +731,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -709,6 +758,20 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override
@@ -760,6 +823,7 @@ class SustainedPitchHoldPlayer extends StatefulWidget {
 class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   final AudioSynthService _synth = AudioSynthService();
   final _recording = RecordingService();
+  final ProgressService _progress = ProgressService();
   StreamSubscription<PitchFrame>? _sub;
   bool _listening = false;
   bool _preparing = false;
@@ -773,6 +837,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   double _lastTime = 0;
   final _holdGoalSec = 3.0;
   double? _scorePct;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void dispose() {
@@ -798,6 +864,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _lastTime = 0;
     _onPitchSec = 0;
     _listeningSec = 0;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _sub = _recording.liveStream.listen((frame) {
       final hz = frame.hz;
       if (hz == null || hz <= 0) return;
@@ -828,6 +896,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _listening = false;
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
     _scorePct = (stability.clamp(0.0, 1.0) * 100.0);
+    _saveAttempt(score: _scorePct, subScores: {'stability': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -854,6 +923,20 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     final notes = [ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi)];
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override
@@ -914,6 +997,7 @@ class PitchMatchListeningPlayer extends StatefulWidget {
 class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   final _synth = AudioSynthService();
   final _recording = RecordingService();
+  final ProgressService _progress = ProgressService();
   StreamSubscription<PitchFrame>? _sub;
   bool _listening = false;
   bool _preparing = false;
@@ -924,6 +1008,8 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   double _centsError = 0;
   double? _scorePct;
   final List<double> _absErrors = [];
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void dispose() {
@@ -955,6 +1041,8 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     await _playTone();
     await _recording.start();
     _absErrors.clear();
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _sub = _recording.liveStream.listen((frame) {
       final hz = frame.hz;
       if (hz == null || hz <= 0) return;
@@ -979,6 +1067,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       final mean = _absErrors.reduce((a, b) => a + b) / _absErrors.length;
       _scorePct = (1.0 - math.min(mean / 100.0, 1.0)) * 100.0;
     }
+    _saveAttempt(score: _scorePct, subScores: {'intonation': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -999,6 +1088,20 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     _prepTimer?.cancel();
     _prepTimer = null;
     _prepRemaining = 0;
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override
@@ -1066,6 +1169,7 @@ class ArticulationRhythmPlayer extends StatefulWidget {
 class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
+  final ProgressService _progress = ProgressService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
@@ -1076,6 +1180,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
   double _elapsed = 0;
   double? _scorePct;
   final _tempoBpm = 90.0;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void initState() {
@@ -1116,6 +1222,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     await _playCueTone();
     _elapsed = 0;
     _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _running = true;
     _lastTick = null;
     _ticker?.start();
@@ -1130,6 +1238,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 120).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'timing': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -1138,6 +1247,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'timing': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -1164,6 +1274,20 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   List<String> get _syllables {
@@ -1229,6 +1353,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
   final _recording = RecordingService();
+  final ProgressService _progress = ProgressService();
   StreamSubscription<PitchFrame>? _sub;
   Ticker? _ticker;
   Duration? _lastTick;
@@ -1242,6 +1367,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
   double? _scorePct;
   final List<double> _sampleTimes = [];
   final List<double> _sampleRms = [];
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void initState() {
@@ -1289,6 +1416,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     await _recording.start();
     _sampleTimes.clear();
     _sampleRms.clear();
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _sub = _recording.liveStream.listen((frame) {
       final rms = frame.rms ?? 0.0;
       _sampleTimes.add(_elapsed);
@@ -1311,6 +1440,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _lastTick = null;
     _running = false;
     _scorePct = _computeScore();
+    _saveAttempt(score: _scorePct, subScores: {'dynamics': _scorePct ?? 0});
     _sub?.cancel();
     _recording.stop();
     setState(() {});
@@ -1321,6 +1451,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = _computeScore();
+    _saveAttempt(score: _scorePct, subScores: {'dynamics': _scorePct ?? 0});
     _sub?.cancel();
     _recording.stop();
     setState(() {});
@@ -1363,6 +1494,20 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     }
     final meanDiff = sumDiff / _sampleTimes.length;
     return (1.0 - meanDiff.clamp(0.0, 1.0)) * 100.0;
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override
@@ -1414,6 +1559,7 @@ class CooldownRecoveryPlayer extends StatefulWidget {
 class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
+  final ProgressService _progress = ProgressService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
@@ -1423,6 +1569,8 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
   int _prepRunId = 0;
   double _elapsed = 0;
   double? _scorePct;
+  DateTime? _startedAt;
+  bool _attemptSaved = false;
 
   @override
   void initState() {
@@ -1463,6 +1611,8 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     await _playCueTone();
     _elapsed = 0;
     _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = DateTime.now();
     _running = true;
     _lastTick = null;
     _ticker?.start();
@@ -1477,6 +1627,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 90).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -1485,6 +1636,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
+    _saveAttempt(score: _scorePct, subScores: {'completion': _scorePct ?? 0});
     setState(() {});
   }
 
@@ -1511,6 +1663,20 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+  }
+
+  void _saveAttempt({double? score, Map<String, double>? subScores}) {
+    if (_attemptSaved || score == null || _startedAt == null) return;
+    final attempt = _progress.buildAttempt(
+      exerciseId: widget.exercise.id,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: DateTime.now(),
+      overallScore: score.clamp(0.0, 100.0),
+      subScores: subScores,
+    );
+    _attemptSaved = true;
+    unawaited(_progress.saveAttempt(attempt));
   }
 
   @override

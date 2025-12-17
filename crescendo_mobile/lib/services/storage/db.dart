@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 1, onCreate: _onCreate);
+    _db = await openDatabase(path, version: 2, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -28,5 +28,36 @@ class AppDatabase {
         metricsJson TEXT
       )
     ''');
+    await db.execute('''
+      CREATE TABLE exercise_attempts(
+        id TEXT PRIMARY KEY,
+        exerciseId TEXT,
+        categoryId TEXT,
+        startedAt TEXT,
+        completedAt TEXT,
+        overallScore REAL,
+        subScoresJson TEXT,
+        notes TEXT,
+        version INTEGER
+      )
+    ''');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE exercise_attempts(
+          id TEXT PRIMARY KEY,
+          exerciseId TEXT,
+          categoryId TEXT,
+          startedAt TEXT,
+          completedAt TEXT,
+          overallScore REAL,
+          subScoresJson TEXT,
+          notes TEXT,
+          version INTEGER
+        )
+      ''');
+    }
   }
 }
