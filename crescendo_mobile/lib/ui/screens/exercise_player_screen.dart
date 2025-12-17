@@ -19,13 +19,23 @@ class ExercisePlayerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isPitchHighway = exercise.type == ExerciseType.pitchHighway;
     return Scaffold(
-      appBar: AppBar(
-        leading: const BackButton(),
-        title: Text(exercise.name),
-      ),
+      appBar: isPitchHighway
+          ? null
+          : AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: null,
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              title: Text(exercise.name),
+            ),
       body: switch (exercise.type) {
-        ExerciseType.pitchHighway => PitchHighwayPlayer(exercise: exercise),
+        ExerciseType.pitchHighway => PitchHighwayPlayer(
+            exercise: exercise,
+            showBackButton: true,
+          ),
         ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
         ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
         ExerciseType.sustainedPitchHold => SustainedPitchHoldPlayer(exercise: exercise),
@@ -40,8 +50,13 @@ class ExercisePlayerScreen extends StatelessWidget {
 
 class PitchHighwayPlayer extends StatefulWidget {
   final VocalExercise exercise;
+  final bool showBackButton;
 
-  const PitchHighwayPlayer({super.key, required this.exercise});
+  const PitchHighwayPlayer({
+    super.key,
+    required this.exercise,
+    this.showBackButton = false,
+  });
 
   @override
   State<PitchHighwayPlayer> createState() => _PitchHighwayPlayerState();
@@ -277,72 +292,151 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return result.overallScorePct;
   }
 
+  String _formatTime(double t) {
+    final totalSeconds = t.clamp(0, 24 * 60 * 60).floor();
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final notes = _buildReferenceNotes();
     final midiValues = notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
     final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
-    final label = _labelAtTime(_time.value);
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(widget.exercise.description, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 12),
-          if (_preparing) Text('Starting in $_prepRemaining...'),
-          if (label != null) Text('Current syllable: $label'),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 260,
-            child: CustomPaint(
-              painter: PitchHighwayPainter(
-                notes: notes,
-                pitchTail: _tail,
-                time: _time,
-                midiMin: minMidi,
-                midiMax: maxMidi,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
+    const bgGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFFFF3E2),
+        Color(0xFFFFEEF1),
+        Color(0xFFFFEAF6),
+      ],
+    );
+    final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
+    return Container(
+      decoration: const BoxDecoration(gradient: bgGradient),
+      child: SafeArea(
+        bottom: false,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _playing || _preparing ? _stop : _start,
+          child: Stack(
             children: [
-              const Text('Transpose'),
-              Expanded(
-                child: Slider(
-                  value: _transpose.toDouble(),
-                  min: -12,
-                  max: 12,
-                  divisions: 24,
-                  label: '${_transpose} st',
-                  onChanged: (v) => setState(() => _transpose = v.round()),
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: PitchHighwayPainter(
+                    notes: notes,
+                    pitchTail: _tail,
+                    time: _time,
+                    drawBackground: false,
+                    midiMin: minMidi,
+                    midiMax: maxMidi,
+                  ),
                 ),
+              ),
+              if (widget.showBackButton)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.arrow_back, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_preparing)
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Starting in $_prepRemaining...',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: Colors.white),
+                    ),
+                  ),
+                ),
+              if (_scorePct != null)
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12, right: 16),
+                    child: Text(
+                      'Score ${_scorePct!.toStringAsFixed(0)}%',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: Colors.white),
+                    ),
+                  ),
+                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        ValueListenableBuilder<double>(
+                          valueListenable: _time,
+                          builder: (_, v, __) => Text(
+                            _formatTime(v),
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: Colors.white30,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              alignment: Alignment.centerLeft,
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: _time,
+                                builder: (_, v, __) {
+                                  final pct = (v / totalDuration).clamp(0.0, 1.0);
+                                  return FractionallySizedBox(
+                                    widthFactor: pct,
+                                    child: Container(
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _formatTime(totalDuration),
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
             ],
           ),
-          SwitchListTile(
-            value: _useMic,
-            onChanged: _playing || _preparing
-                ? null
-                : (v) {
-                    setState(() => _useMic = v);
-                  },
-            title: const Text('Use microphone'),
-          ),
-          if (_scorePct != null) ...[
-            const SizedBox(height: 8),
-            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
-                style: Theme.of(context).textTheme.titleMedium),
-          ],
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: _playing ? _stop : _start,
-            icon: Icon(_playing ? Icons.stop : Icons.play_arrow),
-            label: Text(_playing ? 'Stop' : 'Start'),
-          ),
-        ],
+        ),
       ),
     );
   }
