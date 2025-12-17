@@ -22,6 +22,8 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   late final PitchTracker _tracker;
   StreamSubscription<PitchFrame>? _sub;
   final ScrollController _keyboardController = ScrollController();
+  static const double _keyHeight = 36;
+  bool _initialScrollSet = false;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
     _service = PitchService();
     _tracker = PitchTracker();
     _start();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _centerKeyboardInitial());
   }
 
   Future<void> _start() async {
@@ -72,6 +75,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
                         endMidi: _tracker.rangeEndNote,
                         highlightedMidi: _tracker.currentMidi,
                         onKeyTap: _handleKeyTap,
+                        keyHeight: _keyHeight,
                       ),
                     ),
                   ),
@@ -139,6 +143,37 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   void _handleKeyTap(int midi) {
     _tracker.setManualMidi(midi);
     unawaited(_playTapTone(midi));
+  }
+
+  void _centerKeyboardInitial() {
+    if (_initialScrollSet) return;
+    _initialScrollSet = true;
+    _centerKeyboardOnMidi(60);
+  }
+
+  void _centerKeyboardOnMidi(int midi) {
+    if (!_keyboardController.hasClients) return;
+    final whiteKeys = _whiteKeys(_tracker.rangeStartNote, _tracker.rangeEndNote);
+    final index = whiteKeys.indexOf(midi);
+    if (index == -1) return;
+    final viewport = _keyboardController.position.viewportDimension;
+    final target = (index * _keyHeight) - (viewport / 2) + (_keyHeight / 2);
+    final clamped =
+        target.clamp(0.0, _keyboardController.position.maxScrollExtent);
+    _keyboardController.jumpTo(clamped);
+  }
+
+  List<int> _whiteKeys(int start, int end) {
+    final keys = <int>[];
+    for (var midi = start; midi <= end; midi++) {
+      if (_isWhite(midi)) keys.add(midi);
+    }
+    return keys.reversed.toList();
+  }
+
+  bool _isWhite(int midi) {
+    const white = {0, 2, 4, 5, 7, 9, 11};
+    return white.contains(midi % 12);
   }
 
   Future<void> _playTapTone(int midi) async {
