@@ -15,8 +15,9 @@ List<ExerciseCategory> seedExerciseCategories() => const [
       ),
       ExerciseCategory(
         id: 'sovt',
-        title: 'SOVT (Semi-Occluded Vocal Tract)',
-        description: 'Reduce tension and balance airflow with occlusion.',
+        title: 'SOVT',
+        description:
+            'Semi-Occluded Vocal Tract. Reduce tension and balance airflow with occlusion.',
         sortOrder: 2,
         iconKey: 'sovt',
       ),
@@ -247,7 +248,8 @@ List<VocalExercise> seedVocalExercises() {
       name: 'Appoggio Breathing',
       categoryId: 'breathing_support',
       type: ExerciseType.breathTimer,
-      description: 'Inhale by expanding ribs/back, then exhale steadily without collapse.',
+      description:
+          'Inhale by expanding ribs/back, then exhale steadily without collapse.',
       purpose: 'Build stable airflow and support coordination.',
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,
@@ -261,7 +263,8 @@ List<VocalExercise> seedVocalExercises() {
       name: 'Sustained "S" or "Z"',
       categoryId: 'breathing_support',
       type: ExerciseType.breathTimer,
-      description: 'Sustain a long hiss or voiced buzz with consistent airflow.',
+      description:
+          'Sustain a long hiss or voiced buzz with consistent airflow.',
       purpose: 'Improve breath control and engagement.',
       durationSeconds: 30,
       reps: 6,
@@ -274,7 +277,8 @@ List<VocalExercise> seedVocalExercises() {
       name: 'Panting / Dog Breaths',
       categoryId: 'breathing_support',
       type: ExerciseType.breathTimer,
-      description: 'Short rhythmic breaths through the mouth with quick recovery.',
+      description:
+          'Short rhythmic breaths through the mouth with quick recovery.',
       purpose: 'Train a quick, responsive inhale reflex.',
       durationSeconds: 30,
       reps: 4,
@@ -336,7 +340,8 @@ List<VocalExercise> seedVocalExercises() {
       name: '"VV" or "ZZ"',
       categoryId: 'sovt',
       type: ExerciseType.pitchHighway,
-      description: 'Voiced fricative scales on "vv" or "zz" with steady airflow.',
+      description:
+          'Voiced fricative scales on "vv" or "zz" with steady airflow.',
       purpose: 'Smooth onset and balanced closure.',
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,
@@ -372,7 +377,8 @@ List<VocalExercise> seedVocalExercises() {
       name: 'Balanced Onset ("Mmm", "Nnn")',
       categoryId: 'onset_release',
       type: ExerciseType.pitchHighway,
-      description: 'Use consonant-led onsets to coordinate breath and fold closure.',
+      description:
+          'Use consonant-led onsets to coordinate breath and fold closure.',
       purpose: 'Train clean starts and balanced onset.',
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,

@@ -30,7 +30,7 @@ class ExerciseCategoriesScreen extends StatelessWidget {
           final category = categories[index];
           return ExerciseTile(
             title: category.title,
-            subtitle: category.description,
+            subtitle: null,
             iconKey: category.iconKey,
             onTap: () => _openCategory(context, category),
           );

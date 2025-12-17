@@ -21,26 +21,43 @@ class ExerciseListScreen extends StatelessWidget {
         leading: const BackButton(),
         title: Text(category.title),
       ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1,
-        ),
-        itemCount: exercises.length,
-        itemBuilder: (context, index) {
-          final exercise = exercises[index];
-          return ExerciseTile(
-            title: exercise.name,
-            subtitle: _typeLabel(exercise.type),
-            iconKey: exercise.iconKey,
-            chipLabel: _typeLabel(exercise.type),
-            preview: ExercisePreviewMini(exercise: exercise),
-            onTap: () => _openExercise(context, exercise),
-          );
-        },
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (category.description.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                category.description,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[700],
+                    ),
+              ),
+            ),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1,
+              ),
+              itemCount: exercises.length,
+              itemBuilder: (context, index) {
+                final exercise = exercises[index];
+                return ExerciseTile(
+                  title: exercise.name,
+                  subtitle: _typeLabel(exercise.type),
+                  iconKey: exercise.iconKey,
+                  chipLabel: _typeLabel(exercise.type),
+                  preview: ExercisePreviewMini(exercise: exercise),
+                  onTap: () => _openExercise(context, exercise),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

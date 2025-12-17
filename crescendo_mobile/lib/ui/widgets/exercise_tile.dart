@@ -57,12 +57,13 @@ class ExerciseTile extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text(
                           title,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
                           style: theme.textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
@@ -72,6 +73,7 @@ class ExerciseTile extends StatelessWidget {
                             subtitle!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: Colors.grey[600]),
                           ),
