@@ -236,9 +236,9 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        Color(0xFFFFD6B3),
-        Color(0xFFFFC7C2),
-        Color(0xFFF8B3DD),
+        Color(0xFFFFF3E2),
+        Color(0xFFFFEEF1),
+        Color(0xFFFFEAF6),
       ],
     );
     return Scaffold(
