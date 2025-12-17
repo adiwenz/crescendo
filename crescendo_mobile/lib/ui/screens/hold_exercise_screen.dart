@@ -71,7 +71,10 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       toleranceCents: _defaultTolerance,
       requiredHoldSec: _requiredHoldSec,
       loudness: LoudnessMeter(windowSize: 2048, alpha: 0.2),
-      onState: (s) => setState(() => _state = s),
+      onState: (s) {
+        if (!mounted) return;
+        setState(() => _state = s);
+      },
     );
     _state = _state.copyWith(
       targetHz: _targetHz,
@@ -86,6 +89,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
 
   @override
   void dispose() {
+    _controller.stop();
     _pcmSub?.cancel();
     _stopRecording();
     _recorder.dispose();
@@ -162,7 +166,9 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     try {
       await _recorder.stop();
     } catch (_) {}
-    setState(() => _running = false);
+    if (mounted) {
+      setState(() => _running = false);
+    }
   }
 
   Future<void> _onSuccess() async {
@@ -257,7 +263,9 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     final midi = (List<int>.from(_targetMidi)..shuffle()).first;
     _targetHz = 440.0 * math.pow(2, (midi - 69) / 12.0);
     _resetController();
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
