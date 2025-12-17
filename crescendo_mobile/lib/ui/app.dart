@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'screens/piano_pitch_screen.dart';
+import 'screens/landing_home_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/pitch_highway_screen.dart';
+import 'screens/piano_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
+import 'screens/find_range_screen.dart';
+import 'screens/subscription_screen.dart';
+import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
-import 'screens/hold_exercise_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -24,29 +28,16 @@ class _CrescendoAppState extends State<CrescendoApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
         useMaterial3: true,
       ),
-      home: Scaffold(
-        body: IndexedStack(
-          index: _index,
-          children: const [
-            PitchHighwayScreen(),
-            PianoPitchScreen(),
-            ExerciseCategoriesScreen(),
-            HoldExerciseScreen(),
-            ProgressHomeScreen(),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.multiline_chart), label: 'Pitch'),
-            NavigationDestination(icon: Icon(Icons.piano), label: 'Piano'),
-            NavigationDestination(icon: Icon(Icons.school), label: 'Library'),
-            NavigationDestination(icon: Icon(Icons.stop_circle), label: 'Hold'),
-            NavigationDestination(icon: Icon(Icons.auto_graph), label: 'Progress'),
-          ],
-        ),
-      ),
+      routes: {
+        '/': (_) => const LandingHomeScreen(),
+        '/settings': (_) => const SettingsScreen(),
+        '/library': (_) => const ExerciseCategoriesScreen(),
+        '/piano': (_) => const PianoPitchScreen(),
+        '/progress': (_) => const ProgressHomeScreen(),
+        '/settings/find_range': (_) => const FindRangeScreen(),
+        '/settings/subscription': (_) => const SubscriptionScreen(),
+        '/settings/subscription_features': (_) => const SubscriptionFeaturesScreen(),
+      },
     );
   }
 }
