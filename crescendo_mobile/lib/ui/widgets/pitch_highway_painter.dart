@@ -14,7 +14,7 @@ class PitchHighwayPainter extends CustomPainter {
   final ValueListenable<double> time;
   final double pixelsPerSecond;
   final double playheadFraction;
-  final double tailWindowSec;
+  final double smoothingWindowSec;
   final int midiMin;
   final int midiMax;
 
@@ -24,7 +24,7 @@ class PitchHighwayPainter extends CustomPainter {
     required this.time,
     this.pixelsPerSecond = 160,
     this.playheadFraction = 0.45,
-    this.tailWindowSec = 4.0,
+    this.smoothingWindowSec = 0.2,
     this.midiMin = 48,
     this.midiMax = 72,
   }) : super(repaint: time);
@@ -41,6 +41,7 @@ class PitchHighwayPainter extends CustomPainter {
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
     final currentStatus = _statusForTime(currentTime);
+    final smoothedMidi = _smoothedMidiAt(currentTime);
 
     for (final n in notes) {
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
@@ -79,43 +80,13 @@ class PitchHighwayPainter extends CustomPainter {
       }
     }
 
-    final tailFrames = pitchTail
-        .where((f) => f.midi != null && f.time >= currentTime - tailWindowSec && f.time <= currentTime + 1)
-        .toList();
-    tailFrames.sort((a, b) => a.time.compareTo(b.time));
-    const baseColor = Colors.cyanAccent;
-    if (tailFrames.length > 1) {
-      final path = Path();
-      final offsets = <Offset>[];
-      for (var i = 0; i < tailFrames.length; i++) {
-        final f = tailFrames[i];
-        final age = (currentTime - f.time).clamp(0.0, tailWindowSec);
-        final baseY = _midiToY(f.midi!, size.height);
-        final wiggleAmp = (1 - age / tailWindowSec) * 8;
-        final wiggle = math.sin((age * 9) + i * 0.6) * wiggleAmp;
-        offsets.add(Offset(
-          playheadX + (f.time - currentTime) * pixelsPerSecond,
-          baseY + wiggle,
-        ));
-      }
-      path.moveTo(offsets.first.dx, offsets.first.dy);
-      for (var i = 1; i < offsets.length; i++) {
-        path.lineTo(offsets[i].dx, offsets[i].dy);
-      }
-
-      for (var i = 0; i < 3; i++) {
-        final paint = Paint()
-          ..color = baseColor.withOpacity(0.5 - i * 0.15)
-          ..strokeWidth = 10 - i * 2
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round;
-        canvas.drawPath(path, paint);
-      }
-
-      final head = offsets.last;
-      canvas.drawCircle(head, 8, Paint()..color = baseColor);
-      canvas.drawCircle(head, 16, Paint()..color = baseColor.withOpacity(0.25));
-      canvas.drawCircle(head, 24, Paint()..color = baseColor.withOpacity(0.12));
+    if (smoothedMidi != null) {
+      const baseColor = Colors.cyanAccent;
+      final y = _midiToY(smoothedMidi, size.height);
+      final head = Offset(playheadX, y);
+      canvas.drawCircle(head, 16, Paint()..color = baseColor.withOpacity(0.18));
+      canvas.drawCircle(head, 10, Paint()..color = baseColor.withOpacity(0.35));
+      canvas.drawCircle(head, 6, Paint()..color = baseColor);
     }
 
     final playheadPaint = Paint()
@@ -132,15 +103,42 @@ class PitchHighwayPainter extends CustomPainter {
   }
 
   PitchMatch _statusForTime(double t) {
-    final latest = pitchTail.isNotEmpty ? pitchTail.last : null;
-    if (latest == null || latest.midi == null) return PitchMatch.off;
+    final latestMidi = _smoothedMidiAt(t);
+    if (latestMidi == null) return PitchMatch.off;
     final ref = _noteAtTime(t);
     if (ref == null) return PitchMatch.off;
-    final cents = (latest.midi! - ref.midi) * 100;
+    final cents = (latestMidi - ref.midi) * 100;
     final absCents = cents.abs();
     if (absCents <= 25) return PitchMatch.good;
     if (absCents <= 60) return PitchMatch.near;
     return PitchMatch.off;
+  }
+
+  double? _smoothedMidiAt(double t) {
+    if (pitchTail.isEmpty) return null;
+    if (smoothingWindowSec <= 0) return _latestMidiAtOrBefore(t);
+    final start = t - smoothingWindowSec;
+    double weightedSum = 0;
+    double totalWeight = 0;
+    for (final f in pitchTail) {
+      final midi = f.midi;
+      if (midi == null || f.time < start || f.time > t) continue;
+      final age = t - f.time;
+      final weight = 1 - (age / smoothingWindowSec);
+      final eased = weight * weight;
+      weightedSum += midi * eased;
+      totalWeight += eased;
+    }
+    if (totalWeight == 0) return _latestMidiAtOrBefore(t);
+    return weightedSum / totalWeight;
+  }
+
+  double? _latestMidiAtOrBefore(double t) {
+    for (var i = pitchTail.length - 1; i >= 0; i--) {
+      final f = pitchTail[i];
+      if (f.midi != null && f.time <= t) return f.midi;
+    }
+    return null;
   }
 
   double _midiToY(double midi, double height) {
@@ -154,6 +152,7 @@ class PitchHighwayPainter extends CustomPainter {
     return oldDelegate.notes != notes ||
         oldDelegate.pitchTail != pitchTail ||
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
-        oldDelegate.playheadFraction != playheadFraction;
+        oldDelegate.playheadFraction != playheadFraction ||
+        oldDelegate.smoothingWindowSec != smoothingWindowSec;
   }
 }

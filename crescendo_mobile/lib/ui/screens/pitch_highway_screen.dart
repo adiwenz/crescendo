@@ -270,7 +270,6 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                 time: _timeNotifier,
                 pixelsPerSecond: pixelsPerSecond,
                 playheadFraction: playheadFraction,
-                tailWindowSec: tailWindowSec,
                 midiMin: midiRange.min,
                 midiMax: midiRange.max,
               ),
