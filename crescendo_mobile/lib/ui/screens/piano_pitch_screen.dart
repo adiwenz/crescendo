@@ -21,6 +21,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   late final PitchService _service;
   late final PitchTracker _tracker;
   StreamSubscription<PitchFrame>? _sub;
+  final ScrollController _keyboardController = ScrollController();
 
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
     _sub?.cancel();
     _service.dispose();
     _synth.stop();
+    _keyboardController.dispose();
     _tracker.dispose();
     super.dispose();
   }
@@ -56,13 +58,22 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
             children: [
               SizedBox(
                 width: keyboardWidth,
-                child: AnimatedBuilder(
-                  animation: _tracker,
-                  builder: (_, __) => PianoKeyboard(
-                    startMidi: _tracker.rangeStartNote,
-                    endMidi: _tracker.rangeEndNote,
-                    highlightedMidi: _tracker.currentMidi,
-                    onKeyTap: _handleKeyTap,
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  controller: _keyboardController,
+                  child: SingleChildScrollView(
+                    primary: false,
+                    controller: _keyboardController,
+                    reverse: false,
+                    child: AnimatedBuilder(
+                      animation: _tracker,
+                      builder: (_, __) => PianoKeyboard(
+                        startMidi: _tracker.rangeStartNote,
+                        endMidi: _tracker.rangeEndNote,
+                        highlightedMidi: _tracker.currentMidi,
+                        onKeyTap: _handleKeyTap,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -138,8 +149,8 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
 }
 
 class PitchTracker extends ChangeNotifier {
-  int rangeStartNote = 48; // C3
-  int rangeEndNote = 84; // C6
+  int rangeStartNote = 24; // C1
+  int rangeEndNote = 96; // C7
   double? currentFreqHz;
   double? confidence;
   int? currentMidi;

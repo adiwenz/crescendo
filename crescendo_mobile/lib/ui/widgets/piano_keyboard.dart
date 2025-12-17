@@ -5,6 +5,7 @@ class PianoKeyboard extends StatelessWidget {
   final int endMidi;
   final int? highlightedMidi;
   final ValueChanged<int> onKeyTap;
+  final double keyHeight;
 
   const PianoKeyboard({
     super.key,
@@ -12,6 +13,7 @@ class PianoKeyboard extends StatelessWidget {
     required this.endMidi,
     required this.highlightedMidi,
     required this.onKeyTap,
+    this.keyHeight = 36,
   });
 
   @override
@@ -20,43 +22,45 @@ class PianoKeyboard extends StatelessWidget {
     final blackKeys = _blackKeys(startMidi, endMidi);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final keyHeight = constraints.maxHeight / whiteKeys.length;
         final blackWidth = constraints.maxWidth * 0.6;
         final blackHeight = keyHeight * 0.6;
         final whiteIndex = {
           for (var i = 0; i < whiteKeys.length; i++) whiteKeys[i]: i
         };
 
-        return Stack(
-          children: [
-            Column(
-              children: whiteKeys
-                  .map((midi) => _WhiteKey(
-                        height: keyHeight,
-                        highlighted: highlightedMidi == midi,
-                        label: _noteLabel(midi),
-                        onTap: () => onKeyTap(midi),
-                      ))
-                  .toList(),
-            ),
-            ...blackKeys.map((midi) {
-              final upperWhite = midi + 1;
-              final upperIndex = whiteIndex[upperWhite];
-              if (upperIndex == null) return const SizedBox.shrink();
-              final boundary = (upperIndex + 1) * keyHeight;
-              final top = boundary - blackHeight / 2;
-              return Positioned(
-                top: top,
-                right: 0,
-                width: blackWidth,
-                height: blackHeight,
-                child: _BlackKey(
-                  highlighted: highlightedMidi == midi,
-                  onTap: () => onKeyTap(midi),
-                ),
-              );
-            }),
-          ],
+        return SizedBox(
+          height: keyHeight * whiteKeys.length,
+          child: Stack(
+            children: [
+              Column(
+                children: whiteKeys
+                    .map((midi) => _WhiteKey(
+                          height: keyHeight,
+                          highlighted: highlightedMidi == midi,
+                          label: _noteLabel(midi),
+                          onTap: () => onKeyTap(midi),
+                        ))
+                    .toList(),
+              ),
+              ...blackKeys.map((midi) {
+                final upperWhite = midi + 1;
+                final upperIndex = whiteIndex[upperWhite];
+                if (upperIndex == null) return const SizedBox.shrink();
+                final boundary = (upperIndex + 1) * keyHeight;
+                final top = boundary - blackHeight / 2;
+                return Positioned(
+                  top: top,
+                  right: 0,
+                  width: blackWidth,
+                  height: blackHeight,
+                  child: _BlackKey(
+                    highlighted: highlightedMidi == midi,
+                    onTap: () => onKeyTap(midi),
+                  ),
+                );
+              }),
+            ],
+          ),
         );
       },
     );
