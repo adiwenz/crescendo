@@ -57,7 +57,8 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
         ReferenceNote(startSec: 8.6, endSec: 9.6, midi: 60, lyric: 'yeah'),
       ];
 
-  double get _totalDuration => _stubNotes.map((n) => n.endSec).fold(0.0, math.max) + 1.0;
+  double get _totalDuration =>
+      _stubNotes.map((n) => n.endSec).fold(0.0, math.max) + AudioSynthService.tailSeconds;
 
   @override
   void initState() {

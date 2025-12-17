@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/reference_note.dart';
 
 class AudioSynthService {
+  static const double tailSeconds = 1.0;
   final int sampleRate;
   final AudioPlayer _player;
 
@@ -18,6 +19,8 @@ class AudioSynthService {
   Future<String> renderReferenceNotes(List<ReferenceNote> notes) async {
     final samples = <double>[];
     double cursor = 0;
+    ReferenceNote? lastNote;
+    double lastNoteDur = 0.0;
     for (final n in notes) {
       if (n.startSec > cursor) {
         final gapFrames = ((n.startSec - cursor) * sampleRate).toInt();
@@ -31,6 +34,17 @@ class AudioSynthService {
         samples.add(_pianoSample(hz, f / sampleRate));
       }
       cursor = n.endSec;
+      lastNote = n;
+      lastNoteDur = dur;
+    }
+    if (lastNote != null) {
+      final hz = _midiToHz(lastNote.midi.toDouble());
+      final releaseFrames = (tailSeconds * sampleRate).toInt();
+      for (var f = 0; f < releaseFrames; f++) {
+        final t = lastNoteDur + f / sampleRate;
+        final fade = 1.0 - (f / releaseFrames);
+        samples.add(_pianoSample(hz, t) * fade);
+      }
     }
     if (samples.isEmpty) {
       final frames = (0.1 * sampleRate).toInt();
@@ -39,7 +53,8 @@ class AudioSynthService {
 
     final bytes = _toWav(samples);
     final dir = await getTemporaryDirectory();
-    final path = p.join(dir.path, 'pitch_highway_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final path = p.join(
+        dir.path, 'pitch_highway_${DateTime.now().millisecondsSinceEpoch}.wav');
     final file = File(path);
     await file.writeAsBytes(bytes, flush: true);
     return file.path;

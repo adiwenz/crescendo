@@ -87,8 +87,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   DateTime? _startedAt;
   bool _attemptSaved = false;
 
-  double get _durationSec =>
-      (widget.exercise.highwaySpec?.totalMs ?? 0) / 1000.0;
+  double get _durationSec {
+    final base = (widget.exercise.highwaySpec?.totalMs ?? 0) / 1000.0;
+    if (base <= 0) return 0.0;
+    return base + AudioSynthService.tailSeconds;
+  }
 
   @override
   void initState() {
