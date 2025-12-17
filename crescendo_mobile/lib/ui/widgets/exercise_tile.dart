@@ -23,29 +23,83 @@ class ExerciseTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final showCenteredIcon = preview == null;
+    final cardDecoration = BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.06),
+          blurRadius: 10,
+          offset: const Offset(0, 6),
+        ),
+      ],
+    );
+    if (showCenteredIcon) {
+      return AspectRatio(
+        aspectRatio: 1,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Ink(
+            decoration: cardDecoration,
+            child: Stack(
+              children: [
+                Align(
+                  alignment: const Alignment(0, -0.25),
+                  child: ExerciseIcon(iconKey: iconKey, size: 62),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return AspectRatio(
       aspectRatio: 1,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Ink(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
+          decoration: cardDecoration,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (preview != null)
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16)),
                   child: SizedBox(
                     height: 72,
                     width: double.infinity,
@@ -68,8 +122,8 @@ class ExerciseTile extends StatelessWidget {
                               title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                              style: theme.textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -80,7 +134,8 @@ class ExerciseTile extends StatelessWidget {
                           subtitle!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: Colors.grey[600]),
                         ),
                       ],
                       if (chipLabel != null) ...[
@@ -90,9 +145,11 @@ class ExerciseTile extends StatelessWidget {
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withOpacity(0.12),
+                                color:
+                                    theme.colorScheme.primary.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
