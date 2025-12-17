@@ -9,6 +9,7 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/recording_service.dart';
+import '../../services/robust_note_scoring_service.dart';
 import '../widgets/pitch_highway_painter.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
@@ -45,16 +46,24 @@ class PitchHighwayPlayer extends StatefulWidget {
 
 class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final List<PitchFrame> _tail = [];
+  final List<PitchFrame> _captured = [];
   final _tailWindowSec = 4.0;
   Ticker? _ticker;
   Duration? _lastTick;
   bool _playing = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
+  bool _captureEnabled = false;
   bool _useMic = true;
   int _transpose = 0;
   RecordingService? _recording;
   StreamSubscription<PitchFrame>? _sub;
+  double? _scorePct;
 
   double get _durationSec =>
       (widget.exercise.highwaySpec?.totalMs ?? 0) / 1000.0;
@@ -70,6 +79,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _ticker?.dispose();
     _sub?.cancel();
     _recording?.stop();
+    _prepTimer?.cancel();
+    _synth.stop();
     _time.dispose();
     super.dispose();
   }
@@ -100,52 +111,92 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   Future<void> _start() async {
-    if (_playing) return;
+    if (_playing || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _scorePct = null;
+    _captured.clear();
     _tail.clear();
-    _time.value = 0;
+    _captureEnabled = false;
+    _time.value = -2.0;
     _playing = true;
     _lastTick = null;
     _ticker?.start();
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    _captureEnabled = true;
     if (_useMic) {
       _recording = RecordingService();
       await _recording?.start();
       _sub = _recording?.liveStream.listen((frame) {
+        if (!_captureEnabled) return;
         final midi = frame.midi ??
             (frame.hz != null ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2 : null);
         if (midi == null) return;
-        _tail.add(PitchFrame(
+        final pf = PitchFrame(
           time: _time.value,
           hz: frame.hz,
           midi: midi,
           voicedProb: frame.voicedProb,
           rms: frame.rms,
-        ));
+        );
+        _tail.add(pf);
+        _captured.add(pf);
         _trimTail();
       });
     }
+    await _playReference();
     setState(() {});
   }
 
   Future<void> _stop() async {
-    if (!_playing) return;
+    if (!_playing && !_preparing) return;
+    _endPrepCountdown();
     _playing = false;
+    _captureEnabled = false;
     _ticker?.stop();
     _lastTick = null;
     await _sub?.cancel();
     _sub = null;
     await _recording?.stop();
     _recording = null;
+    await _synth.stop();
+    _scorePct = _scorePct ?? _computeScore();
     setState(() {});
   }
 
   void _simulatePitch(double t) {
     // TODO: Replace simulation with real pitch stream if mic is unavailable.
+    if (!_captureEnabled) return;
     final targetMidi = _targetMidiAtTime(t);
     if (targetMidi == null) return;
     final vibrato = math.sin(t * 2 * math.pi * 5) * 0.2;
     final midi = targetMidi + vibrato;
     final hz = 440.0 * math.pow(2.0, (midi - 69) / 12.0);
-    _tail.add(PitchFrame(time: t, hz: hz, midi: midi));
+    final pf = PitchFrame(time: t, hz: hz, midi: midi);
+    _tail.add(pf);
+    _captured.add(pf);
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
   }
 
   double? _targetMidiAtTime(double t) {
@@ -209,6 +260,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return notes;
   }
 
+  Future<void> _playReference() async {
+    final notes = _buildReferenceNotes();
+    if (notes.isEmpty) return;
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
+  }
+
+  double _computeScore() {
+    final notes = _buildReferenceNotes();
+    if (notes.isEmpty || _captured.isEmpty) return 0.0;
+    final result = RobustNoteScoringService().score(notes: notes, frames: _captured);
+    return result.overallScorePct;
+  }
+
   @override
   Widget build(BuildContext context) {
     final notes = _buildReferenceNotes();
@@ -223,6 +288,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         children: [
           Text(widget.exercise.description, style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 12),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           if (label != null) Text('Current syllable: $label'),
           const SizedBox(height: 8),
           SizedBox(
@@ -255,14 +321,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           ),
           SwitchListTile(
             value: _useMic,
-            onChanged: (v) async {
-              if (_playing) {
-                await _stop();
-              }
-              setState(() => _useMic = v);
-            },
+            onChanged: _playing || _preparing
+                ? null
+                : (v) {
+                    setState(() => _useMic = v);
+                  },
             title: const Text('Use microphone'),
           ),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 8),
           ElevatedButton.icon(
             onPressed: _playing ? _stop : _start,
@@ -286,10 +356,16 @@ class BreathTimerPlayer extends StatefulWidget {
 
 class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   double _elapsed = 0;
+  double? _scorePct;
   final _phases = const [
     _BreathPhase('Inhale', 4),
     _BreathPhase('Hold', 4),
@@ -305,6 +381,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
   @override
   void dispose() {
     _ticker?.dispose();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
@@ -312,7 +390,75 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     if (!_running) return;
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
-    setState(() => _elapsed += dt.inMicroseconds / 1e6);
+    final next = _elapsed + dt.inMicroseconds / 1e6;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    if (next >= target) {
+      _elapsed = target;
+      _finish();
+      return;
+    }
+    setState(() => _elapsed = next);
+  }
+
+  Future<void> _start() async {
+    if (_running || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
+    _elapsed = 0;
+    _scorePct = null;
+    _running = true;
+    _lastTick = null;
+    _ticker?.start();
+    setState(() {});
+  }
+
+  void _stop() {
+    if (!_running && !_preparing) return;
+    _endPrepCountdown();
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    setState(() {});
+  }
+
+  void _finish() {
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    _scorePct = 100.0;
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 
   @override
@@ -335,22 +481,18 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 16),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text(current.label, style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 8),
           LinearProgressIndicator(value: phaseProgress),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _running = !_running;
-                if (_running) {
-                  _lastTick = null;
-                  _ticker?.start();
-                } else {
-                  _ticker?.stop();
-                }
-              });
-            },
+            onPressed: _running ? _stop : _start,
             icon: Icon(_running ? Icons.stop : Icons.play_arrow),
             label: Text(_running ? 'Stop' : 'Start'),
           ),
@@ -371,10 +513,16 @@ class SovtTimerPlayer extends StatefulWidget {
 
 class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   double _elapsed = 0;
+  double? _scorePct;
   bool _phonationOn = true;
 
   @override
@@ -386,6 +534,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
   @override
   void dispose() {
     _ticker?.dispose();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
@@ -393,7 +543,75 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     if (!_running) return;
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
-    setState(() => _elapsed += dt.inMicroseconds / 1e6);
+    final next = _elapsed + dt.inMicroseconds / 1e6;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    if (next >= target) {
+      _elapsed = target;
+      _finish();
+      return;
+    }
+    setState(() => _elapsed = next);
+  }
+
+  Future<void> _start() async {
+    if (_running || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
+    _elapsed = 0;
+    _scorePct = null;
+    _running = true;
+    _lastTick = null;
+    _ticker?.start();
+    setState(() {});
+  }
+
+  void _stop() {
+    if (!_running && !_preparing) return;
+    _endPrepCountdown();
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    setState(() {});
+  }
+
+  void _finish() {
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    _scorePct = 100.0;
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 
   @override
@@ -407,6 +625,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 16),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('${remaining.toStringAsFixed(0)}s remaining',
               style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 12),
@@ -415,19 +634,14 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
             value: _phonationOn,
             onChanged: (v) => setState(() => _phonationOn = v),
           ),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 12),
           ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _running = !_running;
-                if (_running) {
-                  _lastTick = null;
-                  _ticker?.start();
-                } else {
-                  _ticker?.stop();
-                }
-              });
-            },
+            onPressed: _running ? _stop : _start,
             icon: Icon(_running ? Icons.stop : Icons.play_arrow),
             label: Text(_running ? 'Stop' : 'Start'),
           ),
@@ -447,32 +661,42 @@ class SustainedPitchHoldPlayer extends StatefulWidget {
 }
 
 class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
+  final AudioSynthService _synth = AudioSynthService();
   final _recording = RecordingService();
   StreamSubscription<PitchFrame>? _sub;
   bool _listening = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   int _targetMidi = 60;
   double _centsError = 0;
   double _onPitchSec = 0;
   double _listeningSec = 0;
   double _lastTime = 0;
   final _holdGoalSec = 3.0;
+  double? _scorePct;
 
   @override
   void dispose() {
     _sub?.cancel();
     _recording.stop();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
   double get _targetHz => 440.0 * math.pow(2.0, (_targetMidi - 69) / 12.0);
 
-  Future<void> _toggle() async {
-    if (_listening) {
-      await _sub?.cancel();
-      await _recording.stop();
-      setState(() => _listening = false);
-      return;
-    }
+  Future<void> _start() async {
+    if (_listening || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
     await _recording.start();
     _lastTime = 0;
     _onPitchSec = 0;
@@ -494,7 +718,45 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       }
       setState(() => _centsError = cents);
     });
+    _scorePct = null;
     setState(() => _listening = true);
+  }
+
+  Future<void> _stop() async {
+    if (!_listening && !_preparing) return;
+    _endPrepCountdown();
+    await _sub?.cancel();
+    await _recording.stop();
+    _sub = null;
+    _listening = false;
+    final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
+    _scorePct = (stability.clamp(0.0, 1.0) * 100.0);
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 
   @override
@@ -508,6 +770,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 12),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
           Slider(
             value: _targetMidi.toDouble(),
@@ -525,11 +788,16 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
           const SizedBox(height: 8),
           Text('Stability: ${(stability * 100).toStringAsFixed(0)}%',
               style: Theme.of(context).textTheme.bodyMedium),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: _toggle,
+            onPressed: _listening ? _stop : _start,
             icon: Icon(_listening ? Icons.stop : Icons.hearing),
-            label: Text(_listening ? 'Stop' : 'Listen'),
+            label: Text(_listening ? 'Stop' : 'Start'),
           ),
         ],
       ),
@@ -551,13 +819,20 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   final _recording = RecordingService();
   StreamSubscription<PitchFrame>? _sub;
   bool _listening = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   int _targetMidi = 60;
   double _centsError = 0;
+  double? _scorePct;
+  final List<double> _absErrors = [];
 
   @override
   void dispose() {
     _sub?.cancel();
     _recording.stop();
+    _prepTimer?.cancel();
     _synth.stop();
     super.dispose();
   }
@@ -572,21 +847,61 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     await _synth.playFile(path);
   }
 
-  Future<void> _toggleListen() async {
-    if (_listening) {
-      await _sub?.cancel();
-      await _recording.stop();
-      setState(() => _listening = false);
-      return;
-    }
+  Future<void> _start() async {
+    if (_listening || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playTone();
     await _recording.start();
+    _absErrors.clear();
     _sub = _recording.liveStream.listen((frame) {
       final hz = frame.hz;
       if (hz == null || hz <= 0) return;
       final cents = 1200 * (math.log(hz / _targetHz) / math.ln2);
+      _absErrors.add(cents.abs());
       setState(() => _centsError = cents);
     });
+    _scorePct = null;
     setState(() => _listening = true);
+  }
+
+  Future<void> _stop() async {
+    if (!_listening && !_preparing) return;
+    _endPrepCountdown();
+    await _sub?.cancel();
+    await _recording.stop();
+    _sub = null;
+    _listening = false;
+    if (_absErrors.isEmpty) {
+      _scorePct = 0.0;
+    } else {
+      final mean = _absErrors.reduce((a, b) => a + b) / _absErrors.length;
+      _scorePct = (1.0 - math.min(mean / 100.0, 1.0)) * 100.0;
+    }
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
   }
 
   @override
@@ -598,6 +913,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 12),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
           Slider(
             value: _targetMidi.toDouble(),
@@ -610,22 +926,27 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
           const SizedBox(height: 8),
           Text('${_centsError.toStringAsFixed(1)} cents',
               style: Theme.of(context).textTheme.headlineMedium),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _playTone,
-                  icon: const Icon(Icons.volume_up),
-                  label: const Text('Play tone'),
+                  onPressed: _listening ? _stop : _start,
+                  icon: Icon(_listening ? Icons.stop : Icons.hearing),
+                  label: Text(_listening ? 'Stop' : 'Start'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _toggleListen,
-                  icon: Icon(_listening ? Icons.stop : Icons.hearing),
-                  label: Text(_listening ? 'Stop' : 'Listen'),
+                  onPressed: _playTone,
+                  icon: const Icon(Icons.volume_up),
+                  label: const Text('Replay tone'),
                 ),
               ),
             ],
@@ -647,10 +968,16 @@ class ArticulationRhythmPlayer extends StatefulWidget {
 
 class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   double _elapsed = 0;
+  double? _scorePct;
   final _tempoBpm = 90.0;
 
   @override
@@ -662,6 +989,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
   @override
   void dispose() {
     _ticker?.dispose();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
@@ -669,7 +998,75 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     if (!_running) return;
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
-    setState(() => _elapsed += dt.inMicroseconds / 1e6);
+    final next = _elapsed + dt.inMicroseconds / 1e6;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    if (next >= target) {
+      _elapsed = target;
+      _finish();
+      return;
+    }
+    setState(() => _elapsed = next);
+  }
+
+  Future<void> _start() async {
+    if (_running || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
+    _elapsed = 0;
+    _scorePct = null;
+    _running = true;
+    _lastTick = null;
+    _ticker?.start();
+    setState(() {});
+  }
+
+  void _stop() {
+    if (!_running && !_preparing) return;
+    _endPrepCountdown();
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    setState(() {});
+  }
+
+  void _finish() {
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    _scorePct = 100.0;
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 
   List<String> get _syllables {
@@ -693,6 +1090,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 16),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('Tempo: ${_tempoBpm.toStringAsFixed(0)} bpm'),
           const SizedBox(height: 12),
           Wrap(
@@ -706,18 +1104,12 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
             }),
           ),
           const SizedBox(height: 16),
+          if (_scorePct != null)
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
           ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _running = !_running;
-                if (_running) {
-                  _lastTick = null;
-                  _ticker?.start();
-                } else {
-                  _ticker?.stop();
-                }
-              });
-            },
+            onPressed: _running ? _stop : _start,
             icon: Icon(_running ? Icons.stop : Icons.play_arrow),
             label: Text(_running ? 'Stop' : 'Start'),
           ),
@@ -738,13 +1130,21 @@ class DynamicsRampPlayer extends StatefulWidget {
 
 class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   final _recording = RecordingService();
   StreamSubscription<PitchFrame>? _sub;
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   double _elapsed = 0;
   double _rms = 0;
+  double? _scorePct;
+  final List<double> _sampleTimes = [];
+  final List<double> _sampleRms = [];
 
   @override
   void initState() {
@@ -757,6 +1157,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _ticker?.dispose();
     _sub?.cancel();
     _recording.stop();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
@@ -764,27 +1166,106 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     if (!_running) return;
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
-    setState(() => _elapsed += dt.inMicroseconds / 1e6);
+    final next = _elapsed + dt.inMicroseconds / 1e6;
+    final target = (widget.exercise.durationSeconds ?? 120).toDouble();
+    if (next >= target) {
+      _elapsed = target;
+      _finish();
+      return;
+    }
+    setState(() => _elapsed = next);
   }
 
   Future<void> _toggle() async {
     if (_running) {
-      _ticker?.stop();
-      await _sub?.cancel();
-      await _recording.stop();
-      setState(() => _running = false);
+      _stop();
       return;
     }
+    if (_preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
     await _recording.start();
+    _sampleTimes.clear();
+    _sampleRms.clear();
     _sub = _recording.liveStream.listen((frame) {
-      setState(() => _rms = frame.rms ?? 0.0);
+      final rms = frame.rms ?? 0.0;
+      _sampleTimes.add(_elapsed);
+      _sampleRms.add(rms);
+      setState(() => _rms = rms);
     });
     setState(() {
       _running = true;
       _elapsed = 0;
+      _scorePct = null;
       _lastTick = null;
       _ticker?.start();
     });
+  }
+
+  void _stop() {
+    if (!_running && !_preparing) return;
+    _endPrepCountdown();
+    _ticker?.stop();
+    _lastTick = null;
+    _running = false;
+    _scorePct = _computeScore();
+    _sub?.cancel();
+    _recording.stop();
+    setState(() {});
+  }
+
+  void _finish() {
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    _scorePct = _computeScore();
+    _sub?.cancel();
+    _recording.stop();
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
+  }
+
+  double _computeScore() {
+    if (_sampleTimes.isEmpty || _sampleRms.isEmpty) return 0.0;
+    final duration = (widget.exercise.durationSeconds ?? 120).toDouble();
+    double sumDiff = 0.0;
+    for (var i = 0; i < _sampleTimes.length; i++) {
+      final progress = (_sampleTimes[i] / duration).clamp(0.0, 1.0);
+      final target = progress <= 0.5 ? (progress * 2) : (1 - (progress - 0.5) * 2);
+      final diff = (target - _sampleRms[i]).abs();
+      sumDiff += diff;
+    }
+    final meanDiff = sumDiff / _sampleTimes.length;
+    return (1.0 - meanDiff.clamp(0.0, 1.0)) * 100.0;
   }
 
   @override
@@ -799,6 +1280,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 16),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('Target ramp'),
           const SizedBox(height: 6),
           LinearProgressIndicator(value: ramp),
@@ -806,6 +1288,11 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
           Text('Current loudness'),
           const SizedBox(height: 6),
           LinearProgressIndicator(value: _rms.clamp(0.0, 1.0)),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 12),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: _toggle,
@@ -829,10 +1316,16 @@ class CooldownRecoveryPlayer extends StatefulWidget {
 
 class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     with SingleTickerProviderStateMixin {
+  final AudioSynthService _synth = AudioSynthService();
   Ticker? _ticker;
   Duration? _lastTick;
   bool _running = false;
+  bool _preparing = false;
+  int _prepRemaining = 0;
+  Timer? _prepTimer;
+  int _prepRunId = 0;
   double _elapsed = 0;
+  double? _scorePct;
 
   @override
   void initState() {
@@ -843,6 +1336,8 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
   @override
   void dispose() {
     _ticker?.dispose();
+    _prepTimer?.cancel();
+    _synth.stop();
     super.dispose();
   }
 
@@ -850,7 +1345,75 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     if (!_running) return;
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
-    setState(() => _elapsed += dt.inMicroseconds / 1e6);
+    final next = _elapsed + dt.inMicroseconds / 1e6;
+    final target = (widget.exercise.durationSeconds ?? 90).toDouble();
+    if (next >= target) {
+      _elapsed = target;
+      _finish();
+      return;
+    }
+    setState(() => _elapsed = next);
+  }
+
+  Future<void> _start() async {
+    if (_running || _preparing) return;
+    _prepRunId += 1;
+    final runId = _prepRunId;
+    _beginPrepCountdown();
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !_preparing || runId != _prepRunId) return;
+    _endPrepCountdown();
+    await _playCueTone();
+    _elapsed = 0;
+    _scorePct = null;
+    _running = true;
+    _lastTick = null;
+    _ticker?.start();
+    setState(() {});
+  }
+
+  void _stop() {
+    if (!_running && !_preparing) return;
+    _endPrepCountdown();
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    final target = (widget.exercise.durationSeconds ?? 90).toDouble();
+    _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
+    setState(() {});
+  }
+
+  void _finish() {
+    _running = false;
+    _ticker?.stop();
+    _lastTick = null;
+    _scorePct = 100.0;
+    setState(() {});
+  }
+
+  void _beginPrepCountdown() {
+    _preparing = true;
+    _prepRemaining = 2;
+    _prepTimer?.cancel();
+    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
+      if (_prepRemaining <= 0) timer.cancel();
+    });
+    setState(() {});
+  }
+
+  void _endPrepCountdown() {
+    _preparing = false;
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+  }
+
+  Future<void> _playCueTone() async {
+    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
   }
 
   @override
@@ -864,21 +1427,17 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
         children: [
           Text(widget.exercise.description),
           const SizedBox(height: 16),
+          if (_preparing) Text('Starting in $_prepRemaining...'),
           Text('${remaining.toStringAsFixed(0)}s remaining',
               style: Theme.of(context).textTheme.headlineMedium),
+          if (_scorePct != null) ...[
+            const SizedBox(height: 8),
+            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
           const SizedBox(height: 12),
           ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _running = !_running;
-                if (_running) {
-                  _lastTick = null;
-                  _ticker?.start();
-                } else {
-                  _ticker?.stop();
-                }
-              });
-            },
+            onPressed: _running ? _stop : _start,
             icon: Icon(_running ? Icons.stop : Icons.play_arrow),
             label: Text(_running ? 'Stop' : 'Start'),
           ),
