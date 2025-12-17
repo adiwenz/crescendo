@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 2, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 3, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -38,6 +38,7 @@ class AppDatabase {
         overallScore REAL,
         subScoresJson TEXT,
         notes TEXT,
+        pitchDifficulty TEXT,
         version INTEGER
       )
     ''');
@@ -55,9 +56,13 @@ class AppDatabase {
           overallScore REAL,
           subScoresJson TEXT,
           notes TEXT,
+          pitchDifficulty TEXT,
           version INTEGER
         )
       ''');
+    }
+    if (oldVersion >= 2 && oldVersion < 3) {
+      await db.execute('ALTER TABLE exercise_attempts ADD COLUMN pitchDifficulty TEXT');
     }
   }
 }

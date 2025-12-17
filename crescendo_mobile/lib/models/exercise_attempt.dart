@@ -9,6 +9,7 @@ class ExerciseAttempt {
   final double overallScore;
   final Map<String, double>? subScores;
   final String? notes;
+  final String? pitchDifficulty;
   final int version;
 
   const ExerciseAttempt({
@@ -20,6 +21,7 @@ class ExerciseAttempt {
     required this.overallScore,
     this.subScores,
     this.notes,
+    this.pitchDifficulty,
     this.version = 1,
   });
 
@@ -32,6 +34,7 @@ class ExerciseAttempt {
         'overallScore': overallScore,
         'subScoresJson': subScores == null ? null : jsonEncode(subScores),
         'notes': notes,
+        'pitchDifficulty': pitchDifficulty,
         'version': version,
       };
 
@@ -51,6 +54,7 @@ class ExerciseAttempt {
       overallScore: (map['overallScore'] as num).toDouble(),
       subScores: scores,
       notes: map['notes'] as String?,
+      pitchDifficulty: map['pitchDifficulty'] as String?,
       version: (map['version'] as num?)?.toInt() ?? 1,
     );
   }

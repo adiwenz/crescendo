@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../models/last_take.dart';
+import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
+import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/pitch_contour_painter.dart';
 import '../widgets/pitch_highway_painter.dart';
 
@@ -38,7 +40,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   @override
   void initState() {
     super.initState();
-    _notes = _buildReferenceNotes(widget.exercise);
+    final difficulty =
+        pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ??
+            PitchHighwayDifficulty.medium;
+    _notes = _buildReferenceNotes(widget.exercise, difficulty);
     final specDuration =
         _notes.isEmpty ? 0.0 : _notes.map((n) => n.endSec).fold(0.0, math.max);
     _durationSec = math.max(widget.lastTake.durationSec, specDuration) +
@@ -104,11 +109,16 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     await _synth.playFile(path);
   }
 
-  List<ReferenceNote> _buildReferenceNotes(VocalExercise exercise) {
+  List<ReferenceNote> _buildReferenceNotes(
+    VocalExercise exercise,
+    PitchHighwayDifficulty difficulty,
+  ) {
     final spec = exercise.highwaySpec;
     if (spec == null) return const [];
+    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
+    final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
     final notes = <ReferenceNote>[];
-    for (final seg in spec.segments) {
+    for (final seg in segments) {
       if (seg.isGlide) {
         final startMidi = seg.startMidi ?? seg.midiNote;
         final endMidi = seg.endMidi ?? seg.midiNote;

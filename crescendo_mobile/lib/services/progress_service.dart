@@ -66,6 +66,7 @@ class ProgressService {
     required double overallScore,
     Map<String, double>? subScores,
     String? notes,
+    String? pitchDifficulty,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -78,6 +79,7 @@ class ProgressService {
       overallScore: overallScore,
       subScores: subScores,
       notes: notes,
+      pitchDifficulty: pitchDifficulty,
     );
   }
 }

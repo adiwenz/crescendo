@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../models/pitch_frame.dart';
+import '../../models/pitch_highway_difficulty.dart';
+import '../../models/pitch_highway_spec.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
@@ -15,11 +17,17 @@ import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
 import '../widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_math.dart';
+import '../../utils/pitch_highway_tempo.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
+  final PitchHighwayDifficulty? pitchDifficulty;
 
-  const ExercisePlayerScreen({super.key, required this.exercise});
+  const ExercisePlayerScreen({
+    super.key,
+    required this.exercise,
+    this.pitchDifficulty,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +47,7 @@ class ExercisePlayerScreen extends StatelessWidget {
         ExerciseType.pitchHighway => PitchHighwayPlayer(
             exercise: exercise,
             showBackButton: true,
+            pitchDifficulty: pitchDifficulty ?? PitchHighwayDifficulty.medium,
           ),
         ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
         ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
@@ -55,11 +64,13 @@ class ExercisePlayerScreen extends StatelessWidget {
 class PitchHighwayPlayer extends StatefulWidget {
   final VocalExercise exercise;
   final bool showBackButton;
+  final PitchHighwayDifficulty pitchDifficulty;
 
   const PitchHighwayPlayer({
     super.key,
     required this.exercise,
     this.showBackButton = false,
+    required this.pitchDifficulty,
   });
 
   @override
@@ -90,9 +101,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  late final PitchHighwaySpec? _scaledSpec;
 
   double get _durationSec {
-    final base = (widget.exercise.highwaySpec?.totalMs ?? 0) / 1000.0;
+    final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
     if (base <= 0) return 0.0;
     return base + AudioSynthService.tailSeconds;
   }
@@ -101,6 +113,21 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick);
+    _scaledSpec = _buildScaledSpec();
+  }
+
+  PitchHighwaySpec? _buildScaledSpec() {
+    final spec = widget.exercise.highwaySpec;
+    if (spec == null || spec.segments.isEmpty) return spec;
+    final tempoMultiplier = PitchHighwayTempo.multiplierFor(
+      widget.pitchDifficulty,
+      spec.segments,
+    );
+    final scaledSegments = PitchHighwayTempo.scaleSegments(
+      spec.segments,
+      tempoMultiplier,
+    );
+    return PitchHighwaySpec(segments: scaledSegments);
   }
 
   @override
@@ -219,6 +246,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       frames: sanitized,
       durationSec: duration.clamp(0.0, _durationSec),
       audioPath: (audioPath != null && audioPath.isNotEmpty) ? audioPath : null,
+      pitchDifficulty: widget.pitchDifficulty.name,
     );
     await _lastTakeStore.saveLastTake(take);
   }
@@ -256,7 +284,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   double? _targetMidiAtTime(double t) {
-    final spec = widget.exercise.highwaySpec;
+    final spec = _scaledSpec;
     if (spec == null) return null;
     final ms = (t * 1000).round();
     for (final seg in spec.segments) {
@@ -273,7 +301,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   String? _labelAtTime(double t) {
-    final spec = widget.exercise.highwaySpec;
+    final spec = _scaledSpec;
     if (spec == null) return null;
     final ms = (t * 1000).round();
     for (final seg in spec.segments) {
@@ -283,7 +311,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   List<ReferenceNote> _buildReferenceNotes() {
-    final spec = widget.exercise.highwaySpec;
+    final spec = _scaledSpec;
     if (spec == null) return const [];
     final notes = <ReferenceNote>[];
     for (final seg in spec.segments) {
@@ -339,6 +367,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
       subScores: subScores,
+      pitchDifficulty: widget.pitchDifficulty.name,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
@@ -375,6 +404,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       ],
     );
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
+    final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
     return Container(
       decoration: const BoxDecoration(gradient: bgGradient),
       child: SafeArea(
@@ -412,6 +442,24 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     ),
                   ),
                 ),
+              Positioned(
+                top: widget.showBackButton ? 52 : 12,
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    difficultyLabel,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: Colors.white70, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
               if (_preparing)
                 Align(
                   alignment: Alignment.topCenter,

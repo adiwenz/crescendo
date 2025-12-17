@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../data/progress_repository.dart';
 import '../../models/last_take.dart';
+import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/last_take_store.dart';
 import '../../services/audio_synth_service.dart';
+import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_navigation.dart';
 import 'pitch_highway_review_screen.dart';
@@ -25,6 +27,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _progress = ProgressRepository();
   final _lastTakeStore = LastTakeStore();
   final AudioSynthService _synth = AudioSynthService();
+  PitchHighwayDifficulty _tempoDifficulty = PitchHighwayDifficulty.medium;
   double? _lastScore;
   LastTake? _lastTake;
   bool _lastTakeLoaded = false;
@@ -72,9 +75,10 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             : '${exercise.estimatedMinutes} min')
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
-    final canPreviewAudio = exercise.type == ExerciseType.pitchHighway &&
+    final isPitchHighway = exercise.type == ExerciseType.pitchHighway;
+    final canPreviewAudio = isPitchHighway &&
         exercise.highwaySpec?.segments.isNotEmpty == true;
-    final canReview = exercise.type == ExerciseType.pitchHighway && _lastTake != null;
+    final canReview = isPitchHighway && _lastTake != null;
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
@@ -103,6 +107,22 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               _InfoChip(label: timeChip),
             ],
           ),
+          if (isPitchHighway) ...[
+            const SizedBox(height: 16),
+            _SectionHeader(title: 'Tempo Difficulty'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: PitchHighwayDifficulty.values.map((difficulty) {
+                final selected = _tempoDifficulty == difficulty;
+                return ChoiceChip(
+                  label: Text(pitchHighwayDifficultyLabel(difficulty)),
+                  selected: selected,
+                  onSelected: (_) => setState(() => _tempoDifficulty = difficulty),
+                );
+              }).toList(),
+            ),
+          ],
           const SizedBox(height: 16),
           _SectionHeader(title: 'How to do it'),
           Text(exercise.description),
@@ -134,7 +154,10 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             onPressed: () async {
               final result = await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => buildExerciseScreen(exercise)),
+                MaterialPageRoute(
+                  builder: (_) =>
+                      buildExerciseScreen(exercise, pitchDifficulty: _tempoDifficulty),
+                ),
               );
               if (result is double) {
                 setState(() => _lastScore = result);
@@ -235,7 +258,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   }
 
   Future<void> _playPreview(VocalExercise exercise) async {
-    final notes = _buildReferenceNotes(exercise);
+    final notes = _buildReferenceNotes(exercise, _tempoDifficulty);
     if (notes.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,11 +271,16 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     await _synth.playFile(path);
   }
 
-  List<ReferenceNote> _buildReferenceNotes(VocalExercise exercise) {
+  List<ReferenceNote> _buildReferenceNotes(
+    VocalExercise exercise,
+    PitchHighwayDifficulty difficulty,
+  ) {
     final spec = exercise.highwaySpec;
     if (spec == null) return const [];
+    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
+    final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
     final notes = <ReferenceNote>[];
-    for (final seg in spec.segments) {
+    for (final seg in segments) {
       if (seg.isGlide) {
         final startMidi = seg.startMidi ?? seg.midiNote;
         final endMidi = seg.endMidi ?? seg.midiNote;

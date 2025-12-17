@@ -15,11 +15,13 @@ void main() {
         PitchFrame(time: 0.1, hz: 440.0, midi: 69.0, voicedProb: 0.8, rms: 0.2),
       ],
       audioPath: '/tmp/audio.wav',
+      pitchDifficulty: 'medium',
     );
     final decoded = LastTake.fromJson(take.toJson());
     expect(decoded.exerciseId, take.exerciseId);
     expect(decoded.durationSec, take.durationSec);
     expect(decoded.audioPath, take.audioPath);
+    expect(decoded.pitchDifficulty, take.pitchDifficulty);
     expect(decoded.frames.length, 1);
     expect(decoded.frames.first.hz, 440.0);
     expect(decoded.frames.first.midi, 69.0);
