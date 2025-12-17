@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'screens/history_screen.dart';
 import 'screens/piano_pitch_screen.dart';
 import 'screens/pitch_highway_screen.dart';
 import 'screens/progress_home_screen.dart';
@@ -29,7 +28,6 @@ class _CrescendoAppState extends State<CrescendoApp> {
         body: IndexedStack(
           index: _index,
           children: const [
-            HistoryScreen(),
             PitchHighwayScreen(),
             PianoPitchScreen(),
             ExerciseCategoriesScreen(),
@@ -41,7 +39,6 @@ class _CrescendoAppState extends State<CrescendoApp> {
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.history), label: 'History'),
             NavigationDestination(icon: Icon(Icons.multiline_chart), label: 'Pitch'),
             NavigationDestination(icon: Icon(Icons.piano), label: 'Piano'),
             NavigationDestination(icon: Icon(Icons.school), label: 'Library'),
