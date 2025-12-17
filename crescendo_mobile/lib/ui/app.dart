@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'screens/history_screen.dart';
 import 'screens/pitch_highway_screen.dart';
-import 'screens/exercise_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
 import 'screens/warmups_screen.dart';
-import 'screens/exercises_screen.dart';
+import 'screens/exercise_library_screen.dart';
+import 'screens/hold_exercise_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -32,7 +32,8 @@ class _CrescendoAppState extends State<CrescendoApp> {
             WarmupsScreen(),
             HistoryScreen(),
             PitchHighwayScreen(),
-            ExercisesScreen(),
+            ExerciseLibraryScreen(),
+            HoldExerciseScreen(),
             ProgressHomeScreen(),
           ],
         ),
@@ -43,7 +44,8 @@ class _CrescendoAppState extends State<CrescendoApp> {
             NavigationDestination(icon: Icon(Icons.library_music), label: 'Warmups'),
             NavigationDestination(icon: Icon(Icons.history), label: 'History'),
             NavigationDestination(icon: Icon(Icons.multiline_chart), label: 'Pitch'),
-            NavigationDestination(icon: Icon(Icons.school), label: 'Exercise'),
+            NavigationDestination(icon: Icon(Icons.school), label: 'Library'),
+            NavigationDestination(icon: Icon(Icons.stop_circle), label: 'Hold'),
             NavigationDestination(icon: Icon(Icons.auto_graph), label: 'Progress'),
           ],
         ),
