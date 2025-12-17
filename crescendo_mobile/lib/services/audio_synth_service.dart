@@ -30,13 +30,13 @@ class AudioSynthService {
           final ratio = f / frames;
           final midiVal = startMidi + (endMidi - startMidi) * ratio;
           final hz = midiToHz(midiVal);
-          samples.add(_sine(hz, (t + f / sampleRate)));
+          samples.add(_pianoSample(hz, f / sampleRate));
         }
       } else {
         final hz = midiToHz(midi ?? 60);
         final frames = (dur * sampleRate).toInt();
         for (var f = 0; f < frames; f++) {
-          samples.add(_sine(hz, (t + f / sampleRate)));
+          samples.add(_pianoSample(hz, f / sampleRate));
         }
       }
       t += dur;
@@ -66,7 +66,7 @@ class AudioSynthService {
       final frames = (dur * sampleRate).toInt();
       final hz = midiToHz(n.midi.toDouble());
       for (var f = 0; f < frames; f++) {
-        samples.add(_sine(hz, (cursor + f / sampleRate)));
+        samples.add(_pianoSample(hz, f / sampleRate));
       }
       cursor = n.endSec;
     }
@@ -89,8 +89,16 @@ class AudioSynthService {
 
   Future<void> stop() => _player.stop();
 
-  double _sine(double hz, double t) {
-    return 0.8 * sin(2 * pi * hz * t);
+  double _pianoSample(double hz, double noteTime) {
+    // Simple additive "piano-ish" timbre: fast attack with exponential decay.
+    final attack = (noteTime / 0.02).clamp(0.0, 1.0);
+    final decay = exp(-3.0 * noteTime);
+    final env = attack * decay;
+    final fundamental = sin(2 * pi * hz * noteTime);
+    final harmonic2 = 0.6 * sin(2 * pi * hz * 2 * noteTime);
+    final harmonic3 = 0.3 * sin(2 * pi * hz * 3 * noteTime);
+    final harmonic4 = 0.15 * sin(2 * pi * hz * 4 * noteTime);
+    return 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
   }
 
   Uint8List _toWav(List<double> samples) {
