@@ -4,7 +4,6 @@ import 'screens/history_screen.dart';
 import 'screens/piano_pitch_screen.dart';
 import 'screens/pitch_highway_screen.dart';
 import 'screens/progress_home_screen.dart';
-import 'screens/warmups_screen.dart';
 import 'screens/exercise_categories_screen.dart';
 import 'screens/hold_exercise_screen.dart';
 
@@ -30,7 +29,6 @@ class _CrescendoAppState extends State<CrescendoApp> {
         body: IndexedStack(
           index: _index,
           children: const [
-            WarmupsScreen(),
             HistoryScreen(),
             PitchHighwayScreen(),
             PianoPitchScreen(),
@@ -43,7 +41,6 @@ class _CrescendoAppState extends State<CrescendoApp> {
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.library_music), label: 'Warmups'),
             NavigationDestination(icon: Icon(Icons.history), label: 'History'),
             NavigationDestination(icon: Icon(Icons.multiline_chart), label: 'Pitch'),
             NavigationDestination(icon: Icon(Icons.piano), label: 'Piano'),
