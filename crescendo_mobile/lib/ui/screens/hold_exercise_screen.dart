@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:wav/wav.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
 
 import '../../models/hold_exercise_result.dart';
 import '../../models/metrics.dart';
@@ -37,6 +38,8 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
   late final TakeRepository _takeRepo;
   final _appState = AppState();
   final _player = AudioPlayer();
+  final PitchDetector _pitchDetector =
+      PitchDetector(audioSampleRate: 44100, bufferSize: 2048);
 
   double _targetHz = 440 / math.pow(2, 9 / 12); // default A3
   HoldExerciseState _state = const HoldExerciseState(
@@ -121,7 +124,22 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
       _samples.addAll(buf);
       final dt = buf.isEmpty ? 0.0 : buf.length / 44100;
       _timeCursor += dt;
-      final pf = PitchFrame(time: _timeCursor);
+      double? hz;
+      try {
+        final result = await _pitchDetector.getPitchFromFloatBuffer(buf);
+        if (result.pitched && result.pitch.isFinite && result.pitch > 0) {
+          hz = result.pitch;
+        }
+      } catch (_) {
+        hz = null;
+      }
+      double? cents;
+      double? midi;
+      if (hz != null && hz > 0) {
+        midi = 69 + 12 * (math.log(hz / 440.0) / math.ln2);
+        cents = 1200 * (math.log(hz / _targetHz) / math.ln2);
+      }
+      final pf = PitchFrame(time: _timeCursor, hz: hz, midi: midi, centsError: cents);
       _frames.add(pf);
       double? rms;
       try {
