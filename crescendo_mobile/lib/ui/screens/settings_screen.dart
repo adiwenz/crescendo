@@ -19,16 +19,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int? _lowest;
   int? _highest;
   bool _loaded = false;
-  bool _useSystemTheme = true;
-  bool _lightMode = false;
 
   @override
   void initState() {
     super.initState();
     _loadRange();
-    final mode = AppThemeController.mode.value;
-    _useSystemTheme = mode == ThemeMode.system;
-    _lightMode = mode == ThemeMode.light;
   }
 
   Future<void> _loadRange() async {
@@ -92,44 +87,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _themeCard(BuildContext context) {
-    final colors = AppThemeColors.of(context);
-    return FrostedCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Appearance',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: colors.textPrimary,
-                ),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeController.mode,
+      builder: (context, mode, _) {
+        final colors = AppThemeColors.of(context);
+        final useSystem = mode == ThemeMode.system;
+        final lightMode = mode == ThemeMode.light;
+        return FrostedCard(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Appearance',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: useSystem,
+                title: const Text('Use system theme'),
+                onChanged: (value) {
+                  AppThemeController.mode.value =
+                      value ? ThemeMode.system : (lightMode ? ThemeMode.light : ThemeMode.dark);
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: lightMode,
+                title: const Text('Light mode'),
+                onChanged: (value) {
+                  AppThemeController.mode.value =
+                      value ? ThemeMode.light : ThemeMode.dark;
+                },
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _useSystemTheme,
-            title: const Text('Use system theme'),
-            onChanged: (value) {
-              setState(() => _useSystemTheme = value);
-              AppThemeController.mode.value =
-                  value ? ThemeMode.system : (_lightMode ? ThemeMode.light : ThemeMode.dark);
-            },
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _lightMode,
-            title: const Text('Light mode'),
-            onChanged: _useSystemTheme
-                ? null
-                : (value) {
-                    setState(() => _lightMode = value);
-                    AppThemeController.mode.value =
-                        value ? ThemeMode.light : ThemeMode.dark;
-                  },
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
