@@ -93,8 +93,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       valueListenable: AppThemeController.mode,
       builder: (context, mode, _) {
         final colors = AppThemeColors.of(context);
-        final useSystem = mode == ThemeMode.system;
-        final lightMode = mode == ThemeMode.light;
+        final systemIsDark =
+            MediaQuery.of(context).platformBrightness == Brightness.dark;
+        final effectiveMode = mode == ThemeMode.system
+            ? (systemIsDark ? ThemeMode.dark : ThemeMode.light)
+            : mode;
         return FrostedCard(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -108,23 +111,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
               ),
               const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: useSystem,
-                title: const Text('Use system theme'),
+              DropdownButtonFormField<ThemeMode>(
+                value: effectiveMode,
+                decoration: const InputDecoration(
+                  labelText: 'Theme',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: ThemeMode.light,
+                    child: Text('Light'),
+                  ),
+                  DropdownMenuItem(
+                    value: ThemeMode.dark,
+                    child: Text('Dark'),
+                  ),
+                ],
                 onChanged: (value) {
-                  AppThemeController.mode.value =
-                      value ? ThemeMode.system : (lightMode ? ThemeMode.light : ThemeMode.dark);
+                  if (value == null) return;
+                  AppThemeController.mode.value = value;
                 },
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: lightMode,
-                title: const Text('Light mode'),
-                onChanged: (value) {
-                  AppThemeController.mode.value =
-                      value ? ThemeMode.light : ThemeMode.dark;
-                },
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Selected: ${effectiveMode == ThemeMode.light ? 'Light' : 'Dark'}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
               ),
             ],
           ),
