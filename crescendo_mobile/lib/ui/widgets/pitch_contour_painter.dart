@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../utils/pitch_math.dart';
-import '../theme/app_theme.dart';
 
 class PitchContourPainter extends CustomPainter {
   final List<PitchFrame> frames;
@@ -15,6 +14,8 @@ class PitchContourPainter extends CustomPainter {
   final double confidenceThreshold;
   final double rmsThreshold;
   final double maxGapSec;
+  final Color glowColor;
+  final Color coreColor;
 
   PitchContourPainter({
     required this.frames,
@@ -26,7 +27,11 @@ class PitchContourPainter extends CustomPainter {
     this.confidenceThreshold = 0.6,
     this.rmsThreshold = 0.02,
     this.maxGapSec = 0.2,
-  }) : super(repaint: time);
+    Color? glowColor,
+    Color? coreColor,
+  })  : glowColor = glowColor ?? Colors.white,
+        coreColor = coreColor ?? Colors.white,
+        super(repaint: time);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -41,14 +46,14 @@ class PitchContourPainter extends CustomPainter {
       ..strokeWidth = 18.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = AppColors.textPrimary.withOpacity(0.35)
+      ..color = glowColor.withOpacity(0.35)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
     final corePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 14.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = AppColors.textPrimary.withOpacity(0.85);
+      ..color = coreColor.withOpacity(0.85);
 
     final path = Path();
     bool hasStarted = false;

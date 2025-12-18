@@ -1,84 +1,236 @@
 import 'package:flutter/material.dart';
 
-class AppColors {
-  static const bgTop = Color(0xFF0A1226);
-  static const bgBottom = Color(0xFF17365A);
-  static const textPrimary = Color(0xFFF4F7FF);
-  static const textSecondary = Color(0xFFB7C4DD);
-  static const glassFill = Color(0x1FFFFFFF);
-  static const glassBorder = Color(0x33FFFFFF);
-  static const divider = Color(0x26FFFFFF);
-  static const glow = Color(0x33FFFFFF);
-  static const accent = Color(0xFF9FB7FF);
+class AppThemeController {
+  static final ValueNotifier<ThemeMode> mode =
+      ValueNotifier<ThemeMode>(ThemeMode.system);
+}
+
+class AppThemeColors extends ThemeExtension<AppThemeColors> {
+  final bool isDark;
+  final Color bgTop;
+  final Color bgBottom;
+  final Color surface0;
+  final Color surface1;
+  final Color surface2;
+  final Color borderSubtle;
+  final Color divider;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color iconMuted;
+  final Color blueAccent;
+  final Color goldAccent;
+  final Color mintAccent;
+  final Color glassFill;
+  final Color glassBorder;
+  final Color glow;
+
+  const AppThemeColors({
+    required this.isDark,
+    required this.bgTop,
+    required this.bgBottom,
+    required this.surface0,
+    required this.surface1,
+    required this.surface2,
+    required this.borderSubtle,
+    required this.divider,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.iconMuted,
+    required this.blueAccent,
+    required this.goldAccent,
+    required this.mintAccent,
+    required this.glassFill,
+    required this.glassBorder,
+    required this.glow,
+  });
+
+  static const dark = AppThemeColors(
+    isDark: true,
+    bgTop: Color(0xFF0A1226),
+    bgBottom: Color(0xFF17365A),
+    surface0: Color(0xFF0A1226),
+    surface1: Color(0x1FFFFFFF),
+    surface2: Color(0x26FFFFFF),
+    borderSubtle: Color(0x33FFFFFF),
+    divider: Color(0x26FFFFFF),
+    textPrimary: Color(0xFFF4F7FF),
+    textSecondary: Color(0xFFB7C4DD),
+    iconMuted: Color(0xFFB7C4DD),
+    blueAccent: Color(0xFF9FB7FF),
+    goldAccent: Color(0xFFFBC57D),
+    mintAccent: Color(0xFF9FE6B2),
+    glassFill: Color(0x1FFFFFFF),
+    glassBorder: Color(0x33FFFFFF),
+    glow: Color(0x33FFFFFF),
+  );
+
+  static const light = AppThemeColors(
+    isDark: false,
+    bgTop: Color(0xFFF7F9FB),
+    bgBottom: Color(0xFFCCE6EE),
+    surface0: Color(0xFFF7F9FB),
+    surface1: Color(0xFFFFFFFF),
+    surface2: Color(0xFFF2F5F7),
+    borderSubtle: Color(0xFFE6EDF3),
+    divider: Color(0xFFDDE6EE),
+    textPrimary: Color(0xFF1F2A37),
+    textSecondary: Color(0xFF6B7280),
+    iconMuted: Color(0xFF7A8A9A),
+    blueAccent: Color(0xFF7DBCD9),
+    goldAccent: Color(0xFFFBC57D),
+    mintAccent: Color(0xFFE0F0E1),
+    glassFill: Color(0xFFFFFFFF),
+    glassBorder: Color(0xFFE6EDF3),
+    glow: Color(0x33FBC57D),
+  );
+
+  static AppThemeColors of(BuildContext context) {
+    final ext = Theme.of(context).extension<AppThemeColors>();
+    return ext ?? (Theme.of(context).brightness == Brightness.dark ? dark : light);
+  }
+
+  @override
+  AppThemeColors copyWith({
+    bool? isDark,
+    Color? bgTop,
+    Color? bgBottom,
+    Color? surface0,
+    Color? surface1,
+    Color? surface2,
+    Color? borderSubtle,
+    Color? divider,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? iconMuted,
+    Color? blueAccent,
+    Color? goldAccent,
+    Color? mintAccent,
+    Color? glassFill,
+    Color? glassBorder,
+    Color? glow,
+  }) {
+    return AppThemeColors(
+      isDark: isDark ?? this.isDark,
+      bgTop: bgTop ?? this.bgTop,
+      bgBottom: bgBottom ?? this.bgBottom,
+      surface0: surface0 ?? this.surface0,
+      surface1: surface1 ?? this.surface1,
+      surface2: surface2 ?? this.surface2,
+      borderSubtle: borderSubtle ?? this.borderSubtle,
+      divider: divider ?? this.divider,
+      textPrimary: textPrimary ?? this.textPrimary,
+      textSecondary: textSecondary ?? this.textSecondary,
+      iconMuted: iconMuted ?? this.iconMuted,
+      blueAccent: blueAccent ?? this.blueAccent,
+      goldAccent: goldAccent ?? this.goldAccent,
+      mintAccent: mintAccent ?? this.mintAccent,
+      glassFill: glassFill ?? this.glassFill,
+      glassBorder: glassBorder ?? this.glassBorder,
+      glow: glow ?? this.glow,
+    );
+  }
+
+  @override
+  ThemeExtension<AppThemeColors> lerp(
+    ThemeExtension<AppThemeColors>? other,
+    double t,
+  ) {
+    if (other is! AppThemeColors) return this;
+    return AppThemeColors(
+      isDark: t < 0.5 ? isDark : other.isDark,
+      bgTop: Color.lerp(bgTop, other.bgTop, t)!,
+      bgBottom: Color.lerp(bgBottom, other.bgBottom, t)!,
+      surface0: Color.lerp(surface0, other.surface0, t)!,
+      surface1: Color.lerp(surface1, other.surface1, t)!,
+      surface2: Color.lerp(surface2, other.surface2, t)!,
+      borderSubtle: Color.lerp(borderSubtle, other.borderSubtle, t)!,
+      divider: Color.lerp(divider, other.divider, t)!,
+      textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      iconMuted: Color.lerp(iconMuted, other.iconMuted, t)!,
+      blueAccent: Color.lerp(blueAccent, other.blueAccent, t)!,
+      goldAccent: Color.lerp(goldAccent, other.goldAccent, t)!,
+      mintAccent: Color.lerp(mintAccent, other.mintAccent, t)!,
+      glassFill: Color.lerp(glassFill, other.glassFill, t)!,
+      glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
+      glow: Color.lerp(glow, other.glow, t)!,
+    );
+  }
 }
 
 class AppTheme {
-  static ThemeData build() {
-    final base = ThemeData.dark();
+  static ThemeData dark() => _build(AppThemeColors.dark, Brightness.dark);
+  static ThemeData light() => _build(AppThemeColors.light, Brightness.light);
+
+  static ThemeData _build(AppThemeColors colors, Brightness brightness) {
+    final base = ThemeData(brightness: brightness);
     return base.copyWith(
       useMaterial3: true,
-      scaffoldBackgroundColor: AppColors.bgTop,
+      scaffoldBackgroundColor: colors.surface0,
       colorScheme: base.colorScheme.copyWith(
-        primary: AppColors.accent,
-        onPrimary: AppColors.textPrimary,
-        surface: AppColors.glassFill,
-        onSurface: AppColors.textPrimary,
-        background: AppColors.bgTop,
-        onBackground: AppColors.textPrimary,
+        primary: colors.blueAccent,
+        onPrimary: colors.textPrimary,
+        surface: colors.surface1,
+        onSurface: colors.textPrimary,
+        background: colors.surface0,
+        onBackground: colors.textPrimary,
       ),
       textTheme: base.textTheme.copyWith(
         titleLarge: base.textTheme.titleLarge?.copyWith(
-          color: AppColors.textPrimary,
+          color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
         titleMedium: base.textTheme.titleMedium?.copyWith(
-          color: AppColors.textPrimary,
+          color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
         titleSmall: base.textTheme.titleSmall?.copyWith(
-          color: AppColors.textPrimary,
+          color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
         bodyMedium: base.textTheme.bodyMedium?.copyWith(
-          color: AppColors.textSecondary,
+          color: colors.textSecondary,
         ),
         bodySmall: base.textTheme.bodySmall?.copyWith(
-          color: AppColors.textSecondary,
+          color: colors.textSecondary,
         ),
         labelSmall: base.textTheme.labelSmall?.copyWith(
-          color: AppColors.textSecondary,
+          color: colors.textSecondary,
         ),
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: AppColors.textPrimary,
+        foregroundColor: colors.textPrimary,
         surfaceTintColor: Colors.transparent,
       ),
-      iconTheme: const IconThemeData(
-        color: AppColors.textPrimary,
+      iconTheme: IconThemeData(
+        color: colors.iconMuted,
       ),
-      dividerColor: AppColors.divider,
+      dividerColor: colors.divider,
       cardTheme: CardThemeData(
-        color: AppColors.glassFill,
+        color: colors.surface1,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: 0,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.textPrimary,
-          foregroundColor: const Color(0xFF0B1430),
+          backgroundColor: colors.blueAccent,
+          foregroundColor: colors.surface1,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
-          side: const BorderSide(color: AppColors.divider),
+          foregroundColor: colors.textPrimary,
+          side: BorderSide(color: colors.divider),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
+      extensions: <ThemeExtension<dynamic>>[
+        colors,
+      ],
     );
   }
 }

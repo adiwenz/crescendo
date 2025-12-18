@@ -29,6 +29,7 @@ class ExerciseTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = AppThemeColors.of(context);
     final showCenteredIcon = preview == null;
     if (showCenteredIcon) {
       return AspectRatio(
@@ -45,7 +46,11 @@ class ExerciseTile extends StatelessWidget {
                 children: [
                   Align(
                     alignment: const Alignment(0, -0.2),
-                    child: ExerciseIcon(iconKey: iconKey, size: 60),
+                    child: ExerciseIcon(
+                      iconKey: iconKey,
+                      size: 60,
+                      color: colors.blueAccent,
+                    ),
                   ),
                   if (badge != null)
                     Positioned(
@@ -76,7 +81,9 @@ class ExerciseTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
                           ),
                         ],
                       ],
@@ -123,7 +130,11 @@ class ExerciseTile extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                ExerciseIcon(iconKey: iconKey, size: 20),
+                              ExerciseIcon(
+                                iconKey: iconKey,
+                                size: 20,
+                                color: colors.blueAccent,
+                              ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -142,7 +153,9 @@ class ExerciseTile extends StatelessWidget {
                                 subtitle!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
                               ),
                             ],
                             if (chipLabel != null) ...[
@@ -155,16 +168,16 @@ class ExerciseTile extends StatelessWidget {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: AppColors.glassFill,
+                                      color: colors.surface2,
                                       border: Border.all(
-                                        color: AppColors.glassBorder,
+                                        color: colors.borderSubtle,
                                       ),
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
                                       chipLabel!,
                                       style: theme.textTheme.labelSmall?.copyWith(
-                                        color: AppColors.textPrimary,
+                                        color: colors.textPrimary,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),

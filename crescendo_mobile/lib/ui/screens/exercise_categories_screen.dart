@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/exercise_category.dart';
 import '../../services/exercise_repository.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/primary_icon_tile.dart';
 import '../widgets/exercise_icon.dart';
@@ -12,8 +13,17 @@ class ExerciseCategoriesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final repo = ExerciseRepository();
     final categories = repo.getCategories();
+    final pastelTiles = [
+      colors.surface1,
+      colors.mintAccent.withOpacity(0.6),
+      colors.goldAccent.withOpacity(0.5),
+      colors.blueAccent.withOpacity(0.35),
+      colors.surface2,
+      colors.mintAccent.withOpacity(0.45),
+    ];
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -36,6 +46,8 @@ class ExerciseCategoriesScreen extends StatelessWidget {
               return PrimaryIconTile(
                 icon: ExerciseIcon(iconKey: category.iconKey),
                 label: category.title,
+                backgroundColor:
+                    colors.isDark ? null : pastelTiles[index % pastelTiles.length],
                 onTap: () => _openCategory(context, category),
               );
             },

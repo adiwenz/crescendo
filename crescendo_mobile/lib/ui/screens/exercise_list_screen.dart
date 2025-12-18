@@ -26,6 +26,7 @@ class ExerciseListScreen extends StatefulWidget {
 class _ExerciseListScreenState extends State<ExerciseListScreen> {
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final repo = ExerciseRepository();
     final category = repo.getCategory(widget.categoryId);
     final exercises = repo.getExercisesForCategory(widget.categoryId);
@@ -58,7 +59,7 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
                       child: Text(
                         category.description,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textSecondary,
+                              color: colors.textSecondary,
                             ),
                       ),
                     ),
@@ -149,14 +150,15 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
   }
 
   Widget _buildUnlockBadge(BuildContext context, int maxUnlocked) {
+    final colors = AppThemeColors.of(context);
     final level = (maxUnlocked + 1).clamp(1, 3);
     final locked = maxUnlocked < 2;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.glassFill,
+        color: colors.surface2,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.glassBorder),
+        border: Border.all(color: colors.borderSubtle),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -165,12 +167,12 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
             'Lvl $level',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: colors.textPrimary,
                 ),
           ),
           if (locked) ...[
             const SizedBox(width: 4),
-            const Icon(Icons.lock, size: 12, color: AppColors.textPrimary),
+            Icon(Icons.lock, size: 12, color: colors.textPrimary),
           ],
         ],
       ),
@@ -208,6 +210,7 @@ class _StepList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -216,7 +219,7 @@ class _StepList extends StatelessWidget {
           'Step series',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: colors.textPrimary,
               ),
         ),
         ...instances.map(
@@ -226,7 +229,7 @@ class _StepList extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.play_arrow, size: 16, color: AppColors.textPrimary),
+                  Icon(Icons.play_arrow, size: 16, color: colors.textPrimary),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -234,7 +237,7 @@ class _StepList extends StatelessWidget {
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
-                          ?.copyWith(color: AppColors.textSecondary),
+                          ?.copyWith(color: colors.textSecondary),
                     ),
                   ),
                 ],

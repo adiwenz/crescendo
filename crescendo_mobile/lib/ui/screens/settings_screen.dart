@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../services/range_store.dart';
 import '../../utils/pitch_math.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
+import '../widgets/frosted_card.dart';
 import 'find_range_lowest_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -16,11 +19,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int? _lowest;
   int? _highest;
   bool _loaded = false;
+  bool _useSystemTheme = true;
+  bool _lightMode = false;
 
   @override
   void initState() {
     super.initState();
     _loadRange();
+    final mode = AppThemeController.mode.value;
+    _useSystemTheme = mode == ThemeMode.system;
+    _lightMode = mode == ThemeMode.light;
   }
 
   Future<void> _loadRange() async {
@@ -63,47 +71,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     ];
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text('Settings'),
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: items.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (_, i) {
-          if (i == 0) return _rangeCard(context);
-          return items[i - 1];
-        },
+      body: AppBackground(
+        child: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length + 2,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (_, i) {
+            if (i == 0) return _themeCard(context);
+            if (i == 1) return _rangeCard(context);
+            return items[i - 2];
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _themeCard(BuildContext context) {
+    final colors = AppThemeColors.of(context);
+    return FrostedCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Appearance',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _useSystemTheme,
+            title: const Text('Use system theme'),
+            onChanged: (value) {
+              setState(() => _useSystemTheme = value);
+              AppThemeController.mode.value =
+                  value ? ThemeMode.system : (_lightMode ? ThemeMode.light : ThemeMode.dark);
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _lightMode,
+            title: const Text('Light mode'),
+            onChanged: _useSystemTheme
+                ? null
+                : (value) {
+                    setState(() => _lightMode = value);
+                    AppThemeController.mode.value =
+                        value ? ThemeMode.light : ThemeMode.dark;
+                  },
+          ),
+        ],
       ),
     );
   }
 
   Widget _rangeCard(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final lowestLabel = _lowest != null ? PitchMath.midiToName(_lowest!) : '—';
     final highestLabel = _highest != null ? PitchMath.midiToName(_highest!) : '—';
     final rangeLabel = (_lowest != null && _highest != null)
         ? '$lowestLabel to $highestLabel'
         : 'Run Find your range to capture.';
-    return Container(
+    return FrostedCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Saved Range',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -117,7 +165,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 4),
           Text(
             rangeLabel,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colors.textSecondary),
           ),
         ],
       ),
@@ -138,13 +189,15 @@ class _SettingsItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Padding(
+        child: FrostedCard(
+          borderRadius: BorderRadius.circular(16),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,7 +213,7 @@ class _SettingsItem extends StatelessWidget {
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
+                      color: colors.textSecondary,
                     ),
               ),
             ],

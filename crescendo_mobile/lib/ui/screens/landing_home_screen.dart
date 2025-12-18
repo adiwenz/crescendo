@@ -13,9 +13,11 @@ class LandingHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final entries = [
       _NavRow(label: 'Settings', onTap: () => _open(context, '/settings')),
-      _NavRow(label: 'Exercise Library', onTap: () => _open(context, '/library')),
+      _NavRow(
+          label: 'Exercise Library', onTap: () => _open(context, '/library')),
       _NavRow(label: 'Piano', onTap: () => _open(context, '/piano')),
       _NavRow(label: 'Progress', onTap: () => _open(context, '/progress')),
     ];
@@ -78,6 +80,7 @@ class _NavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: onTap,
@@ -88,11 +91,13 @@ class _NavRow extends StatelessWidget {
           children: [
             Text(
               label,
-              style:
-                  Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const Spacer(),
-            const Icon(Icons.chevron_right, color: AppColors.textPrimary),
+            Icon(Icons.chevron_right, color: colors.iconMuted),
           ],
         ),
       ),

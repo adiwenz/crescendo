@@ -21,13 +21,16 @@ class ExercisePreviewMini extends StatelessWidget {
     final segments = exercise.buildPreviewSegments();
     final totalDuration = exercise.highwaySpec?.totalMs ?? 0;
     final totalSec = totalDuration > 0 ? totalDuration / 1000.0 : _sumDuration(segments);
-    final accent = AppColors.textPrimary.withOpacity(0.85);
+    final colors = AppThemeColors.of(context);
+    final accent = colors.goldAccent.withOpacity(colors.isDark ? 0.85 : 0.9);
     return CustomPaint(
       painter: _ExercisePreviewPainter(
         segments: segments,
         totalDurationSec: totalSec,
         barColor: accent,
-        lineColor: AppColors.textPrimary.withOpacity(0.35),
+        lineColor: colors.isDark
+            ? colors.textPrimary.withOpacity(0.35)
+            : colors.divider.withOpacity(0.7),
         backgroundStart: Colors.transparent,
         backgroundEnd: Colors.transparent,
       ),

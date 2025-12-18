@@ -11,6 +11,7 @@ class ProgressScoreRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final value = (score ?? 0).clamp(0.0, 100.0) / 100.0;
     return Stack(
       alignment: Alignment.center,
@@ -21,16 +22,17 @@ class ProgressScoreRing extends StatelessWidget {
           child: CircularProgressIndicator(
             value: value,
             strokeWidth: 8,
-            backgroundColor: AppColors.glassBorder,
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(AppColors.textPrimary),
+            backgroundColor: colors.divider,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              colors.isDark ? colors.textPrimary : colors.goldAccent,
+            ),
           ),
         ),
         Text(
           score == null ? '—' : score!.toStringAsFixed(0),
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: colors.textPrimary,
               ),
         ),
       ],
@@ -40,18 +42,23 @@ class ProgressScoreRing extends StatelessWidget {
 
 class ProgressLineChart extends StatelessWidget {
   final List<double> values;
-  final Color lineColor;
+  final Color? lineColor;
 
   const ProgressLineChart({
     super.key,
     required this.values,
-    this.lineColor = AppColors.textPrimary,
+    this.lineColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return CustomPaint(
-      painter: _LineChartPainter(values: values, color: lineColor),
+      painter: _LineChartPainter(
+        values: values,
+        color: lineColor ?? colors.blueAccent,
+        baselineColor: colors.divider.withOpacity(0.6),
+      ),
       child: const SizedBox.expand(),
     );
   }
@@ -59,20 +66,22 @@ class ProgressLineChart extends StatelessWidget {
 
 class ProgressSparkline extends StatelessWidget {
   final List<double> values;
-  final Color color;
+  final Color? color;
 
   const ProgressSparkline({
     super.key,
     required this.values,
-    this.color = AppColors.textPrimary,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return CustomPaint(
       painter: _LineChartPainter(
         values: values,
-        color: color,
+        color: color ?? colors.blueAccent,
+        baselineColor: Colors.transparent,
         showBaseline: false,
         strokeWidth: 2,
       ),
@@ -83,18 +92,22 @@ class ProgressSparkline extends StatelessWidget {
 
 class ProgressBarChart extends StatelessWidget {
   final List<double> values;
-  final Color color;
+  final Color? color;
 
   const ProgressBarChart({
     super.key,
     required this.values,
-    this.color = AppColors.textPrimary,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return CustomPaint(
-      painter: _BarChartPainter(values: values, color: color),
+      painter: _BarChartPainter(
+        values: values,
+        color: color ?? colors.blueAccent,
+      ),
       child: const SizedBox.expand(),
     );
   }
@@ -103,12 +116,14 @@ class ProgressBarChart extends StatelessWidget {
 class _LineChartPainter extends CustomPainter {
   final List<double> values;
   final Color color;
+  final Color baselineColor;
   final bool showBaseline;
   final double strokeWidth;
 
   _LineChartPainter({
     required this.values,
     required this.color,
+    required this.baselineColor,
     this.showBaseline = true,
     this.strokeWidth = 3,
   });
@@ -122,7 +137,7 @@ class _LineChartPainter extends CustomPainter {
 
     if (showBaseline) {
       final baseline = Paint()
-        ..color = AppColors.divider
+        ..color = baselineColor
         ..strokeWidth = 1;
       canvas.drawLine(
         Offset(padding, padding + chartHeight),
@@ -157,6 +172,7 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) {
     return oldDelegate.values != values ||
         oldDelegate.color != color ||
+        oldDelegate.baselineColor != baselineColor ||
         oldDelegate.showBaseline != showBaseline ||
         oldDelegate.strokeWidth != strokeWidth;
   }

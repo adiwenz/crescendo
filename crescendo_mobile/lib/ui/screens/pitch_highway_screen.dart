@@ -235,6 +235,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -259,6 +260,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                       drawBackground: false,
                       midiMin: midiRange.min,
                       midiMax: midiRange.max,
+                      colors: colors,
                     ),
                   ),
                 ),
@@ -275,7 +277,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                             valueListenable: _timeNotifier,
                             builder: (_, v, __) => Text(
                               _formatTime(v),
-                              style: const TextStyle(color: AppColors.textSecondary),
+                              style: TextStyle(color: colors.textSecondary),
                             ),
                           ),
                           Expanded(
@@ -284,7 +286,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                               child: Container(
                                 height: 6,
                                 decoration: BoxDecoration(
-                                  color: AppColors.glassFill,
+                                  color: colors.surface2,
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 alignment: Alignment.centerLeft,
@@ -297,7 +299,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                                       child: Container(
                                         height: 6,
                                         decoration: BoxDecoration(
-                                          color: AppColors.textPrimary,
+                                          color: colors.blueAccent,
                                           borderRadius: BorderRadius.circular(3),
                                         ),
                                       ),
@@ -309,7 +311,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                           ),
                           Text(
                             _formatTime(_totalDuration),
-                            style: const TextStyle(color: AppColors.textSecondary),
+                            style: TextStyle(color: colors.textSecondary),
                           ),
                         ],
                       ),

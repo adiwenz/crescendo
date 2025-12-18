@@ -7,16 +7,19 @@ class PrimaryIconTile extends StatelessWidget {
   final Widget icon;
   final String label;
   final VoidCallback onTap;
+  final Color? backgroundColor;
 
   const PrimaryIconTile({
     super.key,
     required this.icon,
     required this.label,
     required this.onTap,
+    this.backgroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return AspectRatio(
       aspectRatio: 1,
       child: Material(
@@ -26,12 +29,13 @@ class PrimaryIconTile extends StatelessWidget {
           onTap: onTap,
           child: FrostedCard(
             borderRadius: BorderRadius.circular(22),
+            fillColor: backgroundColor,
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconTheme(
-                    data: const IconThemeData(color: AppColors.textPrimary, size: 36),
+                    data: IconThemeData(color: colors.textPrimary, size: 36),
                     child: icon,
                   ),
                   const SizedBox(height: 12),

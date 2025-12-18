@@ -16,10 +16,11 @@ class ExerciseIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return Icon(
       _iconForKey(iconKey),
       size: size,
-      color: color ?? AppColors.textPrimary,
+      color: color ?? IconTheme.of(context).color ?? colors.iconMuted,
     );
   }
 

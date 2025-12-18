@@ -350,6 +350,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   Future<void> _playReference() async {
+    final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
     if (notes.isEmpty) return;
     final path = await _synth.renderReferenceNotes(notes);
@@ -412,6 +413,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
     final midiValues = notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
@@ -435,6 +437,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     drawBackground: false,
                     midiMin: minMidi,
                     midiMax: maxMidi,
+                    colors: colors,
                   ),
                 ),
               ),
@@ -447,9 +450,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () => Navigator.of(context).maybePop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.arrow_back, color: colors.textPrimary),
                       ),
                     ),
                   ),
@@ -460,16 +463,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.glassFill,
+                    color: colors.surface2,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.glassBorder),
+                    border: Border.all(color: colors.borderSubtle),
                   ),
                   child: Text(
                     difficultyLabel,
                     style: Theme.of(context)
                         .textTheme
                         .labelSmall
-                        ?.copyWith(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                        ?.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -507,7 +510,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           valueListenable: _time,
                           builder: (_, v, __) => Text(
                             _formatTime(v),
-                            style: const TextStyle(color: AppColors.textSecondary),
+                            style: TextStyle(color: colors.textSecondary),
                           ),
                         ),
                         Expanded(
@@ -516,7 +519,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                             child: Container(
                               height: 6,
                               decoration: BoxDecoration(
-                                color: AppColors.glassFill,
+                                color: colors.surface2,
                                 borderRadius: BorderRadius.circular(3),
                               ),
                               alignment: Alignment.centerLeft,
@@ -529,7 +532,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                     child: Container(
                                       height: 6,
                                       decoration: BoxDecoration(
-                                        color: AppColors.textPrimary,
+                                        color: colors.blueAccent,
                                         borderRadius: BorderRadius.circular(3),
                                       ),
                                     ),
@@ -541,7 +544,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                         ),
                         Text(
                           _formatTime(totalDuration),
-                          style: const TextStyle(color: AppColors.textSecondary),
+                          style: TextStyle(color: colors.textSecondary),
                         ),
                       ],
                     ),

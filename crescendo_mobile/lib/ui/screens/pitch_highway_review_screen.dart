@@ -152,6 +152,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final midiValues = _notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
     final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
@@ -183,6 +184,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                       showPlayheadLine: false,
                       midiMin: minMidi,
                       midiMax: maxMidi,
+                      colors: colors,
                     ),
                   ),
                 ),
@@ -195,12 +197,18 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                       playheadFraction: 0.45,
                       midiMin: minMidi,
                       midiMax: maxMidi,
+                      glowColor: colors.goldAccent,
+                      coreColor: colors.goldAccent,
                     ),
                   ),
                 ),
-                const Positioned.fill(
+                Positioned.fill(
                   child: CustomPaint(
-                    painter: _PlayheadPainter(playheadFraction: 0.45),
+                    painter: _PlayheadPainter(
+                      playheadFraction: 0.45,
+                      lineColor: colors.blueAccent.withOpacity(0.7),
+                      shadowColor: Colors.black.withOpacity(0.3),
+                    ),
                   ),
                 ),
               ],
@@ -214,18 +222,24 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
 class _PlayheadPainter extends CustomPainter {
   final double playheadFraction;
+  final Color lineColor;
+  final Color shadowColor;
 
-  const _PlayheadPainter({required this.playheadFraction});
+  const _PlayheadPainter({
+    required this.playheadFraction,
+    required this.lineColor,
+    required this.shadowColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final x = size.width * playheadFraction;
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = shadowColor
       ..strokeWidth = 2.0;
     canvas.drawLine(Offset(x + 0.5, 0), Offset(x + 0.5, size.height), shadowPaint);
     final playheadPaint = Paint()
-      ..color = AppColors.textPrimary.withOpacity(0.8)
+      ..color = lineColor
       ..strokeWidth = 2.0;
     canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
   }

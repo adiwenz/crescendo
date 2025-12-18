@@ -38,6 +38,7 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     final categories = _exerciseRepo.getCategories();
     final exercises = _exerciseRepo.getExercises();
     return Scaffold(
@@ -107,10 +108,10 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                     child: SizedBox(
                       height: 140,
                       child: trend.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
                                 'No trend yet',
-                                style: TextStyle(color: AppColors.textSecondary),
+                                style: TextStyle(color: colors.textSecondary),
                               ),
                             )
                           : ProgressLineChart(values: trend),
@@ -291,13 +292,14 @@ class _EmptyProgressState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppThemeColors.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.auto_graph, size: 48, color: AppColors.textSecondary),
+            Icon(Icons.auto_graph, size: 48, color: colors.textSecondary),
             const SizedBox(height: 12),
             Text('Do an exercise to start tracking progress',
                 textAlign: TextAlign.center,
