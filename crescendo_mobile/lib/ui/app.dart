@@ -26,20 +26,29 @@ class _CrescendoAppState extends State<CrescendoApp> {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppThemeController.mode,
       builder: (context, mode, _) {
-        return MaterialApp(
-          title: 'Crescendo Mobile',
-          theme: AppTheme.light(),
-          darkTheme: AppTheme.dark(),
-          themeMode: mode,
-          routes: {
-            '/': (_) => const LandingHomeScreen(),
-            '/settings': (_) => const SettingsScreen(),
-            '/library': (_) => const ExerciseCategoriesScreen(),
-            '/piano': (_) => const PianoPitchScreen(),
-            '/progress': (_) => const ProgressHomeScreen(),
-            '/settings/find_range': (_) => const FindRangeLowestScreen(),
-            '/settings/subscription': (_) => const SubscriptionScreen(),
-            '/settings/subscription_features': (_) => const SubscriptionFeaturesScreen(),
+        return ValueListenableBuilder<bool>(
+          valueListenable: AppThemeController.magicalMode,
+          builder: (context, magical, __) {
+            final theme = magical ? AppTheme.magical() : AppTheme.light();
+            final darkTheme = magical ? AppTheme.magical() : AppTheme.dark();
+            final resolvedMode = magical ? ThemeMode.dark : mode;
+            return MaterialApp(
+              title: 'Crescendo Mobile',
+              theme: theme,
+              darkTheme: darkTheme,
+              themeMode: resolvedMode,
+              routes: {
+                '/': (_) => const LandingHomeScreen(),
+                '/settings': (_) => const SettingsScreen(),
+                '/library': (_) => const ExerciseCategoriesScreen(),
+                '/piano': (_) => const PianoPitchScreen(),
+                '/progress': (_) => const ProgressHomeScreen(),
+                '/settings/find_range': (_) => const FindRangeLowestScreen(),
+                '/settings/subscription': (_) => const SubscriptionScreen(),
+                '/settings/subscription_features': (_) =>
+                    const SubscriptionFeaturesScreen(),
+              },
+            );
           },
         );
       },

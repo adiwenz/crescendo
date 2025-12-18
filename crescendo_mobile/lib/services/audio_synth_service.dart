@@ -85,6 +85,10 @@ class AudioSynthService {
   }
 
   Stream<void> get onComplete => _player.onPlayerComplete;
+  Stream<Duration> get onPositionChanged => _player.onPositionChanged;
+  Stream<PlayerState> get onPlayerStateChanged => _player.onPlayerStateChanged;
+
+  Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
   Future<void> stop() => _player.stop();
 

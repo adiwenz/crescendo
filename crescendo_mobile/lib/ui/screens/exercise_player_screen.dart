@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -18,9 +20,12 @@ import '../../services/robust_note_scoring_service.dart';
 import '../../services/unlock_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
+import '../widgets/debug_overlay.dart';
 import '../widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../../utils/performance_clock.dart';
+import '../../utils/pitch_ball_controller.dart';
 import 'level_up_screen.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
@@ -85,16 +90,22 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
+  final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
   final List<PitchFrame> _tail = [];
   final List<PitchFrame> _captured = [];
   final ProgressService _progress = ProgressService();
   final LastTakeStore _lastTakeStore = LastTakeStore();
   final UnlockService _unlockService = UnlockService();
+  final PerformanceClock _clock = PerformanceClock();
+  final PitchBallController _pitchBall = PitchBallController();
+  static const _showDebugOverlay =
+      bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
+  final double _leadInSec = 2.0;
   Ticker? _ticker;
-  Duration? _lastTick;
   bool _playing = false;
   bool _preparing = false;
+  bool _audioStarted = false;
   int _prepRemaining = 0;
   Timer? _prepTimer;
   int _prepRunId = 0;
@@ -103,15 +114,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   int _transpose = 0;
   RecordingService? _recording;
   StreamSubscription<PitchFrame>? _sub;
+  StreamSubscription<Duration>? _audioPosSub;
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
   late final PitchHighwaySpec? _scaledSpec;
+  double? _audioPositionSec;
+  double _manualOffsetMs = 0;
+  late final double _audioLatencyMs;
+  final double _pitchInputLatencyMs = 25;
 
   double get _durationSec {
     final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
     if (base <= 0) return 0.0;
-    return base + AudioSynthService.tailSeconds;
+    return base + _leadInSec + AudioSynthService.tailSeconds;
   }
 
   @override
@@ -119,6 +135,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     super.initState();
     _ticker = createTicker(_onTick);
     _scaledSpec = _buildScaledSpec();
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _clock.setAudioPositionProvider(() => _audioPositionSec);
+    _clock.setLatencyCompensationMs(_audioLatencyMs);
   }
 
   PitchHighwaySpec? _buildScaledSpec() {
@@ -139,19 +158,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void dispose() {
     _ticker?.dispose();
     _sub?.cancel();
+    _audioPosSub?.cancel();
     _recording?.stop();
     _prepTimer?.cancel();
     _synth.stop();
     _time.dispose();
+    _liveMidi.dispose();
     super.dispose();
   }
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    final dt = elapsed - (_lastTick ?? elapsed);
-    _lastTick = elapsed;
-    final next = _time.value + dt.inMicroseconds / 1e6;
+    final next = _clock.nowSeconds();
     _time.value = next;
+    _liveMidi.value = _pitchBall.valueAt(next);
     _trimTail();
     if (!_useMic) {
       _simulatePitch(next);
@@ -173,35 +193,39 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   Future<void> _start() async {
     if (_playing || _preparing) return;
-    _prepRunId += 1;
-    final runId = _prepRunId;
     _scorePct = null;
     _attemptSaved = false;
     _startedAt = DateTime.now();
     _captured.clear();
     _tail.clear();
     _captureEnabled = false;
-    _time.value = -2.0;
+    _time.value = 0.0;
+    _preparing = false;
+    _prepTimer?.cancel();
+    _audioPositionSec = null;
+    _audioStarted = false;
+    _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+    _pitchBall.reset();
     _playing = true;
-    _lastTick = null;
-    _ticker?.start();
-    _beginPrepCountdown();
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted || !_preparing || runId != _prepRunId) return;
-    _endPrepCountdown();
     _captureEnabled = true;
+    _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
+    _ticker?.start();
     if (_useMic) {
-      _recording = RecordingService();
+      _recording = RecordingService(bufferSize: 512);
       await _recording?.start();
       _sub = _recording?.liveStream.listen((frame) {
         if (!_captureEnabled) return;
         final midi = frame.midi ??
             (frame.hz != null ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2 : null);
         if (midi == null) return;
+        final now =
+            (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0)).clamp(-2.0, 3600.0);
+        _pitchBall.addSample(timeSec: now, midi: midi);
+        final filtered = _pitchBall.lastSampleMidi ?? midi;
         final pf = PitchFrame(
-          time: _time.value,
+          time: now,
           hz: frame.hz,
-          midi: midi,
+          midi: filtered,
           voicedProb: frame.voicedProb,
           rms: frame.rms,
         );
@@ -220,12 +244,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _playing = false;
     _captureEnabled = false;
     _ticker?.stop();
-    _lastTick = null;
     await _sub?.cancel();
     _sub = null;
+    await _audioPosSub?.cancel();
+    _audioPosSub = null;
     final recordingResult = _recording == null ? null : await _recording!.stop();
     _recording = null;
     await _synth.stop();
+    _clock.pause();
     await _saveLastTake(recordingResult?.audioPath);
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
@@ -264,7 +290,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final vibrato = math.sin(t * 2 * math.pi * 5) * 0.2;
     final midi = targetMidi + vibrato;
     final hz = 440.0 * math.pow(2.0, (midi - 69) / 12.0);
-    final pf = PitchFrame(time: t, hz: hz, midi: midi);
+    _pitchBall.addSample(timeSec: t, midi: midi);
+    final filtered = _pitchBall.lastSampleMidi ?? midi;
+    final pf = PitchFrame(time: t, hz: hz, midi: filtered);
     _tail.add(pf);
     _captured.add(pf);
   }
@@ -291,7 +319,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double? _targetMidiAtTime(double t) {
     final spec = _scaledSpec;
     if (spec == null) return null;
-    final ms = (t * 1000).round();
+    final adjusted = t - _leadInSec;
+    if (adjusted < 0) return null;
+    final ms = (adjusted * 1000).round();
     for (final seg in spec.segments) {
       if (ms < seg.startMs || ms > seg.endMs) continue;
       if (seg.isGlide) {
@@ -308,7 +338,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   String? _labelAtTime(double t) {
     final spec = _scaledSpec;
     if (spec == null) return null;
-    final ms = (t * 1000).round();
+    final adjusted = t - _leadInSec;
+    if (adjusted < 0) return null;
+    final ms = (adjusted * 1000).round();
     for (final seg in spec.segments) {
       if (ms >= seg.startMs && ms <= seg.endMs) return seg.label;
     }
@@ -331,16 +363,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           final stepStart = seg.startMs + (durationMs * ratio).round();
           final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
           notes.add(ReferenceNote(
-            startSec: stepStart / 1000.0,
-            endSec: stepEnd / 1000.0,
+            startSec: stepStart / 1000.0 + _leadInSec,
+            endSec: stepEnd / 1000.0 + _leadInSec,
             midi: midi + _transpose,
             lyric: seg.label,
           ));
         }
       } else {
         notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0,
-          endSec: seg.endMs / 1000.0,
+          startSec: seg.startMs / 1000.0 + _leadInSec,
+          endSec: seg.endMs / 1000.0 + _leadInSec,
           midi: seg.midiNote + _transpose,
           lyric: seg.label,
         ));
@@ -355,6 +387,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (notes.isEmpty) return;
     final path = await _synth.renderReferenceNotes(notes);
     await _synth.playFile(path);
+    await _audioPosSub?.cancel();
+    _audioPosSub = _synth.onPositionChanged.listen((pos) {
+      if (!_audioStarted && pos > Duration.zero) {
+        _audioStarted = true;
+      }
+      if (_audioStarted) {
+        _audioPositionSec = pos.inMilliseconds / 1000.0;
+      }
+    });
   }
 
   double _computeScore() {
@@ -434,6 +475,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     notes: notes,
                     pitchTail: _tail,
                     time: _time,
+                    liveMidi: _liveMidi,
+                    pitchTailTimeOffsetSec: -_pitchInputLatencyMs / 1000.0,
                     drawBackground: false,
                     midiMin: minMidi,
                     midiMax: maxMidi,

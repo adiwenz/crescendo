@@ -98,53 +98,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final effectiveMode = mode == ThemeMode.system
             ? (systemIsDark ? ThemeMode.dark : ThemeMode.light)
             : mode;
-        return FrostedCard(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Appearance',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.textPrimary,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<ThemeMode>(
-                value: effectiveMode,
-                decoration: const InputDecoration(
-                  labelText: 'Theme',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: ThemeMode.light,
-                    child: Text('Light'),
+        return ValueListenableBuilder<bool>(
+          valueListenable: AppThemeController.magicalMode,
+          builder: (context, magical, __) {
+            return FrostedCard(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Appearance',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
                   ),
-                  DropdownMenuItem(
-                    value: ThemeMode.dark,
-                    child: Text('Dark'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<ThemeMode>(
+                    value: effectiveMode,
+                    decoration: const InputDecoration(
+                      labelText: 'Theme',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ThemeMode.light,
+                        child: Text('Light'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.dark,
+                        child: Text('Dark'),
+                      ),
+                    ],
+                    onChanged: magical
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            AppThemeController.mode.value = value;
+                          },
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      magical
+                          ? 'Selected: Dreamy + Magical'
+                          : 'Selected: ${effectiveMode == ThemeMode.light ? 'Light' : 'Dark'}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: magical,
+                    title: const Text('Dreamy + Magical mode'),
+                    onChanged: (value) {
+                      AppThemeController.magicalMode.value = value;
+                    },
                   ),
                 ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  AppThemeController.mode.value = value;
-                },
               ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Selected: ${effectiveMode == ThemeMode.light ? 'Light' : 'Dark'}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colors.textSecondary),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'magical_background.dart';
 
 class AppBackground extends StatelessWidget {
   final Widget child;
@@ -17,6 +18,9 @@ class AppBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
+    if (colors.isMagical) {
+      return MagicalBackground(child: child);
+    }
     return Stack(
       children: [
         Container(

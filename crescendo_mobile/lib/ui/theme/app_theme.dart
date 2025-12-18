@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 class AppThemeController {
   static final ValueNotifier<ThemeMode> mode =
       ValueNotifier<ThemeMode>(ThemeMode.system);
+  static final ValueNotifier<bool> magicalMode = ValueNotifier<bool>(false);
 }
 
 class AppThemeColors extends ThemeExtension<AppThemeColors> {
   final bool isDark;
+  final bool isMagical;
   final Color bgTop;
   final Color bgBottom;
   final Color surface0;
@@ -18,6 +20,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
   final Color textSecondary;
   final Color iconMuted;
   final Color blueAccent;
+  final Color lavenderGlow;
   final Color goldAccent;
   final Color mintAccent;
   final Color glassFill;
@@ -26,6 +29,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
 
   const AppThemeColors({
     required this.isDark,
+    required this.isMagical,
     required this.bgTop,
     required this.bgBottom,
     required this.surface0,
@@ -37,6 +41,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     required this.textSecondary,
     required this.iconMuted,
     required this.blueAccent,
+    required this.lavenderGlow,
     required this.goldAccent,
     required this.mintAccent,
     required this.glassFill,
@@ -46,6 +51,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
 
   static const dark = AppThemeColors(
     isDark: true,
+    isMagical: false,
     bgTop: Color(0xFF0A1226),
     bgBottom: Color(0xFF17365A),
     surface0: Color(0xFF0A1226),
@@ -57,6 +63,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     textSecondary: Color(0xFFB7C4DD),
     iconMuted: Color(0xFFB7C4DD),
     blueAccent: Color(0xFF9FB7FF),
+    lavenderGlow: Color(0xFFB8A6FF),
     goldAccent: Color(0xFFFBC57D),
     mintAccent: Color(0xFF9FE6B2),
     glassFill: Color(0x1FFFFFFF),
@@ -66,6 +73,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
 
   static const light = AppThemeColors(
     isDark: false,
+    isMagical: false,
     bgTop: Color(0xFFF7F9FB),
     bgBottom: Color(0xFFCCE6EE),
     surface0: Color(0xFFF7F9FB),
@@ -77,11 +85,34 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     textSecondary: Color(0xFF6B7280),
     iconMuted: Color(0xFF7A8A9A),
     blueAccent: Color(0xFF7DBCD9),
+    lavenderGlow: Color(0xFF9CCEE2),
     goldAccent: Color(0xFFFBC57D),
     mintAccent: Color(0xFFE0F0E1),
     glassFill: Color(0xFFFFFFFF),
     glassBorder: Color(0xFFE6EDF3),
     glow: Color(0x33FBC57D),
+  );
+
+  static const magical = AppThemeColors(
+    isDark: true,
+    isMagical: true,
+    bgTop: Color(0xFF1B1E3C),
+    bgBottom: Color(0xFF3E2F6E),
+    surface0: Color(0xFF171A3A),
+    surface1: Color(0x26FFFFFF),
+    surface2: Color(0x33FFFFFF),
+    borderSubtle: Color(0x33FFFFFF),
+    divider: Color(0x26FFFFFF),
+    textPrimary: Color(0xFFF7F8FF),
+    textSecondary: Color(0xBFF7F8FF),
+    iconMuted: Color(0xBFF7F8FF),
+    blueAccent: Color(0xFF7FE9F3),
+    lavenderGlow: Color(0xFFB8A6FF),
+    goldAccent: Color(0xFFF4A3C4),
+    mintAccent: Color(0xFFB8A6FF),
+    glassFill: Color(0x26FFFFFF),
+    glassBorder: Color(0x33FFFFFF),
+    glow: Color(0x66B8A6FF),
   );
 
   static AppThemeColors of(BuildContext context) {
@@ -92,6 +123,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
   @override
   AppThemeColors copyWith({
     bool? isDark,
+    bool? isMagical,
     Color? bgTop,
     Color? bgBottom,
     Color? surface0,
@@ -103,6 +135,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     Color? textSecondary,
     Color? iconMuted,
     Color? blueAccent,
+    Color? lavenderGlow,
     Color? goldAccent,
     Color? mintAccent,
     Color? glassFill,
@@ -111,6 +144,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
   }) {
     return AppThemeColors(
       isDark: isDark ?? this.isDark,
+      isMagical: isMagical ?? this.isMagical,
       bgTop: bgTop ?? this.bgTop,
       bgBottom: bgBottom ?? this.bgBottom,
       surface0: surface0 ?? this.surface0,
@@ -122,6 +156,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
       textSecondary: textSecondary ?? this.textSecondary,
       iconMuted: iconMuted ?? this.iconMuted,
       blueAccent: blueAccent ?? this.blueAccent,
+      lavenderGlow: lavenderGlow ?? this.lavenderGlow,
       goldAccent: goldAccent ?? this.goldAccent,
       mintAccent: mintAccent ?? this.mintAccent,
       glassFill: glassFill ?? this.glassFill,
@@ -138,6 +173,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     if (other is! AppThemeColors) return this;
     return AppThemeColors(
       isDark: t < 0.5 ? isDark : other.isDark,
+      isMagical: t < 0.5 ? isMagical : other.isMagical,
       bgTop: Color.lerp(bgTop, other.bgTop, t)!,
       bgBottom: Color.lerp(bgBottom, other.bgBottom, t)!,
       surface0: Color.lerp(surface0, other.surface0, t)!,
@@ -149,6 +185,7 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       iconMuted: Color.lerp(iconMuted, other.iconMuted, t)!,
       blueAccent: Color.lerp(blueAccent, other.blueAccent, t)!,
+      lavenderGlow: Color.lerp(lavenderGlow, other.lavenderGlow, t)!,
       goldAccent: Color.lerp(goldAccent, other.goldAccent, t)!,
       mintAccent: Color.lerp(mintAccent, other.mintAccent, t)!,
       glassFill: Color.lerp(glassFill, other.glassFill, t)!,
@@ -161,6 +198,8 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
 class AppTheme {
   static ThemeData dark() => _build(AppThemeColors.dark, Brightness.dark);
   static ThemeData light() => _build(AppThemeColors.light, Brightness.light);
+  static ThemeData magical() =>
+      _build(AppThemeColors.magical, Brightness.dark);
 
   static ThemeData _build(AppThemeColors colors, Brightness brightness) {
     final base = ThemeData(brightness: brightness);

@@ -23,6 +23,8 @@ class PitchHighwayPainter extends CustomPainter {
   final int midiMin;
   final int midiMax;
   final AppThemeColors colors;
+  final ValueListenable<double?>? liveMidi;
+  final double pitchTailTimeOffsetSec;
 
   PitchHighwayPainter({
     required this.notes,
@@ -36,9 +38,11 @@ class PitchHighwayPainter extends CustomPainter {
     this.showPlayheadLine = true,
     this.midiMin = 48,
     this.midiMax = 72,
+    this.liveMidi,
+    this.pitchTailTimeOffsetSec = 0,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
-        super(repaint: time);
+        super(repaint: liveMidi == null ? time : Listenable.merge([time, liveMidi]));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -57,7 +61,7 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final gridPaint = Paint()
-      ..color = colors.divider.withOpacity(colors.isDark ? 1 : 0.6)
+      ..color = colors.divider.withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
       ..strokeWidth = 1;
     final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
     for (var midi = midiMin; midi <= midiMax; midi += gridStep) {
@@ -71,14 +75,16 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final playheadX = size.width * playheadFraction;
-    final noteColor = colors.isDark
-        ? colors.textPrimary.withOpacity(0.55)
-        : colors.goldAccent.withOpacity(0.55);
+    final noteColor = colors.isMagical
+        ? colors.goldAccent.withOpacity(0.65)
+        : (colors.isDark
+            ? colors.textPrimary.withOpacity(0.55)
+            : colors.goldAccent.withOpacity(0.55));
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
-    final currentStatus = _statusForTime(currentTime);
-    final smoothedMidi = _smoothedMidiAt(currentTime);
+    final smoothedMidi = liveMidi?.value ?? _smoothedMidiAt(currentTime);
+    final currentStatus = _statusForTime(currentTime, smoothedMidi);
 
     for (final n in notes) {
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
@@ -116,7 +122,8 @@ class PitchHighwayPainter extends CustomPainter {
         barColor = noteColor;
       }
       final glowPaint = Paint()
-        ..color = colors.glow
+        ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+            .withOpacity(colors.isMagical ? 0.4 : 1)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       final paint = Paint()..color = barColor;
       canvas.drawRRect(rect, glowPaint);
@@ -186,8 +193,7 @@ class PitchHighwayPainter extends CustomPainter {
     return null;
   }
 
-  PitchMatch _statusForTime(double t) {
-    final latestMidi = _smoothedMidiAt(t);
+  PitchMatch _statusForTime(double t, double? latestMidi) {
     if (latestMidi == null) return PitchMatch.off;
     final ref = _noteAtTime(t);
     if (ref == null) return PitchMatch.off;
@@ -227,6 +233,7 @@ class PitchHighwayPainter extends CustomPainter {
 
   void _drawPitchTrail(Canvas canvas, Size size, double t, double playheadX) {
     if (pitchTail.isEmpty) return;
+    final tAdjusted = t + pitchTailTimeOffsetSec;
     const trailWindowSec = 3.0;
     const maxJumpPx = 60.0;
     const resampleStep = 0.016;
@@ -236,7 +243,7 @@ class PitchHighwayPainter extends CustomPainter {
     final raw = <_PitchSample>[];
     double? lastY;
     for (final f in pitchTail) {
-      if (f.time < t - trailWindowSec || f.time > t) continue;
+      if (f.time < tAdjusted - trailWindowSec || f.time > tAdjusted) continue;
       final midi = f.midi;
       if (midi == null) continue;
       if (f.voicedProb != null && f.voicedProb! < 0.6) continue;
@@ -251,7 +258,38 @@ class PitchHighwayPainter extends CustomPainter {
       lastY = y;
       raw.add(_PitchSample(time: f.time, y: y));
     }
-    if (raw.length < 2) return;
+    if (raw.length < 2) {
+      final live = liveMidi?.value;
+      if (live == null) return;
+      final y = PitchMath.midiToY(
+        midi: live,
+        height: size.height,
+        midiMin: midiMin,
+        midiMax: midiMax,
+      );
+      final shortTrailSec = 0.2;
+      final startX = playheadX + (-shortTrailSec) * pixelsPerSecond;
+      final endX = playheadX;
+      final glowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 16.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = colors.textPrimary.withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      final corePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 12.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = colors.textPrimary.withOpacity(0.35);
+      final path = Path()
+        ..moveTo(startX, y)
+        ..lineTo(endX, y);
+      canvas.drawPath(path, glowPaint);
+      canvas.drawPath(path, corePaint);
+      return;
+    }
 
     final median = _medianFilter(raw, window: 5);
     final smoothed = _emaFilter(median, alpha: 0.15);
@@ -265,13 +303,13 @@ class PitchHighwayPainter extends CustomPainter {
       if ((curr.time - prev.time) > maxGapSec || (next.time - curr.time) > maxGapSec) {
         continue;
       }
-      final age = (t - curr.time).clamp(0.0, trailWindowSec);
+      final age = (tAdjusted - curr.time).clamp(0.0, trailWindowSec);
       final fade = 1 - (age / trailWindowSec);
       final alpha = (baseAlpha * fade).clamp(0.0, baseAlpha);
       if (alpha <= 0) continue;
-      final xPrev = playheadX + (prev.time - t) * pixelsPerSecond;
-      final xCurr = playheadX + (curr.time - t) * pixelsPerSecond;
-      final xNext = playheadX + (next.time - t) * pixelsPerSecond;
+      final xPrev = playheadX + (prev.time - tAdjusted) * pixelsPerSecond;
+      final xCurr = playheadX + (curr.time - tAdjusted) * pixelsPerSecond;
+      final xNext = playheadX + (next.time - tAdjusted) * pixelsPerSecond;
       final start = Offset((xPrev + xCurr) / 2, (prev.y + curr.y) / 2);
       final end = Offset((xCurr + xNext) / 2, (curr.y + next.y) / 2);
       if (end.dx < -16 || start.dx > size.width + 16) continue;
@@ -363,6 +401,7 @@ class PitchHighwayPainter extends CustomPainter {
         oldDelegate.playheadFraction != playheadFraction ||
         (oldDelegate.drawBackground ?? true) != (drawBackground ?? true) ||
         oldDelegate.smoothingWindowSec != smoothingWindowSec ||
+        oldDelegate.pitchTailTimeOffsetSec != pitchTailTimeOffsetSec ||
         oldDelegate.showLivePitch != showLivePitch ||
         oldDelegate.showPlayheadLine != showPlayheadLine;
   }

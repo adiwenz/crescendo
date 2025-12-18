@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
@@ -14,7 +16,10 @@ import '../../services/storage/take_repository.dart';
 import '../state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
+import '../widgets/debug_overlay.dart';
 import '../widgets/pitch_highway_painter.dart';
+import '../../utils/performance_clock.dart';
+import '../../utils/pitch_ball_controller.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
   const PitchHighwayScreen({super.key});
@@ -28,26 +33,37 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   final playheadFraction = 0.45;
   final tailWindowSec = 4.0;
   final midiRange = const (min: 48, max: 72);
+  final double _leadInSec = 2.0;
 
   final _timeNotifier = ValueNotifier<double>(0);
+  final _liveMidi = ValueNotifier<double?>(null);
   final _pitchTail = <PitchFrame>[];
   final _capturedFrames = <PitchFrame>[];
+  final PerformanceClock _clock = PerformanceClock();
+  final PitchBallController _pitchBall = PitchBallController();
+  static const _showDebugOverlay =
+      bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
 
   late final Ticker _ticker;
-  Duration? _lastTick;
   bool _playing = false;
   bool _recordingActive = false;
+  bool _audioStarted = false;
 
   late final RecordingService _recording;
   StreamSubscription<PitchFrame>? _liveSub;
+  StreamSubscription<Duration>? _audioPosSub;
   late final AudioSynthService _synth;
   late final ScoringService _scoring;
   late final TakeRepository _repo;
   final appState = AppState();
   String? _referencePath;
   String? _lastRecordingPath;
+  double? _audioPositionSec;
+  double _manualOffsetMs = 0;
+  late final double _audioLatencyMs;
+  final double _pitchInputLatencyMs = 25;
 
-  List<ReferenceNote> get _stubNotes => const [
+  List<ReferenceNote> get _baseNotes => const [
         ReferenceNote(startSec: 0, endSec: 1.2, midi: 60, lyric: 'A'),
         ReferenceNote(startSec: 1.35, endSec: 2.4, midi: 62, lyric: 'new'),
         ReferenceNote(startSec: 2.5, endSec: 3.4, midi: 64, lyric: 'fan-'),
@@ -59,41 +75,53 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
         ReferenceNote(startSec: 8.6, endSec: 9.6, midi: 60, lyric: 'yeah'),
       ];
 
+  List<ReferenceNote> get _notesWithLeadIn => _baseNotes
+      .map(
+        (n) => ReferenceNote(
+          startSec: n.startSec + _leadInSec,
+          endSec: n.endSec + _leadInSec,
+          midi: n.midi,
+          lyric: n.lyric,
+        ),
+      )
+      .toList();
+
   double get _totalDuration =>
-      _stubNotes.map((n) => n.endSec).fold(0.0, math.max) + AudioSynthService.tailSeconds;
+      _notesWithLeadIn.map((n) => n.endSec).fold(0.0, math.max) +
+      AudioSynthService.tailSeconds;
 
   @override
   void initState() {
     super.initState();
-    _recording = RecordingService();
+    _recording = RecordingService(bufferSize: 512);
     _synth = AudioSynthService();
     _scoring = ScoringService();
     _repo = TakeRepository();
     _ticker = createTicker(_onTick);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _clock.setAudioPositionProvider(() => _audioPositionSec);
+    _clock.setLatencyCompensationMs(_audioLatencyMs);
   }
 
   @override
   void dispose() {
     _ticker.dispose();
     _liveSub?.cancel();
+    _audioPosSub?.cancel();
     _recording.stop();
     _synth.stop();
     _timeNotifier.dispose();
+    _liveMidi.dispose();
     super.dispose();
   }
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    final dt = elapsed - (_lastTick ?? elapsed);
-    _lastTick = elapsed;
-    _advance(dt.inMicroseconds / 1e6);
-  }
-
-  void _advance(double deltaSeconds) {
-    final next = _timeNotifier.value + deltaSeconds;
-    _timeNotifier.value = next;
+    final now = _clock.nowSeconds();
+    _timeNotifier.value = now;
+    _liveMidi.value = _pitchBall.valueAt(now);
     _trimTail();
-    if (next > _totalDuration) {
+    if (now > _totalDuration) {
       unawaited(_togglePlayback(force: false));
     }
   }
@@ -107,18 +135,26 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
         _pitchTail.clear();
         _capturedFrames.clear();
         _lastRecordingPath = null;
+        _pitchBall.reset();
       }
+      _audioPositionSec = null;
+      _audioStarted = false;
+      _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+      _clock.start(offsetSec: _timeNotifier.value, freezeUntilAudio: true);
       _playing = true;
-      _lastTick = null;
       _ticker.start();
       await _startRecording();
       await _playReference();
     } else {
       _playing = false;
       _ticker.stop();
-      _lastTick = null;
+      _clock.pause();
       await _stopRecording();
       await _synth.stop();
+      await _audioPosSub?.cancel();
+      _audioPosSub = null;
+      _audioPositionSec = null;
+      _liveMidi.value = null;
     }
     setState(() {});
   }
@@ -131,12 +167,15 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);
       if (midi == null) return;
-      final now = _timeNotifier.value;
-      final f = PitchFrame(time: now, hz: frame.hz, midi: midi);
-      _pitchTail.add(f);
-      _capturedFrames.add(f);
-      _trimTail();
-      _timeNotifier.value = _timeNotifier.value;
+      final now =
+          (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0)).clamp(-2.0, 3600.0);
+      _handlePitchSample(
+        time: now,
+        hz: frame.hz,
+        midi: midi,
+        voicedProb: frame.voicedProb,
+        rms: frame.rms,
+      );
     });
   }
 
@@ -161,7 +200,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   Future<String> _ensureReferenceAudio() async {
     if (_referencePath != null) return _referencePath!;
-    _referencePath = await _synth.renderReferenceNotes(_stubNotes);
+    _referencePath = await _synth.renderReferenceNotes(_notesWithLeadIn);
     return _referencePath!;
   }
 
@@ -169,10 +208,19 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     final path = await _ensureReferenceAudio();
     await _synth.stop();
     await _synth.playFile(path);
+    await _audioPosSub?.cancel();
+    _audioPosSub = _synth.onPositionChanged.listen((pos) {
+      if (!_audioStarted && pos > Duration.zero) {
+        _audioStarted = true;
+      }
+      if (_audioStarted) {
+        _audioPositionSec = pos.inMilliseconds / 1000.0;
+      }
+    });
   }
 
   ReferenceNote? _noteAt(double t) {
-    for (final n in _stubNotes) {
+    for (final n in _notesWithLeadIn) {
       if (t >= n.startSec && t <= n.endSec) return n;
     }
     return null;
@@ -209,6 +257,28 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   double _hzToMidi(double hz) => 69 + 12 * math.log(hz / 440) / math.ln2;
 
+  void _handlePitchSample({
+    required double time,
+    required double midi,
+    double? hz,
+    double? voicedProb,
+    double? rms,
+  }) {
+    _pitchBall.addSample(timeSec: time, midi: midi);
+    final filtered = _pitchBall.lastSampleMidi;
+    if (filtered == null) return;
+    final f = PitchFrame(
+      time: time,
+      hz: hz,
+      midi: filtered,
+      voicedProb: voicedProb,
+      rms: rms,
+    );
+    _pitchTail.add(f);
+    _capturedFrames.add(f);
+    _trimTail();
+  }
+
   double _accuracyPercent() {
     if (_capturedFrames.isEmpty) return 0;
     final metrics = _scoring.score(_attachCents(_capturedFrames));
@@ -230,6 +300,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _pitchTail.clear();
     _capturedFrames.clear();
     _lastRecordingPath = null;
+    _pitchBall.reset();
     setState(() {});
   }
 
@@ -252,9 +323,11 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                 Positioned.fill(
                   child: CustomPaint(
                     painter: PitchHighwayPainter(
-                      notes: _stubNotes,
+                      notes: _notesWithLeadIn,
                       pitchTail: _pitchTail,
                       time: _timeNotifier,
+                      liveMidi: _liveMidi,
+                      pitchTailTimeOffsetSec: -_pitchInputLatencyMs / 1000.0,
                       pixelsPerSecond: pixelsPerSecond,
                       playheadFraction: playheadFraction,
                       drawBackground: false,
@@ -264,6 +337,19 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                     ),
                   ),
                 ),
+                if (_showDebugOverlay)
+                  DebugOverlay(
+                    audioPositionMs:
+                        _audioPositionSec == null ? null : _audioPositionSec! * 1000.0,
+                    visualTimeMs: _timeNotifier.value * 1000.0,
+                    pitchLagMs: _pitchBall.estimateLagMs(_timeNotifier.value),
+                    offsetMs: _manualOffsetMs,
+                    onOffsetChange: (value) {
+                      setState(() => _manualOffsetMs = value);
+                      _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+                    },
+                    label: 'Pitch Highway',
+                  ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
