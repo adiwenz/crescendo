@@ -9,6 +9,8 @@ import 'screens/find_range_lowest_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
+import '../screens/welcome/welcome_screen.dart';
+import '../screens/explore/explore_screen.dart';
 import 'theme/app_theme.dart';
 
 class CrescendoApp extends StatefulWidget {
@@ -38,7 +40,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
               darkTheme: darkTheme,
               themeMode: resolvedMode,
               routes: {
-                '/': (_) => const LandingHomeScreen(),
+                '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
                 '/settings': (_) => const SettingsScreen(),
                 '/library': (_) => const ExerciseCategoriesScreen(),
                 '/piano': (_) => const PianoPitchScreen(),
@@ -52,6 +54,42 @@ class _CrescendoAppState extends State<CrescendoApp> {
           },
         );
       },
+    );
+  }
+}
+
+class _RootScaffold extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTab;
+
+  const _RootScaffold({required this.currentIndex, required this.onTab});
+
+  @override
+  Widget build(BuildContext context) {
+    final tabs = [
+      const WelcomeScreen(),
+      const ExploreScreen(),
+      const PianoPitchScreen(),
+      const ProgressHomeScreen(),
+      const SettingsScreen(),
+    ];
+    return Scaffold(
+      body: IndexedStack(
+        index: currentIndex,
+        children: tabs,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: currentIndex,
+        type: BottomNavigationBarType.fixed,
+        onTap: onTab,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Welcome'),
+          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
+          BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
+          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+        ],
+      ),
     );
   }
 }
