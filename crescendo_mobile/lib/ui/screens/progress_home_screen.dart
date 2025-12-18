@@ -1,22 +1,12 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import '../../models/exercise_attempt.dart';
-import '../../models/exercise_category.dart';
-import '../../models/progress_stats.dart';
-import '../../models/vocal_exercise.dart';
-import '../../services/exercise_repository.dart';
-import '../../services/progress_service.dart';
-import '../../services/progress_stats.dart';
-import '../progress/progress_range.dart';
-import '../theme/app_theme.dart';
-import '../widgets/app_background.dart';
-import '../widgets/exercise_icon.dart';
-import '../widgets/frosted_card.dart';
-import '../widgets/progress_charts.dart';
-import 'exercise_categories_screen.dart';
-import 'progress_category_screen.dart';
+import '../../data/seed_library.dart';
+import '../../services/simple_progress_repository.dart';
+import '../../state/library_store.dart';
+import '../../widgets/progress/metric_pill.dart';
+import '../../widgets/progress/progress_bar_row.dart';
+import '../../widgets/progress/recent_activity_row.dart';
+import '../../widgets/progress/sparkline_card.dart';
 
 class ProgressHomeScreen extends StatefulWidget {
   const ProgressHomeScreen({super.key});
@@ -26,292 +16,127 @@ class ProgressHomeScreen extends StatefulWidget {
 }
 
 class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
-  final ProgressService _progress = ProgressService();
-  final ExerciseRepository _exerciseRepo = ExerciseRepository();
-  ProgressRange _range = ProgressRange.days14;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_progress.refresh());
-  }
+  final SimpleProgressRepository _repo = SimpleProgressRepository();
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppThemeColors.of(context);
-    final categories = _exerciseRepo.getCategories();
-    final exercises = _exerciseRepo.getExercises();
+    final summary = _repo.buildSummary();
+    final categories = seedLibraryCategories();
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Progress'),
-      ),
-      body: AppBackground(
-        child: SafeArea(
-          child: StreamBuilder<ProgressSnapshot<ExerciseAttempt>>(
-            stream: _progress.stream,
-            initialData: _progress.snapshot(),
-            builder: (context, snapshot) {
-              final attempts = snapshot.data?.attempts ?? [];
-              if (attempts.isEmpty) {
-                return _EmptyProgressState(onStart: _openExercises);
-              }
-              final now = DateTime.now();
-              final filtered = filterAttemptsByWindow(
-                attempts,
-                now: now,
-                window: _range.window,
-              );
-              final overall = computeOverallStats(attempts: filtered);
-              final weekAttempts = filterAttemptsByWindow(
-                attempts,
-                now: now,
-                window: const Duration(days: 7),
-              );
-              final weekAvg = weekAttempts.isEmpty
-                  ? null
-                  : weekAttempts
-                          .map((a) => a.overallScore)
-                          .reduce((a, b) => a + b) /
-                      weekAttempts.length;
-              final weekBest = weekAttempts.isEmpty
-                  ? null
-                  : weekAttempts
-                      .map((a) => a.overallScore)
-                      .reduce((a, b) => a > b ? a : b);
-              final sorted = List<ExerciseAttempt>.from(filtered)
-                ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
-              final trendScores = sorted.map((a) => a.overallScore).toList();
-              final trend = trendScores.length > 30
-                  ? trendScores.sublist(trendScores.length - 30)
-                  : trendScores;
-
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _RangeToggle(
-                    value: _range,
-                    onChanged: (next) => setState(() => _range = next),
-                  ),
-                  const SizedBox(height: 12),
-                  _SummaryCard(
-                    weekCount: weekAttempts.length,
-                    weekAvg: weekAvg,
-                    weekBest: weekBest,
-                    overallScore: overall.score,
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Overall trend', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  FrostedCard(
-                    padding: const EdgeInsets.all(12),
-                    child: SizedBox(
-                      height: 140,
-                      child: trend.isEmpty
-                          ? Center(
-                              child: Text(
-                                'No trend yet',
-                                style: TextStyle(color: colors.textSecondary),
-                              ),
-                            )
-                          : ProgressLineChart(values: trend),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text('Categories', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: categories.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 1,
-                    ),
-                    itemBuilder: (context, index) {
-                      final category = categories[index];
-                      final stats = computeCategoryStats(
-                        categoryId: category.id,
-                        exercises: exercises,
-                        attempts: filtered,
-                      );
-                      return _CategoryCard(
-                        category: category,
-                        stats: stats,
-                        onTap: () => _openCategory(category, exercises),
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(28),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Your practice over time',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  void _openExercises() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ExerciseCategoriesScreen()),
-    );
-  }
-
-  void _openCategory(ExerciseCategory category, List<VocalExercise> exercises) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProgressCategoryScreen(
-          category: category,
-          exercises: exercises,
-        ),
-      ),
-    );
-  }
-}
-
-class _RangeToggle extends StatelessWidget {
-  final ProgressRange value;
-  final ValueChanged<ProgressRange> onChanged;
-
-  const _RangeToggle({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final values = ProgressRange.values;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ToggleButtons(
-        borderRadius: BorderRadius.circular(12),
-        isSelected: values.map((v) => v == value).toList(),
-        onPressed: (idx) => onChanged(values[idx]),
-        children: values
-            .map((v) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(v.label),
-                ))
-            .toList(),
-      ),
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  final int weekCount;
-  final double? weekAvg;
-  final double? weekBest;
-  final double? overallScore;
-
-  const _SummaryCard({
-    required this.weekCount,
-    required this.weekAvg,
-    required this.weekBest,
-    required this.overallScore,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedCard(
-      padding: const EdgeInsets.all(16),
-      borderRadius: BorderRadius.circular(20),
-      child: Row(
+      body: ListView(
+        padding: const EdgeInsets.all(24),
         children: [
-          ProgressScoreRing(score: overallScore),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('This week', style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 8),
-                Text('Sessions: $weekCount'),
-                Text('Avg score: ${weekAvg?.toStringAsFixed(0) ?? '—'}'),
-                Text('Best score: ${weekBest?.toStringAsFixed(0) ?? '—'}'),
-              ],
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Today', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: MetricPill(label: 'Practice time', value: '—')),
+                      const SizedBox(width: 12),
+                      Expanded(child: MetricPill(label: 'Completed', value: '${summary.completedToday}')),
+                      const SizedBox(width: 12),
+                      Expanded(child: MetricPill(label: 'Avg score', value: summary.avgScore.isNaN ? '—' : '${summary.avgScore.toStringAsFixed(0)}%')),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SparklineCard(
+            title: 'Trend (last 7)',
+            values: summary.trendScores.isEmpty ? [0] : summary.trendScores,
+          ),
+          const SizedBox(height: 16),
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Category Progress', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  ...categories.map((c) {
+                    final pct = summary.categoryPercents[c.id] ?? 0.0;
+                    final exes = seedExercisesFor(c.id);
+                    final completedCount = exes.where((e) => libraryStore.completedExerciseIds.contains(e.id)).length;
+                    final subtitle = '${completedCount}/${exes.length} completed';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: ProgressBarRow(
+                        title: c.title,
+                        subtitle: subtitle,
+                        percent: pct,
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Recent Activity', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  if (summary.recent.isEmpty)
+                    Text('No activity yet', style: Theme.of(context).textTheme.bodyMedium)
+                  else
+                    ...summary.recent.take(5).map((a) {
+                      final d = a.date;
+                      final date =
+                          '${_month(d.month)} ${d.day}, ${d.hour % 12 == 0 ? 12 : d.hour % 12}:${d.minute.toString().padLeft(2, '0')}${d.hour >= 12 ? 'pm' : 'am'}';
+                      final scoreLabel = a.score == null ? '--' : a.score.toString();
+                      return RecentActivityRow(
+                        title: a.exerciseId,
+                        dateLabel: date,
+                        scoreLabel: scoreLabel,
+                      );
+                    }),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _CategoryCard extends StatelessWidget {
-  final ExerciseCategory category;
-  final CategoryStats stats;
-  final VoidCallback onTap;
-
-  const _CategoryCard({
-    required this.category,
-    required this.stats,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scoreText = stats.score == null ? '—' : stats.score!.toStringAsFixed(0);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: FrostedCard(
-        padding: const EdgeInsets.all(12),
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ExerciseIcon(iconKey: category.iconKey, size: 22),
-            const Spacer(),
-            Text(category.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text('$scoreText%',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 24,
-              child: stats.trendScores.isEmpty
-                  ? const SizedBox.shrink()
-                  : ProgressSparkline(values: stats.trendScores),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyProgressState extends StatelessWidget {
-  final VoidCallback onStart;
-
-  const _EmptyProgressState({required this.onStart});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AppThemeColors.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.auto_graph, size: 48, color: colors.textSecondary),
-            const SizedBox(height: 12),
-            Text('Do an exercise to start tracking progress',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: onStart,
-              child: const Text('Browse exercises'),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _month(int m) {
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (m < 1 || m > 12) return '';
+    return names[m - 1];
   }
 }
