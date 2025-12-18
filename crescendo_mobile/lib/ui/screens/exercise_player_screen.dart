@@ -26,6 +26,8 @@ import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/performance_clock.dart';
 import '../../utils/pitch_ball_controller.dart';
+import '../../utils/pitch_state.dart';
+import '../../utils/pitch_visual_state.dart';
 import 'level_up_screen.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
@@ -98,6 +100,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final UnlockService _unlockService = UnlockService();
   final PerformanceClock _clock = PerformanceClock();
   final PitchBallController _pitchBall = PitchBallController();
+  final PitchState _pitchState = PitchState();
+  final PitchVisualState _visualState = PitchVisualState();
   static const _showDebugOverlay =
       bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
@@ -170,8 +174,24 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void _onTick(Duration elapsed) {
     if (!_playing) return;
     final next = _clock.nowSeconds();
+    final effectiveMidi = _pitchState.effectiveMidi;
+    final effectiveHz = _pitchState.effectiveHz;
+    _visualState.update(
+      timeSec: next,
+      pitchHz: effectiveHz,
+      pitchMidi: effectiveMidi,
+      voiced: _pitchState.isVoiced,
+    );
     _time.value = next;
-    _liveMidi.value = _pitchBall.valueAt(next);
+    _liveMidi.value = _visualState.visualPitchMidi;
+    final visualMidi = _visualState.visualPitchMidi;
+    if (visualMidi != null) {
+      _tail.add(PitchFrame(
+        time: next,
+        midi: visualMidi,
+        voicedProb: _visualState.isVoiced ? 1.0 : 0.0,
+      ));
+    }
     _trimTail();
     if (!_useMic) {
       _simulatePitch(next);
@@ -206,6 +226,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioStarted = false;
     _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
     _pitchBall.reset();
+    _pitchState.reset();
+    _visualState.reset();
     _playing = true;
     _captureEnabled = true;
     _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
@@ -217,21 +239,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         if (!_captureEnabled) return;
         final midi = frame.midi ??
             (frame.hz != null ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2 : null);
-        if (midi == null) return;
         final now =
             (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0)).clamp(-2.0, 3600.0);
-        _pitchBall.addSample(timeSec: now, midi: midi);
-        final filtered = _pitchBall.lastSampleMidi ?? midi;
+        final voiced =
+            midi != null && (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
+        double? filtered;
+        if (voiced) {
+          _pitchBall.addSample(timeSec: now, midi: midi!);
+          filtered = _pitchBall.lastSampleMidi ?? midi!;
+          _pitchState.updateVoiced(timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
+        } else {
+          _pitchState.updateUnvoiced(timeSec: now);
+        }
         final pf = PitchFrame(
           time: now,
           hz: frame.hz,
-          midi: filtered,
+          midi: voiced ? filtered : null,
           voicedProb: frame.voicedProb,
           rms: frame.rms,
         );
-        _tail.add(pf);
         _captured.add(pf);
-        _trimTail();
       });
     }
     await _playReference();
@@ -252,6 +279,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _recording = null;
     await _synth.stop();
     _clock.pause();
+    _pitchState.reset();
+    _visualState.reset();
     await _saveLastTake(recordingResult?.audioPath);
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
@@ -292,8 +321,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final hz = 440.0 * math.pow(2.0, (midi - 69) / 12.0);
     _pitchBall.addSample(timeSec: t, midi: midi);
     final filtered = _pitchBall.lastSampleMidi ?? midi;
+    _pitchState.updateVoiced(timeSec: t, pitchHz: hz, pitchMidi: filtered);
+    _visualState.update(timeSec: t, pitchHz: hz, pitchMidi: filtered, voiced: true);
     final pf = PitchFrame(time: t, hz: hz, midi: filtered);
-    _tail.add(pf);
     _captured.add(pf);
   }
 
@@ -476,7 +506,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     pitchTail: _tail,
                     time: _time,
                     liveMidi: _liveMidi,
-                    pitchTailTimeOffsetSec: -_pitchInputLatencyMs / 1000.0,
+                    pitchTailTimeOffsetSec: 0,
                     drawBackground: false,
                     midiMin: minMidi,
                     midiMax: maxMidi,

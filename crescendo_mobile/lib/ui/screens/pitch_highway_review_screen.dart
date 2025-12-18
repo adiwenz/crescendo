@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -10,6 +12,7 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../../utils/performance_clock.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -33,11 +36,16 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
+  final PerformanceClock _clock = PerformanceClock();
   Ticker? _ticker;
-  Duration? _lastTick;
   bool _playing = false;
+  StreamSubscription<Duration>? _audioPosSub;
+  double? _audioPositionSec;
+  bool _audioStarted = false;
+  late final double _audioLatencyMs;
   late final List<ReferenceNote> _notes;
   late final double _durationSec;
+  final double _leadInSec = 2.0;
 
   @override
   void initState() {
@@ -51,11 +59,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _durationSec = math.max(widget.lastTake.durationSec, specDuration) +
         AudioSynthService.tailSeconds;
     _ticker = createTicker(_onTick);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _clock.setAudioPositionProvider(() => _audioPositionSec);
+    _clock.setLatencyCompensationMs(-_audioLatencyMs);
   }
 
   @override
   void dispose() {
     _ticker?.dispose();
+    _audioPosSub?.cancel();
     _synth.stop();
     _time.dispose();
     super.dispose();
@@ -63,9 +75,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    final dt = elapsed - (_lastTick ?? elapsed);
-    _lastTick = elapsed;
-    final next = _time.value + dt.inMicroseconds / 1e6;
+    final next = _clock.nowSeconds();
     _time.value = next;
     if (next >= _durationSec) {
       _stop();
@@ -78,7 +88,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       _time.value = 0;
     }
     _playing = true;
-    _lastTick = null;
+    _audioPositionSec = null;
+    _audioStarted = false;
+    _clock.setLatencyCompensationMs(-_audioLatencyMs);
+    _clock.start(offsetSec: _time.value, freezeUntilAudio: true);
     _ticker?.start();
     await _playAudio();
     if (mounted) setState(() {});
@@ -88,7 +101,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (!_playing) return;
     _playing = false;
     _ticker?.stop();
-    _lastTick = null;
+    _clock.pause();
+    await _audioPosSub?.cancel();
+    _audioPosSub = null;
     await _synth.stop();
     if (mounted) setState(() {});
   }
@@ -99,6 +114,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       final file = File(audioPath);
       if (await file.exists()) {
         await _synth.playFile(audioPath);
+        await _audioPosSub?.cancel();
+        _audioPosSub = _synth.onPositionChanged.listen((pos) {
+          if (!_audioStarted && pos > Duration.zero) {
+            _audioStarted = true;
+          }
+          if (_audioStarted) {
+            _audioPositionSec = pos.inMilliseconds / 1000.0;
+          }
+        });
         return;
       }
     }
@@ -109,6 +133,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (_notes.isEmpty) return;
     final path = await _synth.renderReferenceNotes(_notes);
     await _synth.playFile(path);
+    await _audioPosSub?.cancel();
+    _audioPosSub = _synth.onPositionChanged.listen((pos) {
+      if (!_audioStarted && pos > Duration.zero) {
+        _audioStarted = true;
+      }
+      if (_audioStarted) {
+        _audioPositionSec = pos.inMilliseconds / 1000.0;
+      }
+    });
   }
 
   List<ReferenceNote> _buildReferenceNotes(
@@ -132,16 +165,16 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           final stepStart = seg.startMs + (durationMs * ratio).round();
           final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
           notes.add(ReferenceNote(
-            startSec: stepStart / 1000.0,
-            endSec: stepEnd / 1000.0,
+            startSec: stepStart / 1000.0 + _leadInSec,
+            endSec: stepEnd / 1000.0 + _leadInSec,
             midi: midi,
             lyric: seg.label,
           ));
         }
       } else {
         notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0,
-          endSec: seg.endMs / 1000.0,
+          startSec: seg.startMs / 1000.0 + _leadInSec,
+          endSec: seg.endMs / 1000.0 + _leadInSec,
           midi: seg.midiNote,
           lyric: seg.label,
         ));

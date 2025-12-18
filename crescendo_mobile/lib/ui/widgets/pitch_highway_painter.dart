@@ -145,6 +145,27 @@ class PitchHighwayPainter extends CustomPainter {
       _drawPitchTrail(canvas, size, currentTime, playheadX);
 
       if (smoothedMidi != null) {
+        assert(() {
+          if (pitchTail.isNotEmpty) {
+            final tailMidi = pitchTail.last.midi;
+            if (tailMidi != null) {
+              final tailY = PitchMath.midiToY(
+                midi: tailMidi,
+                height: size.height,
+                midiMin: midiMin,
+                midiMax: midiMax,
+              );
+              final ballY = PitchMath.midiToY(
+                midi: smoothedMidi,
+                height: size.height,
+                midiMin: midiMin,
+                midiMax: midiMax,
+              );
+              return (tailY - ballY).abs() < 0.1;
+            }
+          }
+          return true;
+        }());
         final y = PitchMath.midiToY(
           midi: smoothedMidi,
           height: size.height,
@@ -236,7 +257,6 @@ class PitchHighwayPainter extends CustomPainter {
     final tAdjusted = t + pitchTailTimeOffsetSec;
     const trailWindowSec = 3.0;
     const maxJumpPx = 60.0;
-    const resampleStep = 0.016;
     const maxGapSec = 0.12;
     const baseAlpha = 0.25;
 
@@ -246,8 +266,6 @@ class PitchHighwayPainter extends CustomPainter {
       if (f.time < tAdjusted - trailWindowSec || f.time > tAdjusted) continue;
       final midi = f.midi;
       if (midi == null) continue;
-      if (f.voicedProb != null && f.voicedProb! < 0.6) continue;
-      if (f.rms != null && f.rms! < 0.02) continue;
       final y = PitchMath.midiToY(
         midi: midi,
         height: size.height,
@@ -256,7 +274,8 @@ class PitchHighwayPainter extends CustomPainter {
       );
       if (lastY != null && (y - lastY!).abs() > maxJumpPx) continue;
       lastY = y;
-      raw.add(_PitchSample(time: f.time, y: y));
+      final voiced = (f.voicedProb ?? 1.0) >= 0.6 && (f.rms ?? 1.0) >= 0.02;
+      raw.add(_PitchSample(time: f.time, y: y, voiced: voiced));
     }
     if (raw.length < 2) {
       final live = liveMidi?.value;
@@ -291,34 +310,27 @@ class PitchHighwayPainter extends CustomPainter {
       return;
     }
 
-    final median = _medianFilter(raw, window: 5);
-    final smoothed = _emaFilter(median, alpha: 0.15);
-    final resampled = _resample(smoothed, step: resampleStep, maxGap: maxGapSec);
-    if (resampled.length < 2) return;
+    if (raw.length < 2) return;
 
-    for (var i = 1; i < resampled.length - 1; i++) {
-      final prev = resampled[i - 1];
-      final curr = resampled[i];
-      final next = resampled[i + 1];
-      if ((curr.time - prev.time) > maxGapSec || (next.time - curr.time) > maxGapSec) {
-        continue;
-      }
+    for (var i = 1; i < raw.length; i++) {
+      final prev = raw[i - 1];
+      final curr = raw[i];
+      if ((curr.time - prev.time) > maxGapSec) continue;
       final age = (tAdjusted - curr.time).clamp(0.0, trailWindowSec);
       final fade = 1 - (age / trailWindowSec);
-      final alpha = (baseAlpha * fade).clamp(0.0, baseAlpha);
-      if (alpha <= 0) continue;
+      final base = (baseAlpha * fade).clamp(0.0, baseAlpha);
+      if (base <= 0) continue;
+      final voicedFactor = curr.voiced ? 1.0 : 0.35;
+      final alpha = (base * voicedFactor).clamp(0.0, baseAlpha);
       final xPrev = playheadX + (prev.time - tAdjusted) * pixelsPerSecond;
       final xCurr = playheadX + (curr.time - tAdjusted) * pixelsPerSecond;
-      final xNext = playheadX + (next.time - tAdjusted) * pixelsPerSecond;
-      final start = Offset((xPrev + xCurr) / 2, (prev.y + curr.y) / 2);
-      final end = Offset((xCurr + xNext) / 2, (curr.y + next.y) / 2);
-      if (end.dx < -16 || start.dx > size.width + 16) continue;
+      if (xCurr < -16 || xPrev > size.width + 16) continue;
       final glowPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 18.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(alpha * 0.55)
+        ..color = colors.textPrimary.withOpacity(alpha * 0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
@@ -326,71 +338,9 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..color = colors.textPrimary.withOpacity(alpha);
-      final path = Path()
-        ..moveTo(start.dx, start.dy)
-        ..quadraticBezierTo(xCurr, curr.y, end.dx, end.dy);
-      canvas.drawPath(path, glowPaint);
-      canvas.drawPath(path, corePaint);
+      canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), glowPaint);
+      canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), corePaint);
     }
-  }
-
-  List<_PitchSample> _medianFilter(List<_PitchSample> samples, {int window = 5}) {
-    final radius = window ~/ 2;
-    final filtered = <_PitchSample>[];
-    for (var i = 0; i < samples.length; i++) {
-      final ys = <double>[];
-      for (var j = i - radius; j <= i + radius; j++) {
-        if (j < 0 || j >= samples.length) continue;
-        ys.add(samples[j].y);
-      }
-      ys.sort();
-      final mid = ys[ys.length ~/ 2];
-      filtered.add(_PitchSample(time: samples[i].time, y: mid));
-    }
-    return filtered;
-  }
-
-  List<_PitchSample> _emaFilter(List<_PitchSample> samples, {double alpha = 0.15}) {
-    if (samples.isEmpty) return samples;
-    final filtered = <_PitchSample>[];
-    var last = samples.first.y;
-    filtered.add(samples.first);
-    for (var i = 1; i < samples.length; i++) {
-      final next = alpha * samples[i].y + (1 - alpha) * last;
-      last = next;
-      filtered.add(_PitchSample(time: samples[i].time, y: next));
-    }
-    return filtered;
-  }
-
-  List<_PitchSample> _resample(
-    List<_PitchSample> samples, {
-    double step = 0.016,
-    double maxGap = 0.12,
-  }) {
-    final resampled = <_PitchSample>[];
-    final start = samples.first.time;
-    final end = samples.last.time;
-    var target = start;
-    var idx = 0;
-    while (target <= end && idx < samples.length - 1) {
-      while (idx < samples.length - 1 && samples[idx + 1].time < target) {
-        idx += 1;
-      }
-      final a = samples[idx];
-      final b = samples[idx + 1];
-      final span = (b.time - a.time);
-      if (span > maxGap) {
-        target = b.time;
-        idx += 1;
-        continue;
-      }
-      final ratio = span <= 0 ? 0.0 : (target - a.time) / span;
-      final y = a.y + (b.y - a.y) * ratio.clamp(0.0, 1.0);
-      resampled.add(_PitchSample(time: target, y: y));
-      target += step;
-    }
-    return resampled;
   }
 
   @override
@@ -410,6 +360,11 @@ class PitchHighwayPainter extends CustomPainter {
 class _PitchSample {
   final double time;
   final double y;
+  final bool voiced;
 
-  const _PitchSample({required this.time, required this.y});
+  const _PitchSample({
+    required this.time,
+    required this.y,
+    required this.voiced,
+  });
 }
