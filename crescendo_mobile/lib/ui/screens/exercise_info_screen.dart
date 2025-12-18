@@ -301,6 +301,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     if (baseSpec == null || baseSpec.segments.isEmpty) return base;
     final stitched = <PitchSegment>[];
     var cursorMs = 0;
+    const gapMs = 1000;
     for (final instance in instances) {
       final applied = instance.apply(base);
       final spec = applied.highwaySpec;
@@ -318,7 +319,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         ));
         if (seg.endMs > localEnd) localEnd = seg.endMs;
       }
-      cursorMs += localEnd;
+      cursorMs += localEnd + gapMs;
     }
     final durationSec = (cursorMs / 1000.0).round();
     return VocalExercise(
