@@ -46,7 +46,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
 
   @override
   void dispose() {
-    _synth.stop();
+    _synth.dispose();
     super.dispose();
   }
 

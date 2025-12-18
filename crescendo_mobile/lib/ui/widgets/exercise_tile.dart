@@ -9,6 +9,7 @@ class ExerciseTile extends StatelessWidget {
   final String? chipLabel;
   final Widget? preview;
   final Widget? badge;
+  final Widget? footer;
   final VoidCallback onTap;
 
   const ExerciseTile({
@@ -19,6 +20,7 @@ class ExerciseTile extends StatelessWidget {
     this.chipLabel,
     this.preview,
     this.badge,
+    this.footer,
     required this.onTap,
   });
 
@@ -123,7 +125,7 @@ class ExerciseTile extends StatelessWidget {
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.start,
                         children: [
                           Row(
                             children: [
@@ -140,8 +142,8 @@ class ExerciseTile extends StatelessWidget {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 4),
                           if (subtitle != null) ...[
-                            const SizedBox(height: 4),
                             Text(
                               subtitle!,
                               maxLines: 1,
@@ -175,6 +177,20 @@ class ExerciseTile extends StatelessWidget {
                               ),
                             ),
                           ],
+                          if (footer != null)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: ClipRect(
+                                  child: SingleChildScrollView(
+                                    physics:
+                                        const ClampingScrollPhysics(),
+                                    child: footer!,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (footer == null) const Spacer(),
                         ],
                       ),
                     ),

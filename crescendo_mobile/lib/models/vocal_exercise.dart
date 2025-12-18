@@ -1,5 +1,6 @@
 import 'exercise_note_segment.dart';
 import 'pitch_highway_spec.dart';
+import 'pitch_segment.dart';
 
 enum ExerciseType {
   pitchHighway,
@@ -47,6 +48,39 @@ class VocalExercise {
     this.highwaySpec,
   })  : iconKey = iconKey ?? _defaultIconKey(type),
         estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds);
+
+  VocalExercise transpose(int semitones) {
+    if (semitones == 0 || highwaySpec == null) return this;
+    final segments = highwaySpec!.segments
+        .map(
+          (s) => PitchSegment(
+            startMs: s.startMs,
+            endMs: s.endMs,
+            midiNote: s.midiNote + semitones,
+            toleranceCents: s.toleranceCents,
+            label: s.label,
+            startMidi: s.startMidi != null ? s.startMidi! + semitones : null,
+            endMidi: s.endMidi != null ? s.endMidi! + semitones : null,
+          ),
+        )
+        .toList();
+    return VocalExercise(
+      id: id,
+      name: name,
+      categoryId: categoryId,
+      type: type,
+      description: description,
+      purpose: purpose,
+      difficulty: difficulty,
+      tags: tags,
+      createdAt: createdAt,
+      iconKey: iconKey,
+      estimatedMinutes: estimatedMinutes,
+      durationSeconds: durationSeconds,
+      reps: reps,
+      highwaySpec: PitchHighwaySpec(segments: segments),
+    );
+  }
 
   static String _defaultIconKey(ExerciseType type) {
     return switch (type) {

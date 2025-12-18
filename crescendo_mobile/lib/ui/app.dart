@@ -5,7 +5,7 @@ import 'screens/settings_screen.dart';
 import 'screens/pitch_highway_screen.dart';
 import 'screens/piano_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
-import 'screens/find_range_screen.dart';
+import 'screens/find_range_lowest_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
@@ -34,7 +34,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
         '/library': (_) => const ExerciseCategoriesScreen(),
         '/piano': (_) => const PianoPitchScreen(),
         '/progress': (_) => const ProgressHomeScreen(),
-        '/settings/find_range': (_) => const FindRangeScreen(),
+        '/settings/find_range': (_) => const FindRangeLowestScreen(),
         '/settings/subscription': (_) => const SubscriptionScreen(),
         '/settings/subscription_features': (_) => const SubscriptionFeaturesScreen(),
       },

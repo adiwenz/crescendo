@@ -17,20 +17,7 @@ class AudioSynthService {
 
   AudioSynthService({this.sampleRate = 44100}) : _player = AudioPlayer() {
     _player.setReleaseMode(ReleaseMode.stop);
-    _player.setAudioContext(
-      AudioContext(
-        iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.playback,
-          options: {
-            AVAudioSessionOptions.mixWithOthers,
-          },
-        ),
-        android: AudioContextAndroid(
-          contentType: AndroidContentType.music,
-          audioFocus: AndroidAudioFocus.gain,
-        ),
-      ),
-    );
+    _applyAudioContext();
   }
 
   Future<String> renderReferenceNotes(List<ReferenceNote> notes) async {
@@ -83,12 +70,13 @@ class AudioSynthService {
     final size = await file.length();
     if (size <= 0) return;
     await _player.stop();
-    await _player.release();
+    await _applyAudioContext();
     await _player.setVolume(1.0);
     try {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) return;
-      await _player.play(BytesSource(bytes, mimeType: 'audio/wav'));
+      await _player.setSourceBytes(bytes, mimeType: 'audio/wav');
+      await _player.resume();
     } on PlatformException {
       await _player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
     } on AudioPlayerException {
@@ -99,6 +87,28 @@ class AudioSynthService {
   Stream<void> get onComplete => _player.onPlayerComplete;
 
   Future<void> stop() => _player.stop();
+
+  Future<void> dispose() async {
+    await _player.stop();
+    await _player.dispose();
+  }
+
+  Future<void> _applyAudioContext() async {
+    await _player.setAudioContext(
+      AudioContext(
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: {
+            AVAudioSessionOptions.mixWithOthers,
+          },
+        ),
+        android: AudioContextAndroid(
+          contentType: AndroidContentType.music,
+          audioFocus: AndroidAudioFocus.gain,
+        ),
+      ),
+    );
+  }
 
   double _midiToHz(double midi) => 440.0 * pow(2.0, (midi - 69.0) / 12.0);
 
