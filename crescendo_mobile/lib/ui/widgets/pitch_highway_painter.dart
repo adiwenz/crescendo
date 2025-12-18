@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
 import '../../utils/pitch_math.dart';
+import '../theme/app_theme.dart';
 
 enum PitchMatch { good, near, off }
 
@@ -42,19 +43,32 @@ class PitchHighwayPainter extends CustomPainter {
     if (drawBackground ?? true) {
       final bg = Paint()
         ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            Color(0xFFFFD6B3),
-            Color(0xFFFFC7C2),
-            Color(0xFFF8B3DD),
+            AppColors.bgTop,
+            AppColors.bgBottom,
           ],
         ).createShader(Offset.zero & size);
       canvas.drawRect(Offset.zero & size, bg);
     }
 
+    final gridPaint = Paint()
+      ..color = AppColors.divider
+      ..strokeWidth = 1;
+    final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
+    for (var midi = midiMin; midi <= midiMax; midi += gridStep) {
+      final y = PitchMath.midiToY(
+        midi: midi.toDouble(),
+        height: size.height,
+        midiMin: midiMin,
+        midiMax: midiMax,
+      );
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
     final playheadX = size.width * playheadFraction;
-    final noteColor = Colors.white.withOpacity(0.45);
+    final noteColor = AppColors.textPrimary.withOpacity(0.55);
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
@@ -81,21 +95,25 @@ class PitchHighwayPainter extends CustomPainter {
       final Color barColor;
       if (identical(n, currentNote)) {
         barColor = switch (currentStatus) {
-          PitchMatch.good => Colors.cyanAccent.withOpacity(0.85),
-          PitchMatch.near => Colors.amberAccent.withOpacity(0.85),
-          PitchMatch.off => Colors.pinkAccent.withOpacity(0.85),
+          PitchMatch.good => AppColors.textPrimary.withOpacity(0.95),
+          PitchMatch.near => AppColors.textPrimary.withOpacity(0.8),
+          PitchMatch.off => AppColors.textPrimary.withOpacity(0.6),
         };
       } else {
         barColor = noteColor;
       }
+      final glowPaint = Paint()
+        ..color = AppColors.glow
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       final paint = Paint()..color = barColor;
+      canvas.drawRRect(rect, glowPaint);
       canvas.drawRRect(rect, paint);
 
       if (n.lyric != null && n.lyric!.isNotEmpty) {
         final tp = TextPainter(
           text: TextSpan(
             text: n.lyric,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 12),
           ),
           textDirection: TextDirection.ltr,
         )..layout(maxWidth: math.max(0, endX - startX - 8));
@@ -118,23 +136,23 @@ class PitchHighwayPainter extends CustomPainter {
           head,
           16,
           Paint()
-            ..color = Colors.white.withOpacity(0.28)
+            ..color = AppColors.glow
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
         );
         canvas.drawCircle(
           head,
           10,
           Paint()
-            ..color = Colors.white.withOpacity(0.4)
+            ..color = AppColors.textPrimary.withOpacity(0.5)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
         );
-        canvas.drawCircle(head, 7, Paint()..color = Colors.white);
+        canvas.drawCircle(head, 7, Paint()..color = AppColors.textPrimary);
       }
     }
 
     if (showPlayheadLine) {
       final shadowPaint = Paint()
-        ..color = Colors.black.withOpacity(0.08)
+        ..color = Colors.black.withOpacity(0.3)
         ..strokeWidth = 2.0;
       canvas.drawLine(
         Offset(playheadX + 0.5, 0),
@@ -142,7 +160,7 @@ class PitchHighwayPainter extends CustomPainter {
         shadowPaint,
       );
       final playheadPaint = Paint()
-        ..color = Colors.white.withOpacity(0.85)
+        ..color = AppColors.textPrimary.withOpacity(0.8)
         ..strokeWidth = 2.0;
       canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
     }
@@ -249,14 +267,14 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 18.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = Colors.white.withOpacity(alpha * 0.55)
+        ..color = AppColors.textPrimary.withOpacity(alpha * 0.55)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = Colors.white.withOpacity(alpha);
+        ..color = AppColors.textPrimary.withOpacity(alpha);
       final path = Path()
         ..moveTo(start.dx, start.dy)
         ..quadraticBezierTo(xCurr, curr.y, end.dx, end.dy);

@@ -12,6 +12,8 @@ import '../../services/recording_service.dart';
 import '../../services/scoring_service.dart';
 import '../../services/storage/take_repository.dart';
 import '../state.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
 import '../widgets/pitch_highway_painter.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
@@ -233,26 +235,12 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    const bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0xFFFFF3E2),
-        Color(0xFFFFEEF1),
-        Color(0xFFFFEAF6),
-      ],
-    );
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Pitch Highway'),
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
       ),
-      body: Container(
-        decoration: const BoxDecoration(gradient: bgGradient),
+      body: AppBackground(
         child: SafeArea(
           bottom: false,
           child: GestureDetector(
@@ -277,7 +265,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                  const Spacer(),
+                    const Spacer(),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -285,8 +273,10 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                         children: [
                           ValueListenableBuilder<double>(
                             valueListenable: _timeNotifier,
-                            builder: (_, v, __) =>
-                                Text(_formatTime(v), style: const TextStyle(color: Colors.white70)),
+                            builder: (_, v, __) => Text(
+                              _formatTime(v),
+                              style: const TextStyle(color: AppColors.textSecondary),
+                            ),
                           ),
                           Expanded(
                             child: Padding(
@@ -294,7 +284,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                               child: Container(
                                 height: 6,
                                 decoration: BoxDecoration(
-                                  color: Colors.white30,
+                                  color: AppColors.glassFill,
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 alignment: Alignment.centerLeft,
@@ -307,7 +297,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                                       child: Container(
                                         height: 6,
                                         decoration: BoxDecoration(
-                                          color: Colors.white,
+                                          color: AppColors.textPrimary,
                                           borderRadius: BorderRadius.circular(3),
                                         ),
                                       ),
@@ -317,7 +307,10 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                               ),
                             ),
                           ),
-                          Text(_formatTime(_totalDuration), style: const TextStyle(color: Colors.white70)),
+                          Text(
+                            _formatTime(_totalDuration),
+                            style: const TextStyle(color: AppColors.textSecondary),
+                          ),
                         ],
                       ),
                     ),

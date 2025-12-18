@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class ProgressScoreRing extends StatelessWidget {
   final double? score;
 
@@ -19,12 +21,17 @@ class ProgressScoreRing extends StatelessWidget {
           child: CircularProgressIndicator(
             value: value,
             strokeWidth: 8,
-            backgroundColor: Colors.grey.shade200,
+            backgroundColor: AppColors.glassBorder,
+            valueColor:
+                const AlwaysStoppedAnimation<Color>(AppColors.textPrimary),
           ),
         ),
         Text(
           score == null ? '—' : score!.toStringAsFixed(0),
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
         ),
       ],
     );
@@ -38,7 +45,7 @@ class ProgressLineChart extends StatelessWidget {
   const ProgressLineChart({
     super.key,
     required this.values,
-    this.lineColor = const Color(0xFF5C6BC0),
+    this.lineColor = AppColors.textPrimary,
   });
 
   @override
@@ -57,7 +64,7 @@ class ProgressSparkline extends StatelessWidget {
   const ProgressSparkline({
     super.key,
     required this.values,
-    this.color = const Color(0xFF5C6BC0),
+    this.color = AppColors.textPrimary,
   });
 
   @override
@@ -81,7 +88,7 @@ class ProgressBarChart extends StatelessWidget {
   const ProgressBarChart({
     super.key,
     required this.values,
-    this.color = const Color(0xFF5C6BC0),
+    this.color = AppColors.textPrimary,
   });
 
   @override
@@ -115,7 +122,7 @@ class _LineChartPainter extends CustomPainter {
 
     if (showBaseline) {
       final baseline = Paint()
-        ..color = Colors.grey.shade300
+        ..color = AppColors.divider
         ..strokeWidth = 1;
       canvas.drawLine(
         Offset(padding, padding + chartHeight),

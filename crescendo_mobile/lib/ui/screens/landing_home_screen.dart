@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
+import '../widgets/frosted_card.dart';
+
 class LandingHomeScreen extends StatelessWidget {
   const LandingHomeScreen({super.key});
 
@@ -16,45 +20,49 @@ class LandingHomeScreen extends StatelessWidget {
       _NavRow(label: 'Progress', onTap: () => _open(context, '/progress')),
     ];
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              const Spacer(),
-              SizedBox(
-                width: 120,
-                height: 120,
-                child: Image.asset(
-                  'assets/icon.png',
-                  fit: BoxFit.contain,
+      body: AppBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Spacer(),
+                SizedBox(
+                  width: 120,
+                  height: 120,
+                  child: Image.asset(
+                    'assets/icon.png',
+                    fit: BoxFit.contain,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Crescendo',
-                style:
-                    Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Grow your voice with guided exercises and simple tools.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
-              ),
-              const Spacer(),
-              Column(
-                children: entries
-                    .map(
-                      (row) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: row,
-                      ),
-                    )
-                    .toList(),
-              ),
-              const Spacer(),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  'Crescendo',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Grow your voice with guided exercises and simple tools.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const Spacer(),
+                Column(
+                  children: entries
+                      .map(
+                        (row) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: row,
+                        ),
+                      )
+                      .toList(),
+                ),
+                const Spacer(),
+              ],
+            ),
           ),
         ),
       ),
@@ -71,35 +79,21 @@ class _NavRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
+      child: FrostedCard(
+        borderRadius: BorderRadius.circular(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Text(
+              label,
+              style:
+                  Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
+            const Spacer(),
+            const Icon(Icons.chevron_right, color: AppColors.textPrimary),
           ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
         ),
       ),
     );

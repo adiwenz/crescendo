@@ -9,6 +9,7 @@ import 'screens/find_range_lowest_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
+import 'theme/app_theme.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -24,10 +25,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Crescendo Mobile',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.build(),
       routes: {
         '/': (_) => const LandingHomeScreen(),
         '/settings': (_) => const SettingsScreen(),

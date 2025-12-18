@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../utils/pitch_math.dart';
+import '../theme/app_theme.dart';
 
 class PitchContourPainter extends CustomPainter {
   final List<PitchFrame> frames;
@@ -40,14 +41,14 @@ class PitchContourPainter extends CustomPainter {
       ..strokeWidth = 18.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = Colors.white.withOpacity(0.35)
+      ..color = AppColors.textPrimary.withOpacity(0.35)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
     final corePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 14.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = Colors.white.withOpacity(0.85);
+      ..color = AppColors.textPrimary.withOpacity(0.85);
 
     final path = Path();
     bool hasStarted = false;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/exercise_note_segment.dart';
 import '../../models/vocal_exercise.dart';
+import '../theme/app_theme.dart';
 
 class ExercisePreviewMini extends StatelessWidget {
   final VocalExercise exercise;
@@ -20,16 +21,15 @@ class ExercisePreviewMini extends StatelessWidget {
     final segments = exercise.buildPreviewSegments();
     final totalDuration = exercise.highwaySpec?.totalMs ?? 0;
     final totalSec = totalDuration > 0 ? totalDuration / 1000.0 : _sumDuration(segments);
-    final base = Theme.of(context).colorScheme.primary;
-    final accent = Color.lerp(base, const Color(0xFFF59B73), 0.6)!.withOpacity(0.9);
+    final accent = AppColors.textPrimary.withOpacity(0.85);
     return CustomPaint(
       painter: _ExercisePreviewPainter(
         segments: segments,
         totalDurationSec: totalSec,
         barColor: accent,
-        lineColor: const Color(0xFFFFE3BA).withOpacity(0.9),
-        backgroundStart: const Color(0xFFFFF1E8),
-        backgroundEnd: const Color(0xFFFFE8F0),
+        lineColor: AppColors.textPrimary.withOpacity(0.35),
+        backgroundStart: Colors.transparent,
+        backgroundEnd: Colors.transparent,
       ),
       child: SizedBox(height: height),
     );
@@ -69,10 +69,7 @@ class _ExercisePreviewPainter extends CustomPainter {
         end: Alignment.bottomRight,
         colors: [backgroundStart, backgroundEnd],
       ).createShader(Offset.zero & size);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(16)),
-      bg,
-    );
+    canvas.drawRect(Offset.zero & size, bg);
 
     final lineX = size.width * 0.55;
     final linePaint = Paint()

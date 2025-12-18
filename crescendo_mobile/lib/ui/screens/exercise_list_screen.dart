@@ -6,6 +6,8 @@ import '../../services/exercise_repository.dart';
 import '../../services/unlock_service.dart';
 import '../../services/range_exercise_generator.dart';
 import '../../services/range_store.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
 import '../widgets/exercise_preview_mini.dart';
 import '../widgets/exercise_tile.dart';
 import 'exercise_info_screen.dart';
@@ -30,76 +32,86 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
     final unlockFuture = _loadUnlocks(exercises);
     final rangeFuture = RangeStore().getRange();
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(category.title),
       ),
-      body: FutureBuilder<(Map<String, int>, (int?, int?))>(
-        future: Future.wait([unlockFuture, rangeFuture]).then(
-          (values) => (values[0] as Map<String, int>, values[1] as (int?, int?)),
+      body: AppBackground(
+        child: SafeArea(
+          child: FutureBuilder<(Map<String, int>, (int?, int?))>(
+            future: Future.wait([unlockFuture, rangeFuture]).then(
+              (values) => (values[0] as Map<String, int>, values[1] as (int?, int?)),
+            ),
+            builder: (context, snapshot) {
+              final unlocks = snapshot.data?.$1 ?? const {};
+              final range = snapshot.data?.$2 ?? (null, null);
+              final lowest = range.$1;
+              final highest = range.$2;
+              final generator = RangeExerciseGenerator();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (category.description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Text(
+                        category.description,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                    ),
+                  Expanded(
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1,
+                      ),
+                      itemCount: exercises.length,
+                      itemBuilder: (context, index) {
+                        final exercise = exercises[index];
+                        final badge = exercise.type == ExerciseType.pitchHighway
+                            ? _buildUnlockBadge(context, unlocks[exercise.id] ?? 0)
+                            : null;
+                        final instances =
+                            (exercise.type == ExerciseType.pitchHighway &&
+                                    lowest != null &&
+                                    highest != null)
+                                ? generator.generate(
+                                    exercise: exercise,
+                                    lowestMidi: lowest,
+                                    highestMidi: highest)
+                                : const <ExerciseInstance>[];
+                        return ExerciseTile(
+                          title: exercise.name,
+                          subtitle: _typeLabel(exercise.type),
+                          iconKey: exercise.iconKey,
+                          chipLabel: _typeLabel(exercise.type),
+                          preview: ExercisePreviewMini(exercise: exercise),
+                          badge: badge,
+                          onTap: () => _openExercise(context, exercise),
+                          footer: instances.isNotEmpty
+                              ? _StepList(
+                                  exercise: exercise,
+                                  instances: instances,
+                                  onStart: (inst) =>
+                                      _startInstance(context, exercise, inst),
+                                )
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
-        builder: (context, snapshot) {
-          final unlocks = snapshot.data?.$1 ?? const {};
-          final range = snapshot.data?.$2 ?? (null, null);
-          final lowest = range.$1;
-          final highest = range.$2;
-          final generator = RangeExerciseGenerator();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (category.description.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text(
-                    category.description,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[700],
-                        ),
-                  ),
-                ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1,
-                  ),
-                  itemCount: exercises.length,
-                  itemBuilder: (context, index) {
-                    final exercise = exercises[index];
-                    final badge = exercise.type == ExerciseType.pitchHighway
-                        ? _buildUnlockBadge(context, unlocks[exercise.id] ?? 0)
-                        : null;
-                    final instances = (exercise.type == ExerciseType.pitchHighway &&
-                            lowest != null &&
-                            highest != null)
-                        ? generator.generate(
-                            exercise: exercise, lowestMidi: lowest, highestMidi: highest)
-                        : const <ExerciseInstance>[];
-                    return ExerciseTile(
-                      title: exercise.name,
-                      subtitle: _typeLabel(exercise.type),
-                      iconKey: exercise.iconKey,
-                      chipLabel: _typeLabel(exercise.type),
-                      preview: ExercisePreviewMini(exercise: exercise),
-                      badge: badge,
-                      onTap: () => _openExercise(context, exercise),
-                      footer: instances.isNotEmpty
-                          ? _StepList(
-                              exercise: exercise,
-                              instances: instances,
-                              onStart: (inst) => _startInstance(context, exercise, inst),
-                            )
-                          : null,
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
@@ -142,15 +154,9 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: AppColors.glassFill,
         borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: AppColors.glassBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -159,11 +165,12 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
             'Lvl $level',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
           ),
           if (locked) ...[
             const SizedBox(width: 4),
-            const Icon(Icons.lock, size: 12),
+            const Icon(Icons.lock, size: 12, color: AppColors.textPrimary),
           ],
         ],
       ),
@@ -207,7 +214,10 @@ class _StepList extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           'Step series',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
         ),
         ...instances.map(
           (i) => InkWell(
@@ -216,12 +226,15 @@ class _StepList extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.play_arrow, size: 16),
+                  const Icon(Icons.play_arrow, size: 16, color: AppColors.textPrimary),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       i.label,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.textSecondary),
                     ),
                   ),
                 ],

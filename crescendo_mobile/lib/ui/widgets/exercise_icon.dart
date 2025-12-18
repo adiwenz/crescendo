@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class ExerciseIcon extends StatelessWidget {
   final String iconKey;
   final double size;
@@ -17,7 +19,7 @@ class ExerciseIcon extends StatelessWidget {
     return Icon(
       _iconForKey(iconKey),
       size: size,
-      color: color ?? Theme.of(context).colorScheme.primary,
+      color: color ?? AppColors.textPrimary,
     );
   }
 

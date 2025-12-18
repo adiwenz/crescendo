@@ -10,7 +10,10 @@ import '../../services/exercise_repository.dart';
 import '../../services/progress_service.dart';
 import '../../services/progress_stats.dart';
 import '../progress/progress_range.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
 import '../widgets/exercise_icon.dart';
+import '../widgets/frosted_card.dart';
 import '../widgets/progress_charts.dart';
 import 'exercise_categories_screen.dart';
 import 'progress_category_screen.dart';
@@ -38,104 +41,113 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
     final categories = _exerciseRepo.getCategories();
     final exercises = _exerciseRepo.getExercises();
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Progress'),
       ),
-      body: StreamBuilder<ProgressSnapshot<ExerciseAttempt>>(
-        stream: _progress.stream,
-        initialData: _progress.snapshot(),
-        builder: (context, snapshot) {
-          final attempts = snapshot.data?.attempts ?? [];
-          if (attempts.isEmpty) {
-            return _EmptyProgressState(onStart: _openExercises);
-          }
-          final now = DateTime.now();
-          final filtered = filterAttemptsByWindow(
-            attempts,
-            now: now,
-            window: _range.window,
-          );
-          final overall = computeOverallStats(attempts: filtered);
-          final weekAttempts = filterAttemptsByWindow(
-            attempts,
-            now: now,
-            window: const Duration(days: 7),
-          );
-          final weekAvg = weekAttempts.isEmpty
-              ? null
-              : weekAttempts.map((a) => a.overallScore).reduce((a, b) => a + b) /
-                  weekAttempts.length;
-          final weekBest = weekAttempts.isEmpty
-              ? null
-              : weekAttempts.map((a) => a.overallScore).reduce((a, b) => a > b ? a : b);
-          final sorted = List<ExerciseAttempt>.from(filtered)
-            ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
-          final trendScores = sorted.map((a) => a.overallScore).toList();
-          final trend = trendScores.length > 30
-              ? trendScores.sublist(trendScores.length - 30)
-              : trendScores;
+      body: AppBackground(
+        child: SafeArea(
+          child: StreamBuilder<ProgressSnapshot<ExerciseAttempt>>(
+            stream: _progress.stream,
+            initialData: _progress.snapshot(),
+            builder: (context, snapshot) {
+              final attempts = snapshot.data?.attempts ?? [];
+              if (attempts.isEmpty) {
+                return _EmptyProgressState(onStart: _openExercises);
+              }
+              final now = DateTime.now();
+              final filtered = filterAttemptsByWindow(
+                attempts,
+                now: now,
+                window: _range.window,
+              );
+              final overall = computeOverallStats(attempts: filtered);
+              final weekAttempts = filterAttemptsByWindow(
+                attempts,
+                now: now,
+                window: const Duration(days: 7),
+              );
+              final weekAvg = weekAttempts.isEmpty
+                  ? null
+                  : weekAttempts
+                          .map((a) => a.overallScore)
+                          .reduce((a, b) => a + b) /
+                      weekAttempts.length;
+              final weekBest = weekAttempts.isEmpty
+                  ? null
+                  : weekAttempts
+                      .map((a) => a.overallScore)
+                      .reduce((a, b) => a > b ? a : b);
+              final sorted = List<ExerciseAttempt>.from(filtered)
+                ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+              final trendScores = sorted.map((a) => a.overallScore).toList();
+              final trend = trendScores.length > 30
+                  ? trendScores.sublist(trendScores.length - 30)
+                  : trendScores;
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _RangeToggle(
-                value: _range,
-                onChanged: (next) => setState(() => _range = next),
-              ),
-              const SizedBox(height: 12),
-              _SummaryCard(
-                weekCount: weekAttempts.length,
-                weekAvg: weekAvg,
-                weekBest: weekBest,
-                overallScore: overall.score,
-              ),
-              const SizedBox(height: 16),
-              Text('Overall trend', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Container(
-                height: 140,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12),
-                  ],
-                ),
-                child: trend.isEmpty
-                    ? const Center(child: Text('No trend yet'))
-                    : ProgressLineChart(values: trend),
-              ),
-              const SizedBox(height: 20),
-              Text('Categories', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: categories.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1,
-                ),
-                itemBuilder: (context, index) {
-                  final category = categories[index];
-                  final stats = computeCategoryStats(
-                    categoryId: category.id,
-                    exercises: exercises,
-                    attempts: filtered,
-                  );
-                  return _CategoryCard(
-                    category: category,
-                    stats: stats,
-                    onTap: () => _openCategory(category, exercises),
-                  );
-                },
-              ),
-            ],
-          );
-        },
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _RangeToggle(
+                    value: _range,
+                    onChanged: (next) => setState(() => _range = next),
+                  ),
+                  const SizedBox(height: 12),
+                  _SummaryCard(
+                    weekCount: weekAttempts.length,
+                    weekAvg: weekAvg,
+                    weekBest: weekBest,
+                    overallScore: overall.score,
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Overall trend', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  FrostedCard(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      height: 140,
+                      child: trend.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No trend yet',
+                                style: TextStyle(color: AppColors.textSecondary),
+                              ),
+                            )
+                          : ProgressLineChart(values: trend),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Categories', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: categories.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1,
+                    ),
+                    itemBuilder: (context, index) {
+                      final category = categories[index];
+                      final stats = computeCategoryStats(
+                        categoryId: category.id,
+                        exercises: exercises,
+                        attempts: filtered,
+                      );
+                      return _CategoryCard(
+                        category: category,
+                        stats: stats,
+                        onTap: () => _openCategory(category, exercises),
+                      );
+                    },
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -201,13 +213,9 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return FrostedCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
-      ),
+      borderRadius: BorderRadius.circular(20),
       child: Row(
         children: [
           ProgressScoreRing(score: overallScore),
@@ -246,14 +254,10 @@ class _CategoryCard extends StatelessWidget {
     final scoreText = stats.score == null ? '—' : stats.score!.toStringAsFixed(0);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
+      borderRadius: BorderRadius.circular(20),
+      child: FrostedCard(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
-        ),
+        borderRadius: BorderRadius.circular(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -293,7 +297,7 @@ class _EmptyProgressState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.auto_graph, size: 48, color: Colors.black54),
+            const Icon(Icons.auto_graph, size: 48, color: AppColors.textSecondary),
             const SizedBox(height: 12),
             Text('Do an exercise to start tracking progress',
                 textAlign: TextAlign.center,

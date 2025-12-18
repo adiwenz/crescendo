@@ -16,6 +16,8 @@ import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
 import '../../services/unlock_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
 import '../widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
@@ -414,19 +416,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final midiValues = notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
     final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
-    const bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0xFFFFF3E2),
-        Color(0xFFFFEEF1),
-        Color(0xFFFFEAF6),
-      ],
-    );
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
-    return Container(
-      decoration: const BoxDecoration(gradient: bgGradient),
+    return AppBackground(
       child: SafeArea(
         bottom: false,
         child: GestureDetector(
@@ -457,7 +449,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       onTap: () => Navigator.of(context).maybePop(),
                       child: const Padding(
                         padding: EdgeInsets.all(8),
-                        child: Icon(Icons.arrow_back, color: Colors.white),
+                        child: Icon(Icons.arrow_back, color: AppColors.textPrimary),
                       ),
                     ),
                   ),
@@ -468,15 +460,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
+                    color: AppColors.glassFill,
                     borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppColors.glassBorder),
                   ),
                   child: Text(
                     difficultyLabel,
                     style: Theme.of(context)
                         .textTheme
                         .labelSmall
-                        ?.copyWith(color: Colors.white70, fontWeight: FontWeight.w600),
+                        ?.copyWith(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -487,10 +480,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
                       'Starting in $_prepRemaining...',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(color: Colors.white),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                 ),
@@ -501,10 +491,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     padding: const EdgeInsets.only(top: 12, right: 16),
                     child: Text(
                       'Score ${_scorePct!.toStringAsFixed(0)}%',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(color: Colors.white),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                 ),
@@ -520,7 +507,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           valueListenable: _time,
                           builder: (_, v, __) => Text(
                             _formatTime(v),
-                            style: const TextStyle(color: Colors.white70),
+                            style: const TextStyle(color: AppColors.textSecondary),
                           ),
                         ),
                         Expanded(
@@ -529,7 +516,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                             child: Container(
                               height: 6,
                               decoration: BoxDecoration(
-                                color: Colors.white30,
+                                color: AppColors.glassFill,
                                 borderRadius: BorderRadius.circular(3),
                               ),
                               alignment: Alignment.centerLeft,
@@ -542,7 +529,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                     child: Container(
                                       height: 6,
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
+                                        color: AppColors.textPrimary,
                                         borderRadius: BorderRadius.circular(3),
                                       ),
                                     ),
@@ -554,7 +541,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                         ),
                         Text(
                           _formatTime(totalDuration),
-                          style: const TextStyle(color: Colors.white70),
+                          style: const TextStyle(color: AppColors.textSecondary),
                         ),
                       ],
                     ),

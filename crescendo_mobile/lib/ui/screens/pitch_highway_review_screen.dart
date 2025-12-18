@@ -10,6 +10,8 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
 import '../widgets/pitch_highway_painter.dart';
 
@@ -153,26 +155,13 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     final midiValues = _notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
     final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
-    const bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0xFFFFF3E2),
-        Color(0xFFFFEEF1),
-        Color(0xFFFFEAF6),
-      ],
-    );
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text('Review last take'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
       ),
-      body: Container(
-        decoration: const BoxDecoration(gradient: bgGradient),
+      body: AppBackground(
         child: SafeArea(
           bottom: false,
           child: GestureDetector(
@@ -209,7 +198,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                     ),
                   ),
                 ),
-                Positioned.fill(
+                const Positioned.fill(
                   child: CustomPaint(
                     painter: _PlayheadPainter(playheadFraction: 0.45),
                   ),
@@ -232,11 +221,11 @@ class _PlayheadPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final x = size.width * playheadFraction;
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.08)
+      ..color = Colors.black.withOpacity(0.3)
       ..strokeWidth = 2.0;
     canvas.drawLine(Offset(x + 0.5, 0), Offset(x + 0.5, size.height), shadowPaint);
     final playheadPaint = Paint()
-      ..color = Colors.white.withOpacity(0.85)
+      ..color = AppColors.textPrimary.withOpacity(0.8)
       ..strokeWidth = 2.0;
     canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
   }
