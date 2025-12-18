@@ -204,6 +204,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             onPressed: selectionLocked
                 ? null
                 : () async {
+                    await _synth.stop();
                     await _startExercise(exercise);
                     await _loadLastScore();
                     await _loadLastTake();
