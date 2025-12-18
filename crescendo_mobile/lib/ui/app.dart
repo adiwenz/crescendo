@@ -9,7 +9,7 @@ import 'screens/find_range_lowest_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
-import '../screens/welcome/welcome_screen.dart';
+import '../screens/home/home_screen.dart';
 import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
@@ -68,7 +68,7 @@ class _RootScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      const WelcomeScreen(),
+      const HomeScreen(),
       const ExploreScreen(),
       const PianoPitchScreen(),
       const ProgressHomeScreen(),
@@ -84,7 +84,7 @@ class _RootScaffold extends StatelessWidget {
         type: BottomNavigationBarType.fixed,
         onTap: onTab,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Welcome'),
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
           BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
           BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
