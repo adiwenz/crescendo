@@ -287,6 +287,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     await _completeAndPop(score, {'intonation': score});
   }
 
+  Future<bool> _handleExit() async {
+    if (_playing || _preparing) {
+      await _stop();
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _saveLastTake(String? audioPath) async {
     if (_captured.isEmpty) return;
     final duration = _time.value.isFinite ? _time.value : 0.0;
@@ -493,147 +501,155 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _midiMax = maxMidi;
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
-    return AppBackground(
-      child: SafeArea(
-        bottom: false,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _playing || _preparing ? _stop : _start,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
-                    return CustomPaint(
-                      painter: PitchHighwayPainter(
-                        notes: notes,
-                        pitchTail: const [],
-                        tailPoints: _tailBuffer.points,
-                        time: _time,
-                        liveMidi: _liveMidi,
-                        pitchTailTimeOffsetSec: 0,
-                        drawBackground: false,
-                        midiMin: minMidi,
-                        midiMax: maxMidi,
-                        colors: colors,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (widget.showBackButton)
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => Navigator.of(context).maybePop(),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(Icons.arrow_back, color: colors.textPrimary),
-                      ),
-                    ),
-                  ),
-                ),
-              Positioned(
-                top: widget.showBackButton ? 52 : 12,
-                left: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: colors.surface2,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: colors.borderSubtle),
-                  ),
-                  child: Text(
-                    difficultyLabel,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              if (_preparing)
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      'Starting in $_prepRemaining...',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                ),
-              if (_scorePct != null)
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 12, right: 16),
-                    child: Text(
-                      'Score ${_scorePct!.toStringAsFixed(0)}%',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        ValueListenableBuilder<double>(
-                          valueListenable: _time,
-                          builder: (_, v, __) => Text(
-                            _formatTime(v),
-                            style: TextStyle(color: colors.textSecondary),
-                          ),
+    return WillPopScope(
+      onWillPop: _handleExit,
+      child: AppBackground(
+        child: SafeArea(
+          bottom: false,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _playing || _preparing ? _stop : _start,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+                      return CustomPaint(
+                        painter: PitchHighwayPainter(
+                          notes: notes,
+                          pitchTail: const [],
+                          tailPoints: _tailBuffer.points,
+                          time: _time,
+                          liveMidi: _liveMidi,
+                          pitchTailTimeOffsetSec: 0,
+                          drawBackground: false,
+                          midiMin: minMidi,
+                          midiMax: maxMidi,
+                          colors: colors,
                         ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Container(
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: colors.surface2,
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                              alignment: Alignment.centerLeft,
-                              child: ValueListenableBuilder<double>(
-                                valueListenable: _time,
-                                builder: (_, v, __) {
-                                  final pct = (v / totalDuration).clamp(0.0, 1.0);
-                                  return FractionallySizedBox(
-                                    widthFactor: pct,
-                                    child: Container(
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color: colors.blueAccent,
-                                        borderRadius: BorderRadius.circular(3),
+                      );
+                    },
+                  ),
+                ),
+                if (widget.showBackButton)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () async {
+                          final shouldPop = await _handleExit();
+                          if (shouldPop && mounted) {
+                            Navigator.of(context).maybePop();
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(Icons.arrow_back, color: colors.textPrimary),
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: widget.showBackButton ? 52 : 12,
+                  left: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colors.surface2,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: colors.borderSubtle),
+                    ),
+                    child: Text(
+                      difficultyLabel,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                if (_preparing)
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        'Starting in $_prepRemaining...',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                if (_scorePct != null)
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12, right: 16),
+                      child: Text(
+                        'Score ${_scorePct!.toStringAsFixed(0)}%',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          ValueListenableBuilder<double>(
+                            valueListenable: _time,
+                            builder: (_, v, __) => Text(
+                              _formatTime(v),
+                              style: TextStyle(color: colors.textSecondary),
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: colors.surface2,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: ValueListenableBuilder<double>(
+                                  valueListenable: _time,
+                                  builder: (_, v, __) {
+                                    final pct = (v / totalDuration).clamp(0.0, 1.0);
+                                    return FractionallySizedBox(
+                                      widthFactor: pct,
+                                      child: Container(
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          color: colors.blueAccent,
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Text(
-                          _formatTime(totalDuration),
-                          style: TextStyle(color: colors.textSecondary),
-                        ),
-                      ],
+                          Text(
+                            _formatTime(totalDuration),
+                            style: TextStyle(color: colors.textSecondary),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ],
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

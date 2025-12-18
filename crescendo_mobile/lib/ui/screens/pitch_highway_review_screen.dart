@@ -10,7 +10,11 @@ import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
+import '../../models/pitch_segment.dart';
+import '../../models/exercise_instance.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/range_exercise_generator.dart';
+import '../../services/range_store.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/performance_clock.dart';
 import '../theme/app_theme.dart';
@@ -43,8 +47,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   double? _audioPositionSec;
   bool _audioStarted = false;
   late final double _audioLatencyMs;
-  late final List<ReferenceNote> _notes;
-  late final double _durationSec;
+  final _rangeStore = RangeStore();
+  final _rangeGenerator = RangeExerciseGenerator();
+  List<ReferenceNote> _notes = const [];
+  double _durationSec = 1.0;
   final double _leadInSec = 2.0;
 
   @override
@@ -54,10 +60,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ??
             PitchHighwayDifficulty.medium;
     _notes = _buildReferenceNotes(widget.exercise, difficulty);
-    final specDuration =
-        _notes.isEmpty ? 0.0 : _notes.map((n) => n.endSec).fold(0.0, math.max);
-    _durationSec = math.max(widget.lastTake.durationSec, specDuration) +
-        AudioSynthService.tailSeconds;
+    _durationSec = _computeDuration(_notes);
+    unawaited(_loadRangeNotes(widget.exercise, difficulty));
     _ticker = createTicker(_onTick);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
@@ -144,6 +148,78 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     });
   }
 
+  Future<void> _loadRangeNotes(
+    VocalExercise exercise,
+    PitchHighwayDifficulty difficulty,
+  ) async {
+    final range = await _rangeStore.getRange();
+    final lowest = range.$1;
+    final highest = range.$2;
+    if (!mounted || lowest == null || highest == null) return;
+    final instances = _rangeGenerator.generate(
+      exercise: exercise,
+      lowestMidi: lowest,
+      highestMidi: highest,
+    );
+    if (instances.isEmpty) return;
+    final scaledSegments = _scaledSegments(exercise, difficulty);
+    final stitched = _concatenateSegments(scaledSegments, instances);
+    final notes = _segmentsToNotes(stitched);
+    if (!mounted) return;
+    setState(() {
+      _notes = notes;
+      _durationSec = _computeDuration(notes);
+    });
+  }
+
+  double _computeDuration(List<ReferenceNote> notes) {
+    final specDuration =
+        notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).fold(0.0, math.max);
+    return math.max(widget.lastTake.durationSec, specDuration) +
+        AudioSynthService.tailSeconds;
+  }
+
+  List<PitchSegment> _scaledSegments(
+    VocalExercise exercise,
+    PitchHighwayDifficulty difficulty,
+  ) {
+    final spec = exercise.highwaySpec;
+    if (spec == null) return const [];
+    final multiplier =
+        PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
+    return PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
+  }
+
+  List<PitchSegment> _concatenateSegments(
+    List<PitchSegment> baseSegments,
+    List<ExerciseInstance> instances,
+  ) {
+    const gapMs = 1000;
+    final stitched = <PitchSegment>[];
+    var cursorMs = 0;
+    for (final instance in instances) {
+      var localEnd = 0;
+      for (final seg in baseSegments) {
+        stitched.add(PitchSegment(
+          startMs: seg.startMs + cursorMs,
+          endMs: seg.endMs + cursorMs,
+          midiNote: seg.midiNote + instance.transposeSemitones,
+          toleranceCents: seg.toleranceCents,
+          label: seg.label,
+          startMidi: seg.startMidi != null
+              ? seg.startMidi! + instance.transposeSemitones
+              : null,
+          endMidi: seg.endMidi != null
+              ? seg.endMidi! + instance.transposeSemitones
+              : null,
+        ));
+        if (seg.endMs > localEnd) localEnd = seg.endMs;
+      }
+      cursorMs += localEnd + gapMs;
+    }
+    return stitched;
+  }
+
   List<ReferenceNote> _buildReferenceNotes(
     VocalExercise exercise,
     PitchHighwayDifficulty difficulty,
@@ -152,6 +228,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (spec == null) return const [];
     final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
     final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
+    return _segmentsToNotes(segments);
+  }
+
+  List<ReferenceNote> _segmentsToNotes(List<PitchSegment> segments) {
     final notes = <ReferenceNote>[];
     for (final seg in segments) {
       if (seg.isGlide) {
