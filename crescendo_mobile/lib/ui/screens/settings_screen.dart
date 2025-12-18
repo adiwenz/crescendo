@@ -72,15 +72,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Settings'),
       ),
       body: AppBackground(
-        child: ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: items.length + 2,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (_, i) {
-            if (i == 0) return _themeCard(context);
-            if (i == 1) return _rangeCard(context);
-            return items[i - 2];
-          },
+        child: SafeArea(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: items.length + 2,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, i) {
+              if (i == 0) return _themeCard(context);
+              if (i == 1) return _rangeCard(context);
+              return items[i - 2];
+            },
+          ),
         ),
       ),
     );
