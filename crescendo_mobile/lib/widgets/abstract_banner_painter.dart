@@ -4,22 +4,24 @@ import 'package:flutter/material.dart';
 /// Paints simple abstract patterns for banner placeholders.
 class AbstractBannerPainter extends CustomPainter {
   final int styleId;
+  final double intensity;
 
-  const AbstractBannerPainter(this.styleId);
+  const AbstractBannerPainter(this.styleId, {this.intensity = 1.0});
 
   @override
   void paint(Canvas canvas, Size size) {
     final rnd = math.Random(styleId);
     final bg = _palette(styleId);
     final paint = Paint()..style = PaintingStyle.fill;
-    paint.color = bg.withOpacity(0.75);
+    final factor = intensity.clamp(0.6, 1.4);
+    paint.color = bg.withOpacity(0.75 * factor);
     canvas.drawRect(Offset.zero & size, paint);
 
     // Shapes
     final shapeCount = 5 + styleId % 4;
     for (var i = 0; i < shapeCount; i++) {
       final kind = (styleId + i) % 3;
-      paint.color = bg.withOpacity(0.25 + 0.1 * (i % 3));
+      paint.color = bg.withOpacity((0.25 + 0.1 * (i % 3)) * factor);
       switch (kind) {
         case 0:
           final w = size.width * (0.15 + rnd.nextDouble() * 0.2);

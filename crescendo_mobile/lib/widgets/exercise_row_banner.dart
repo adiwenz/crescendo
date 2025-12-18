@@ -22,19 +22,19 @@ class ExerciseRowBanner extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      elevation: 3,
+      elevation: 2,
       margin: EdgeInsets.zero,
       child: InkWell(
         onTap: onTap,
         child: SizedBox(
-          height: 110,
+          height: 120,
           child: Row(
             children: [
               SizedBox(
-                width: 110,
-                height: 110,
+                width: 120,
+                height: 120,
                 child: CustomPaint(
-                  painter: AbstractBannerPainter(bannerStyleId),
+                  painter: AbstractBannerPainter(bannerStyleId, intensity: 1.05),
                 ),
               ),
               Expanded(
@@ -43,10 +43,16 @@ class ExerciseRowBanner extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(title, style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 6),
-                      Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
