@@ -28,6 +28,7 @@ import '../../utils/performance_clock.dart';
 import '../../utils/pitch_ball_controller.dart';
 import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
+import '../../utils/pitch_tail_buffer.dart';
 import 'level_up_screen.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
@@ -93,7 +94,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final AudioSynthService _synth = AudioSynthService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
-  final List<PitchFrame> _tail = [];
   final List<PitchFrame> _captured = [];
   final ProgressService _progress = ProgressService();
   final LastTakeStore _lastTakeStore = LastTakeStore();
@@ -102,6 +102,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final PitchBallController _pitchBall = PitchBallController();
   final PitchState _pitchState = PitchState();
   final PitchVisualState _visualState = PitchVisualState();
+  final PitchTailBuffer _tailBuffer = PitchTailBuffer();
   static const _showDebugOverlay =
       bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
@@ -110,6 +111,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   bool _playing = false;
   bool _preparing = false;
   bool _audioStarted = false;
+  Size? _canvasSize;
+  int _midiMin = 48;
+  int _midiMax = 72;
   int _prepRemaining = 0;
   Timer? _prepTimer;
   int _prepRunId = 0;
@@ -185,29 +189,23 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _time.value = next;
     _liveMidi.value = _visualState.visualPitchMidi;
     final visualMidi = _visualState.visualPitchMidi;
-    if (visualMidi != null) {
-      _tail.add(PitchFrame(
-        time: next,
+    if (_canvasSize != null && visualMidi != null) {
+      final y = PitchMath.midiToY(
         midi: visualMidi,
-        voicedProb: _visualState.isVoiced ? 1.0 : 0.0,
-      ));
+        height: _canvasSize!.height,
+        midiMin: _midiMin,
+        midiMax: _midiMax,
+      );
+      assert(y.isFinite);
+      _tailBuffer.addPoint(tSec: next, yPx: y, voiced: _visualState.isVoiced);
+      _tailBuffer.pruneOlderThan(next - _tailWindowSec);
+      assert(!_playing || _tailBuffer.points.isNotEmpty);
     }
-    _trimTail();
     if (!_useMic) {
       _simulatePitch(next);
     }
     if (next >= _durationSec) {
       _stop();
-    }
-  }
-
-  void _trimTail() {
-    final cutoff = _time.value - _tailWindowSec;
-    final idx = _tail.indexWhere((f) => f.time >= cutoff);
-    if (idx > 0) {
-      _tail.removeRange(0, idx);
-    } else if (idx == -1 && _tail.isNotEmpty) {
-      _tail.clear();
     }
   }
 
@@ -217,7 +215,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _attemptSaved = false;
     _startedAt = DateTime.now();
     _captured.clear();
-    _tail.clear();
+    _tailBuffer.clear();
     _captureEnabled = false;
     _time.value = 0.0;
     _preparing = false;
@@ -228,6 +226,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _pitchBall.reset();
     _pitchState.reset();
     _visualState.reset();
+    _tailBuffer.clear();
     _playing = true;
     _captureEnabled = true;
     _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
@@ -281,6 +280,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();
+    _tailBuffer.clear();
     await _saveLastTake(recordingResult?.audioPath);
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
@@ -489,6 +489,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final midiValues = notes.map((n) => n.midi).toList();
     final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
     final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
+    _midiMin = minMidi;
+    _midiMax = maxMidi;
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
     return AppBackground(
@@ -500,18 +502,24 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           child: Stack(
             children: [
               Positioned.fill(
-                child: CustomPaint(
-                  painter: PitchHighwayPainter(
-                    notes: notes,
-                    pitchTail: _tail,
-                    time: _time,
-                    liveMidi: _liveMidi,
-                    pitchTailTimeOffsetSec: 0,
-                    drawBackground: false,
-                    midiMin: minMidi,
-                    midiMax: maxMidi,
-                    colors: colors,
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+                    return CustomPaint(
+                      painter: PitchHighwayPainter(
+                        notes: notes,
+                        pitchTail: const [],
+                        tailPoints: _tailBuffer.points,
+                        time: _time,
+                        liveMidi: _liveMidi,
+                        pitchTailTimeOffsetSec: 0,
+                        drawBackground: false,
+                        midiMin: minMidi,
+                        midiMax: maxMidi,
+                        colors: colors,
+                      ),
+                    );
+                  },
                 ),
               ),
               if (widget.showBackButton)

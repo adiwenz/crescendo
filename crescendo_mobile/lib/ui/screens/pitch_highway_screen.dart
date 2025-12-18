@@ -18,10 +18,12 @@ import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/pitch_highway_painter.dart';
+import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
 import '../../utils/pitch_ball_controller.dart';
 import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
+import '../../utils/pitch_tail_buffer.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
   const PitchHighwayScreen({super.key});
@@ -39,12 +41,12 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
 
   final _timeNotifier = ValueNotifier<double>(0);
   final _liveMidi = ValueNotifier<double?>(null);
-  final _pitchTail = <PitchFrame>[];
   final _capturedFrames = <PitchFrame>[];
   final PerformanceClock _clock = PerformanceClock();
   final PitchBallController _pitchBall = PitchBallController();
   final PitchState _pitchState = PitchState();
   final PitchVisualState _visualState = PitchVisualState();
+  final PitchTailBuffer _tailBuffer = PitchTailBuffer();
   static const _showDebugOverlay =
       bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
 
@@ -52,6 +54,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   bool _playing = false;
   bool _recordingActive = false;
   bool _audioStarted = false;
+  Size? _canvasSize;
 
   late final RecordingService _recording;
   StreamSubscription<PitchFrame>? _liveSub;
@@ -133,14 +136,18 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _timeNotifier.value = now;
     _liveMidi.value = _visualState.visualPitchMidi;
     final visualMidi = _visualState.visualPitchMidi;
-    if (visualMidi != null) {
-      _pitchTail.add(PitchFrame(
-        time: now,
+    if (_canvasSize != null && visualMidi != null) {
+      final y = PitchMath.midiToY(
         midi: visualMidi,
-        voicedProb: _visualState.isVoiced ? 1.0 : 0.0,
-      ));
+        height: _canvasSize!.height,
+        midiMin: midiRange.min,
+        midiMax: midiRange.max,
+      );
+      assert(y.isFinite);
+      _tailBuffer.addPoint(tSec: now, yPx: y, voiced: _visualState.isVoiced);
+      _tailBuffer.pruneOlderThan(now - tailWindowSec);
+      assert(!_playing || _tailBuffer.points.isNotEmpty);
     }
-    _trimTail();
     if (now > _totalDuration) {
       unawaited(_togglePlayback(force: false));
     }
@@ -152,7 +159,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     if (target) {
       if (_timeNotifier.value >= _totalDuration) {
         _timeNotifier.value = 0;
-        _pitchTail.clear();
+        _tailBuffer.clear();
         _capturedFrames.clear();
         _lastRecordingPath = null;
         _pitchBall.reset();
@@ -179,6 +186,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
       _liveMidi.value = null;
       _pitchState.reset();
       _visualState.reset();
+      _tailBuffer.clear();
     }
     setState(() {});
   }
@@ -200,16 +208,6 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
         rms: frame.rms,
       );
     });
-  }
-
-  void _trimTail() {
-    final cutoff = _timeNotifier.value - tailWindowSec;
-    final idx = _pitchTail.indexWhere((f) => f.time >= cutoff);
-    if (idx > 0) {
-      _pitchTail.removeRange(0, idx);
-    } else if (idx == -1 && _pitchTail.isNotEmpty) {
-      _pitchTail.clear();
-    }
   }
 
   Future<void> _stopRecording() async {
@@ -324,7 +322,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
       await _togglePlayback(force: false);
     }
     _timeNotifier.value = 0;
-    _pitchTail.clear();
+    _tailBuffer.clear();
     _capturedFrames.clear();
     _lastRecordingPath = null;
     _pitchBall.reset();
@@ -350,20 +348,26 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: CustomPaint(
-                    painter: PitchHighwayPainter(
-                      notes: _notesWithLeadIn,
-                      pitchTail: _pitchTail,
-                      time: _timeNotifier,
-                      liveMidi: _liveMidi,
-                      pitchTailTimeOffsetSec: 0,
-                      pixelsPerSecond: pixelsPerSecond,
-                      playheadFraction: playheadFraction,
-                      drawBackground: false,
-                      midiMin: midiRange.min,
-                      midiMax: midiRange.max,
-                      colors: colors,
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+                      return CustomPaint(
+                        painter: PitchHighwayPainter(
+                          notes: _notesWithLeadIn,
+                          pitchTail: const [],
+                          tailPoints: _tailBuffer.points,
+                          time: _timeNotifier,
+                          liveMidi: _liveMidi,
+                          pitchTailTimeOffsetSec: 0,
+                          pixelsPerSecond: pixelsPerSecond,
+                          playheadFraction: playheadFraction,
+                          drawBackground: false,
+                          midiMin: midiRange.min,
+                          midiMax: midiRange.max,
+                          colors: colors,
+                        ),
+                      );
+                    },
                   ),
                 ),
                 if (_showDebugOverlay)

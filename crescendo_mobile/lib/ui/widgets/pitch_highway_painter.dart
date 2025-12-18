@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
 import '../../utils/pitch_math.dart';
+import '../../utils/pitch_tail_buffer.dart';
 import '../theme/app_theme.dart';
 
 enum PitchMatch { good, near, off }
@@ -25,6 +26,7 @@ class PitchHighwayPainter extends CustomPainter {
   final AppThemeColors colors;
   final ValueListenable<double?>? liveMidi;
   final double pitchTailTimeOffsetSec;
+  final List<TailPoint>? tailPoints;
 
   PitchHighwayPainter({
     required this.notes,
@@ -40,6 +42,7 @@ class PitchHighwayPainter extends CustomPainter {
     this.midiMax = 72,
     this.liveMidi,
     this.pitchTailTimeOffsetSec = 0,
+    this.tailPoints,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
         super(repaint: liveMidi == null ? time : Listenable.merge([time, liveMidi]));
@@ -142,11 +145,25 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     if (showLivePitch) {
-      _drawPitchTrail(canvas, size, currentTime, playheadX);
+      if (tailPoints != null) {
+        _drawTailPoints(canvas, size, currentTime, playheadX, tailPoints!);
+      } else {
+        _drawPitchTrail(canvas, size, currentTime, playheadX);
+      }
 
       if (smoothedMidi != null) {
         assert(() {
-          if (pitchTail.isNotEmpty) {
+          final tailList = tailPoints;
+          if (tailList != null && tailList.isNotEmpty) {
+            final tailY = tailList.last.yPx;
+            final ballY = PitchMath.midiToY(
+              midi: smoothedMidi,
+              height: size.height,
+              midiMin: midiMin,
+              midiMax: midiMax,
+            );
+            return (tailY - ballY).abs() < 0.1;
+          } else if (pitchTail.isNotEmpty) {
             final tailMidi = pitchTail.last.midi;
             if (tailMidi != null) {
               final tailY = PitchMath.midiToY(
@@ -343,10 +360,55 @@ class PitchHighwayPainter extends CustomPainter {
     }
   }
 
+  void _drawTailPoints(
+    Canvas canvas,
+    Size size,
+    double t,
+    double playheadX,
+    List<TailPoint> points,
+  ) {
+    if (points.length < 2) return;
+    final tAdjusted = t + pitchTailTimeOffsetSec;
+    const trailWindowSec = 3.0;
+    const baseAlpha = 0.25;
+    const maxGapSec = 0.12;
+
+    for (var i = 1; i < points.length; i++) {
+      final prev = points[i - 1];
+      final curr = points[i];
+      if ((curr.tSec - prev.tSec) > maxGapSec) continue;
+      final age = (tAdjusted - curr.tSec).clamp(0.0, trailWindowSec);
+      final fade = 1 - (age / trailWindowSec);
+      final base = (baseAlpha * fade).clamp(0.0, baseAlpha);
+      if (base <= 0) continue;
+      final voicedFactor = curr.voiced ? 1.0 : 0.35;
+      final alpha = (base * voicedFactor).clamp(0.0, baseAlpha);
+      final xPrev = playheadX + (prev.tSec - tAdjusted) * pixelsPerSecond;
+      final xCurr = playheadX + (curr.tSec - tAdjusted) * pixelsPerSecond;
+      if (xCurr < -16 || xPrev > size.width + 16) continue;
+      final glowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 18.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = colors.textPrimary.withOpacity(alpha * 0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+      final corePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 14.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = colors.textPrimary.withOpacity(alpha);
+      canvas.drawLine(Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
+      canvas.drawLine(Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), corePaint);
+    }
+  }
+
   @override
   bool shouldRepaint(covariant PitchHighwayPainter oldDelegate) {
     return oldDelegate.notes != notes ||
         oldDelegate.pitchTail != pitchTail ||
+        oldDelegate.tailPoints != tailPoints ||
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
         oldDelegate.playheadFraction != playheadFraction ||
         (oldDelegate.drawBackground ?? true) != (drawBackground ?? true) ||
