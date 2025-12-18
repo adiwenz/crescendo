@@ -26,7 +26,10 @@ class HomeScreen extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            const _HomeHero(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 12, 24, 12),
+              child: _HomeHero(),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               child: Column(
