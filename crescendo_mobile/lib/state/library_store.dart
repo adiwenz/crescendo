@@ -46,6 +46,12 @@ class LibraryStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_completedKey, _completed.toList());
   }
+
+  Future<void> reset() async {
+    _completed.clear();
+    notifyListeners();
+    await save();
+  }
 }
 
 /// Global instance you can reuse across the app.

@@ -11,6 +11,7 @@ import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
 import '../screens/welcome/welcome_screen.dart';
 import '../screens/explore/explore_screen.dart';
+import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 
 class CrescendoApp extends StatefulWidget {
@@ -71,7 +72,7 @@ class _RootScaffold extends StatelessWidget {
       const ExploreScreen(),
       const PianoPitchScreen(),
       const ProgressHomeScreen(),
-      const SettingsScreen(),
+      const ProfileScreen(),
     ];
     return Scaffold(
       body: IndexedStack(
