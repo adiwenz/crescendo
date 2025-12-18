@@ -5,12 +5,18 @@ import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
+import '../../models/exercise_instance.dart';
+import '../../models/pitch_highway_spec.dart';
+import '../../models/pitch_segment.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/last_take_store.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/unlock_service.dart';
+import '../../services/range_exercise_generator.dart';
+import '../../services/range_store.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
+import 'exercise_player_screen.dart';
 import 'exercise_navigation.dart';
 import 'pitch_highway_review_screen.dart';
 
@@ -29,6 +35,8 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _lastTakeStore = LastTakeStore();
   final AudioSynthService _synth = AudioSynthService();
   final UnlockService _unlockService = UnlockService();
+  final _rangeStore = RangeStore();
+  final _rangeGenerator = RangeExerciseGenerator();
   PitchHighwayDifficulty _tempoDifficulty = PitchHighwayDifficulty.medium;
   int _maxUnlocked = 0;
   bool _unlockLoaded = false;
@@ -196,21 +204,11 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             onPressed: selectionLocked
                 ? null
                 : () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      buildExerciseScreen(exercise, pitchDifficulty: _tempoDifficulty),
-                ),
-              );
-              if (result is double) {
-                setState(() => _lastScore = result);
-              } else {
-                await _loadLastScore();
-              }
-              await _loadLastTake();
-              await _loadUnlock();
-            },
+                    await _startExercise(exercise);
+                    await _loadLastScore();
+                    await _loadLastTake();
+                    await _loadUnlock();
+                  },
             icon: const Icon(Icons.play_arrow),
             label: const Text('Start Exercise'),
           ),
@@ -255,6 +253,89 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _startExercise(VocalExercise exercise) async {
+    if (exercise.type == ExerciseType.pitchHighway) {
+      final range = await _rangeStore.getRange();
+      final lowest = range.$1;
+      final highest = range.$2;
+      if (lowest != null && highest != null) {
+        final instances = _rangeGenerator.generate(
+          exercise: exercise,
+          lowestMidi: lowest,
+          highestMidi: highest,
+        );
+        if (instances.isNotEmpty) {
+          final combined = _buildConcatenatedExercise(exercise, instances);
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ExercisePlayerScreen(
+                exercise: combined,
+                pitchDifficulty: _tempoDifficulty,
+              ),
+            ),
+          );
+          return;
+        }
+      }
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => buildExerciseScreen(
+          exercise,
+          pitchDifficulty: _tempoDifficulty,
+        ),
+      ),
+    );
+  }
+
+  VocalExercise _buildConcatenatedExercise(
+    VocalExercise base,
+    List<ExerciseInstance> instances,
+  ) {
+    final baseSpec = base.highwaySpec;
+    if (baseSpec == null || baseSpec.segments.isEmpty) return base;
+    final stitched = <PitchSegment>[];
+    var cursorMs = 0;
+    for (final instance in instances) {
+      final applied = instance.apply(base);
+      final spec = applied.highwaySpec;
+      if (spec == null || spec.segments.isEmpty) continue;
+      var localEnd = 0;
+      for (final seg in spec.segments) {
+        stitched.add(PitchSegment(
+          startMs: seg.startMs + cursorMs,
+          endMs: seg.endMs + cursorMs,
+          midiNote: seg.midiNote,
+          toleranceCents: seg.toleranceCents,
+          label: seg.label,
+          startMidi: seg.startMidi,
+          endMidi: seg.endMidi,
+        ));
+        if (seg.endMs > localEnd) localEnd = seg.endMs;
+      }
+      cursorMs += localEnd;
+    }
+    final durationSec = (cursorMs / 1000.0).round();
+    return VocalExercise(
+      id: base.id,
+      name: base.name,
+      categoryId: base.categoryId,
+      type: base.type,
+      description: base.description,
+      purpose: base.purpose,
+      difficulty: base.difficulty,
+      tags: base.tags,
+      createdAt: base.createdAt,
+      iconKey: base.iconKey,
+      estimatedMinutes: base.estimatedMinutes,
+      durationSeconds: durationSec,
+      reps: base.reps,
+      highwaySpec: PitchHighwaySpec(segments: stitched),
     );
   }
 

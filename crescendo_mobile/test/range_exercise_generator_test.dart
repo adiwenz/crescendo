@@ -1,48 +1,37 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:crescendo_mobile/models/pitch_highway_spec.dart';
-import 'package:crescendo_mobile/models/pitch_segment.dart';
-import 'package:crescendo_mobile/models/vocal_exercise.dart';
 import 'package:crescendo_mobile/services/range_exercise_generator.dart';
 
 void main() {
-  VocalExercise _exWithSpan(int minOffset, int maxOffset) {
-    final base = 60;
-    final seg = PitchSegment(
-      startMs: 0,
-      endMs: 1000,
-      midiNote: base + maxOffset,
-      toleranceCents: 25,
-      startMidi: base + minOffset,
-      endMidi: base + maxOffset,
-    );
-    return VocalExercise(
-      id: 'ex',
-      name: 'Test',
-      categoryId: 'cat',
-      type: ExerciseType.pitchHighway,
-      description: '',
-      purpose: '',
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const [],
-      createdAt: DateTime.now(),
-      highwaySpec: PitchHighwaySpec(segments: [seg]),
-    );
-  }
-
-  test('generates steps within bounds', () {
+  test('builds continuous semitone steps across range', () {
     final gen = RangeExerciseGenerator();
-    final ex = _exWithSpan(0, 4);
-    final out = gen.generate(exercise: ex, lowestMidi: 50, highestMidi: 70);
-    expect(out, isNotEmpty);
-    expect(out.first.minNote >= 52, true); // low margin applied
-    expect(out.last.maxNote <= 68, true); // high margin applied
+    final offsets = [0, 2, 4, 5, 7, 5, 4, 2, 0];
+    final segments = gen.buildTransposedSegments(
+      patternOffsets: offsets,
+      userLowestMidi: 50,
+      userHighestMidi: 60,
+      stepSemitones: 1,
+      allowOverhang: false,
+    );
+    expect(segments, isNotEmpty);
+    expect(segments.first.range.lowMidi, 50);
+    expect(segments.last.range.highMidi <= 60, true);
+    for (var i = 1; i < segments.length; i++) {
+      expect(segments[i].rootMidi - segments[i - 1].rootMidi, 1);
+    }
   });
 
-  test('skips if out of range', () {
+  test('anchors first segment to user low even if range is tight', () {
     final gen = RangeExerciseGenerator();
-    final ex = _exWithSpan(0, 24);
-    final out = gen.generate(exercise: ex, lowestMidi: 60, highestMidi: 62);
-    expect(out, isEmpty);
+    final offsets = [0, 2, 4, 7];
+    final segments = gen.buildTransposedSegments(
+      patternOffsets: offsets,
+      userLowestMidi: 55,
+      userHighestMidi: 57,
+      stepSemitones: 1,
+      allowOverhang: true,
+    );
+    expect(segments, isNotEmpty);
+    expect(segments.first.range.lowMidi, 55);
   });
 }
