@@ -363,13 +363,15 @@ class _NoteBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const pillHeight = 26.0;
-    const pillWidth = 52.0;
+    const pillHeight = 8.0;
     final shiftedStart = note.startMs + noteStartOffsetMs;
     final shiftedEnd = note.endMs + noteStartOffsetMs;
     final midMs = ((shiftedStart + shiftedEnd) / 2).round();
     final x = _timeToX(midMs, width, domainStartMs, domainDurationMs);
     final y = _midiToY(note.midi, minMidi, maxMidi, height, topPad, bottomPad);
+    final spanMs = (shiftedEnd - shiftedStart).clamp(1, domainDurationMs);
+    final spanPx = (spanMs / domainDurationMs) * width;
+    final pillWidth = spanPx.clamp(24.0, 48.0);
     var left = x - pillWidth / 2;
     var top = y - pillHeight / 2;
     left = left.clamp(0.0, width - pillWidth);
@@ -387,7 +389,7 @@ class _NoteBubble extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: const Color(0xFFFFD6A1),
-              borderRadius: BorderRadius.circular(pillHeight / 2),
+              borderRadius: BorderRadius.circular(3),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.08),
