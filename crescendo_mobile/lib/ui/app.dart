@@ -13,6 +13,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
+import 'route_observer.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -40,6 +41,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
               theme: theme,
               darkTheme: darkTheme,
               themeMode: resolvedMode,
+              navigatorObservers: [routeObserver],
               routes: {
                 '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
                 '/settings': (_) => const SettingsScreen(),

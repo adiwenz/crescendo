@@ -1,20 +1,26 @@
+import 'package:flutter/foundation.dart';
+
 import '../data/progress_repository.dart';
 import '../models/exercise_attempt.dart';
 
 /// Thin wrapper over ProgressRepository to expose latest attempts.
-class AttemptRepository {
+class AttemptRepository extends ChangeNotifier {
   AttemptRepository._();
   static final AttemptRepository instance = AttemptRepository._();
 
   final ProgressRepository _repo = ProgressRepository();
   List<ExerciseAttempt> _cache = const [];
   bool _loaded = false;
+  int _revision = 0;
 
   List<ExerciseAttempt> get cache => _cache;
+  int get revision => _revision;
 
   Future<List<ExerciseAttempt>> refresh() async {
     _cache = await _repo.fetchAllAttempts();
     _loaded = true;
+    _revision++;
+    notifyListeners();
     return _cache;
   }
 
@@ -22,6 +28,8 @@ class AttemptRepository {
     await _repo.saveAttempt(attempt);
     _cache = [attempt, ..._cache.where((a) => a.id != attempt.id)];
     _loaded = true;
+    _revision++;
+    notifyListeners();
   }
 
   ExerciseAttempt? latestFor(String exerciseId) {

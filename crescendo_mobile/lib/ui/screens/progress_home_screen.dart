@@ -6,6 +6,7 @@ import '../../widgets/progress/progress_bar_row.dart';
 import '../../widgets/progress/recent_activity_row.dart';
 import '../../widgets/progress/sparkline_card.dart';
 import 'progress_category_detail_screen.dart';
+import '../../services/attempt_repository.dart';
 
 class ProgressHomeScreen extends StatefulWidget {
   const ProgressHomeScreen({super.key});
@@ -18,12 +19,26 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
   final SimpleProgressRepository _repo = SimpleProgressRepository();
   Future<ProgressSummary>? _future;
   late final ProgressSummary _initial;
+  final AttemptRepository _attempts = AttemptRepository.instance;
 
   @override
   void initState() {
     super.initState();
     _initial = _repo.buildSummaryFromCache();
     _future = _loadSummary();
+    _attempts.addListener(_onAttemptsChanged);
+  }
+
+  @override
+  void dispose() {
+    _attempts.removeListener(_onAttemptsChanged);
+    super.dispose();
+  }
+
+  void _onAttemptsChanged() {
+    setState(() {
+      _future = _loadSummary();
+    });
   }
 
   @override

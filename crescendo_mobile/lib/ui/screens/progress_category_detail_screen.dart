@@ -5,17 +5,41 @@ import '../../models/category.dart';
 import '../../models/exercise.dart';
 import '../../routing/exercise_route_registry.dart';
 import '../../state/library_store.dart';
+import '../route_observer.dart';
 
-class CategoryProgressDetailScreen extends StatelessWidget {
+class CategoryProgressDetailScreen extends StatefulWidget {
   final String categoryId;
 
   const CategoryProgressDetailScreen({super.key, required this.categoryId});
 
   @override
+  State<CategoryProgressDetailScreen> createState() => _CategoryProgressDetailScreenState();
+}
+
+class _CategoryProgressDetailScreenState extends State<CategoryProgressDetailScreen>
+    with RouteAware {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final categories = seedLibraryCategories();
     final Category category =
-        categories.firstWhere((c) => c.id == categoryId, orElse: () => categories.first);
+        categories.firstWhere((c) => c.id == widget.categoryId, orElse: () => categories.first);
     final List<Exercise> exercises = seedExercisesFor(category.id);
     final best = libraryStore.bestScores;
     final last = libraryStore.lastScores;
