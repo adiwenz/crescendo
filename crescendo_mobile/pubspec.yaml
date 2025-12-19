@@ -38,6 +38,7 @@ flutter:
 
 flutter_launcher_icons:
   image_path: "assets/logo_bg_removed_other_crop.png"
+  remove_alpha_ios: true
   android: true
   ios: true
   web:
