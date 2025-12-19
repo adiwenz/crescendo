@@ -211,7 +211,7 @@ class ExerciseAttemptInfo {
   factory ExerciseAttemptInfo.fromAttempt(ExerciseAttempt attempt) {
     return ExerciseAttemptInfo(
       score: attempt.overallScore,
-      completedAt: attempt.completedAt,
+      completedAt: attempt.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 

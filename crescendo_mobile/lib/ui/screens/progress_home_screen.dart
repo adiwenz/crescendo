@@ -16,6 +16,15 @@ class ProgressHomeScreen extends StatefulWidget {
 
 class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
   final SimpleProgressRepository _repo = SimpleProgressRepository();
+  Future<ProgressSummary>? _future;
+  late final ProgressSummary _initial;
+
+  @override
+  void initState() {
+    super.initState();
+    _initial = _repo.buildSummaryFromCache();
+    _future = _loadSummary();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,13 +47,27 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
         ),
       ),
       body: FutureBuilder<ProgressSummary>(
-        future: _repo.buildSummary(),
+        future: _future,
+        initialData: _initial,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
           if (snapshot.hasError) {
-            return Center(child: Text('Error loading progress'));
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Error loading progress'),
+                  const SizedBox(height: 8),
+                  Text('${snapshot.error}', textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => setState(() {
+                      _future = _loadSummary();
+                    }),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
           }
           final summary = snapshot.data!;
           return ListView(
@@ -166,5 +189,14 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
     const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     if (m < 1 || m > 12) return '';
     return names[m - 1];
+  }
+
+  Future<ProgressSummary> _loadSummary() async {
+    try {
+      return await _repo.buildSummary();
+    } catch (e, st) {
+      debugPrint('Progress load error: $e\n$st');
+      rethrow;
+    }
   }
 }

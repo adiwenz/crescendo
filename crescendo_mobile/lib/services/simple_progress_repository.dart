@@ -58,8 +58,27 @@ class CategoryProgressSummary {
 
 class SimpleProgressRepository {
   Future<ProgressSummary> buildSummary() async {
-    final attempts = await AttemptRepository.instance.refresh();
-    return _buildSummaryFrom(attempts);
+    try {
+      await AttemptRepository.instance.ensureLoaded();
+      final attempts = AttemptRepository.instance.cache.isEmpty
+          ? await AttemptRepository.instance.refresh()
+          : AttemptRepository.instance.cache;
+      return _buildSummaryFrom(attempts);
+    } catch (_) {
+      // As a fallback, return empty summary.
+      return ProgressSummary(
+        completedToday: 0,
+        totalCompleted: 0,
+        avgScore: 0,
+        recent: const [],
+        categories: _emptyCategories(),
+        trendScores: const [],
+      );
+    }
+  }
+
+  ProgressSummary buildSummaryFromCache() {
+    return _buildSummaryFrom(AttemptRepository.instance.cache);
   }
 
   ProgressSummary _buildSummaryFrom(List<ExerciseAttempt> attempts) {
@@ -73,24 +92,43 @@ class SimpleProgressRepository {
       }
     }
 
+    if (attempts.isEmpty) {
+      return ProgressSummary(
+        completedToday: 0,
+        totalCompleted: 0,
+        avgScore: 0,
+        recent: const [],
+        categories: _emptyCategories(),
+        trendScores: const [],
+      );
+    }
+
     // latest per exercise
     final latestByExercise = <String, ExerciseAttempt>{};
-    for (final a in attempts.sorted((a, b) => b.completedAt.compareTo(a.completedAt))) {
+    for (final a in attempts.sorted((a, b) {
+      final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+      final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+      return bTime.compareTo(aTime);
+    })) {
       latestByExercise.putIfAbsent(a.exerciseId, () => a);
     }
 
     final recent = attempts
         .where((a) => allExercises.containsKey(a.exerciseId))
-        .sorted((a, b) => b.completedAt.compareTo(a.completedAt))
+        .sorted((a, b) {
+          final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+          final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+          return bTime.compareTo(aTime);
+        })
         .map((a) {
-          final ex = allExercises[a.exerciseId]!;
-          final cat = categories.firstWhere((c) => c.id == ex.categoryId);
+          final ex = allExercises[a.exerciseId];
+          final cat = ex == null ? null : categories.firstWhere((c) => c.id == ex.categoryId, orElse: () => categories.first);
           return Activity(
-            exerciseId: ex.id,
-            exerciseTitle: ex.title,
-            categoryId: cat.id,
-            categoryTitle: cat.title,
-            date: a.completedAt,
+            exerciseId: ex?.id ?? a.exerciseId,
+            exerciseTitle: ex?.title ?? 'Unknown exercise',
+            categoryId: cat?.id ?? (ex?.categoryId ?? 'unknown'),
+            categoryTitle: cat?.title ?? 'Unknown',
+            date: a.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
             score: a.overallScore.round(),
           );
         })
@@ -130,5 +168,16 @@ class SimpleProgressRepository {
       categories: categorySummaries,
       trendScores: trendScores,
     );
+  }
+
+  List<CategoryProgressSummary> _emptyCategories() {
+    return seedLibraryCategories()
+        .map((c) => CategoryProgressSummary(
+              categoryId: c.id,
+              title: c.title,
+              completedCount: 0,
+              totalCount: seedExercisesFor(c.id).length,
+            ))
+        .toList();
   }
 }

@@ -11,7 +11,11 @@ ExerciseStats computeExerciseStats({
   int trendCount = 8,
 }) {
   final list = attempts.where((a) => a.exerciseId == exerciseId).toList()
-    ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+    ..sort((a, b) {
+      final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+      final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+      return aTime.compareTo(bTime);
+    });
   if (list.isEmpty) {
     return ExerciseStats(
       exerciseId: exerciseId,
@@ -53,7 +57,11 @@ CategoryStats computeCategoryStats({
   final scoresByExercise = <double>[];
   for (final exId in exerciseIds) {
     final exAttempts = attempts.where((a) => a.exerciseId == exId).toList()
-      ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+      ..sort((a, b) {
+        final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+        final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+        return aTime.compareTo(bTime);
+      });
     if (exAttempts.isEmpty) continue;
     final exScores = exAttempts.map((a) => a.overallScore).toList();
     final recent = exScores.sublist(math.max(0, exScores.length - perExerciseRecentCount));
@@ -66,7 +74,11 @@ CategoryStats computeCategoryStats({
 
   final categoryAttempts =
       attempts.where((a) => a.categoryId == categoryId).toList()
-        ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+        ..sort((a, b) {
+          final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+          final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+          return aTime.compareTo(bTime);
+        });
   final categoryScores = categoryAttempts.map((a) => a.overallScore).toList();
   final recentTrend = categoryScores.sublist(math.max(0, categoryScores.length - trendCount));
 
@@ -95,7 +107,11 @@ OverallStats computeOverallStats({
     );
   }
   final sorted = List<ExerciseAttempt>.from(attempts)
-    ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+    ..sort((a, b) {
+      final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+      final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+      return aTime.compareTo(bTime);
+    });
   final scores = sorted.map((a) => a.overallScore).toList();
   final recent = scores.sublist(math.max(0, scores.length - recentCount));
   final weighted = _weightedAverage(recent);
@@ -119,7 +135,7 @@ List<ExerciseAttempt> filterAttemptsByWindow(
 }) {
   if (window == null) return attempts;
   final cutoff = now.subtract(window);
-  return attempts.where((a) => a.completedAt.isAfter(cutoff)).toList();
+  return attempts.where((a) => (a.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0)).isAfter(cutoff)).toList();
 }
 
 double _weightedAverage(List<double> values) {

@@ -65,7 +65,11 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       setState(() => _lastScore = null);
       return;
     }
-    attempts.sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    attempts.sort((a, b) {
+      final aTime = a.completedAt?.millisecondsSinceEpoch ?? 0;
+      final bTime = b.completedAt?.millisecondsSinceEpoch ?? 0;
+      return bTime.compareTo(aTime);
+    });
     setState(() => _lastScore = attempts.first.overallScore);
   }
 
