@@ -5,7 +5,11 @@ import '../../models/exercise_attempt.dart';
 import '../../routing/exercise_route_registry.dart';
 import '../../services/attempt_repository.dart';
 import '../../services/exercise_repository.dart';
+import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
+import '../../ui/screens/exercise_review_screen.dart';
+import '../../models/reference_note.dart';
+import 'dart:math' as math;
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -19,9 +23,11 @@ class ExercisePreviewScreen extends StatefulWidget {
 class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   final ExerciseRepository _repo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
+  final AudioSynthService _synth = AudioSynthService();
   VocalExercise? _exercise;
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
+  bool _previewing = false;
 
   @override
   void initState() {
@@ -29,13 +35,20 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _synth.stop();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final ex = _repo.getExercises().firstWhere(
       (e) => e.id == widget.exerciseId,
       orElse: () => _repo.getExercises().first,
     );
-    await _attempts.refresh();
+    await _attempts.ensureLoaded();
     final latest = _attempts.latestFor(widget.exerciseId);
+    if (!mounted) return;
     setState(() {
       _exercise = ex;
       _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
@@ -88,13 +101,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
                         Row(
                           children: [
                             ElevatedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Preview playback coming soon')),
-                                );
-                              },
-                              icon: const Icon(Icons.play_arrow),
-                              label: const Text('Play preview'),
+                              onPressed: _previewing || ex == null ? null : () => _playPreview(ex),
+                              icon: Icon(_previewing ? Icons.pause : Icons.play_arrow),
+                              label: Text(_previewing ? 'Playing…' : 'Play preview'),
                             ),
                           ],
                         ),
@@ -157,9 +166,57 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   }
 
   void _reviewLast() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Review last take coming soon')),
+    final ex = _exercise;
+    final attempt = _latest;
+    if (ex == null || attempt == null || attempt.recordingPath == null || attempt.recordingPath!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No previous recording available')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExerciseReviewScreen(exercise: ex, attempt: attempt.raw),
+      ),
     );
+  }
+
+  Future<void> _playPreview(VocalExercise ex) async {
+    setState(() => _previewing = true);
+    try {
+      // If we have a highway spec, render a short preview. Otherwise show message.
+      if (ex.highwaySpec == null || ex.highwaySpec!.segments.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No preview available for this exercise')),
+        );
+        return;
+      }
+      // Use synth to render a short preview from the first few segments.
+      final segments = ex.highwaySpec!.segments.take(8).toList();
+      final notes = segments
+          .take(8)
+          .map((s) => ReferenceNote(
+                startSec: s.startMs / 1000.0,
+                endSec: s.endMs / 1000.0,
+                midi: s.midiNote,
+              ))
+          .toList();
+      final totalDurationMs =
+          segments.isEmpty ? 0 : segments.map((s) => s.endMs).reduce(math.max) - segments.first.startMs;
+      final path = await _synth.renderReferenceNotes(notes);
+      await _synth.playFile(path);
+      // Ensure the button stays in the "playing" state for the full preview duration.
+      if (totalDurationMs > 0) {
+        await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preview failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _previewing = false);
+    }
   }
 }
 
@@ -205,13 +262,22 @@ class _Header extends StatelessWidget {
 class ExerciseAttemptInfo {
   final double score;
   final DateTime completedAt;
+  final String? recordingPath;
+  final ExerciseAttempt raw;
 
-  ExerciseAttemptInfo({required this.score, required this.completedAt});
+  ExerciseAttemptInfo({
+    required this.score,
+    required this.completedAt,
+    required this.recordingPath,
+    required this.raw,
+  });
 
   factory ExerciseAttemptInfo.fromAttempt(ExerciseAttempt attempt) {
     return ExerciseAttemptInfo(
       score: attempt.overallScore,
       completedAt: attempt.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      recordingPath: attempt.recordingPath,
+      raw: attempt,
     );
   }
 

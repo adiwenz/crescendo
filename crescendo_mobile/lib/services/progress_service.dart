@@ -76,6 +76,8 @@ class ProgressService {
     Map<String, double>? subScores,
     String? notes,
     String? pitchDifficulty,
+    String? recordingPath,
+    String? contourJson,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -87,6 +89,8 @@ class ProgressService {
       completedAt: completedAt,
       overallScore: overallScore,
       subScores: subScores ?? const {},
+      recordingPath: recordingPath,
+      contourJson: contourJson,
       notes: notes,
       pitchDifficulty: pitchDifficulty,
     );

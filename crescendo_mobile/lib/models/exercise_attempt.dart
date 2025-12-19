@@ -10,6 +10,8 @@ class ExerciseAttempt {
   final DateTime? completedAt;
   final double overallScore;
   final Map<String, double> subScores;
+  final String? recordingPath;
+  final String? contourJson;
   final String? notes;
   final String? pitchDifficulty;
   final int version;
@@ -22,6 +24,8 @@ class ExerciseAttempt {
     required this.completedAt,
     required this.overallScore,
     this.subScores = const {},
+    this.recordingPath,
+    this.contourJson,
     this.notes,
     this.pitchDifficulty,
     this.version = 1,
@@ -36,6 +40,8 @@ class ExerciseAttempt {
         'completedAt': completedAt?.millisecondsSinceEpoch,
         'overallScore': overallScore,
         'subScoresJson': subScores.isEmpty ? null : jsonEncode(subScores),
+        'recordingPath': recordingPath,
+        'contourJson': contourJson,
         'notes': notes,
         'pitchDifficulty': pitchDifficulty,
         'version': version,
@@ -51,6 +57,8 @@ class ExerciseAttempt {
       completedAt: DateTime.tryParse(map['completedAt'] as String),
       overallScore: (map['overallScore'] as num?)?.toDouble() ?? 0,
       subScores: const {},
+      recordingPath: map['recordingPath'] as String?,
+      contourJson: map['contourJson'] as String?,
       notes: map['notes'] as String?,
       pitchDifficulty: map['pitchDifficulty'] as String?,
       version: (map['version'] as num?)?.toInt() ?? 1,
@@ -122,6 +130,8 @@ class ExerciseAttempt {
       completedAt: parseDate(m['completedAt']),
       overallScore: parseScore(m['overallScore']),
       subScores: parseScores(m['subScores'] ?? m['subScoresJson']),
+      recordingPath: (m['recordingPath'] ?? m['recording'])?.toString(),
+      contourJson: (m['contourJson'] ?? m['contour'])?.toString(),
       notes: parseNotes(m['notes']),
       pitchDifficulty: (m['pitchDifficulty'] ?? m['pitchDifficultyText'])?.toString(),
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,

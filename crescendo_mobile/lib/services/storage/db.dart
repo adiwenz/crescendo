@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 3, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 5, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -33,12 +33,14 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         exerciseId TEXT,
         categoryId TEXT,
-        startedAt TEXT,
-        completedAt TEXT,
+        startedAt INTEGER,
+        completedAt INTEGER,
         overallScore REAL,
         subScoresJson TEXT,
         notes TEXT,
         pitchDifficulty TEXT,
+        recordingPath TEXT,
+        contourJson TEXT,
         version INTEGER
       )
     ''');
@@ -51,18 +53,41 @@ class AppDatabase {
           id TEXT PRIMARY KEY,
           exerciseId TEXT,
           categoryId TEXT,
-          startedAt TEXT,
-          completedAt TEXT,
+          startedAt INTEGER,
+          completedAt INTEGER,
           overallScore REAL,
           subScoresJson TEXT,
           notes TEXT,
           pitchDifficulty TEXT,
+          recordingPath TEXT,
+          contourJson TEXT,
           version INTEGER
         )
       ''');
     }
     if (oldVersion >= 2 && oldVersion < 3) {
-      await db.execute('ALTER TABLE exercise_attempts ADD COLUMN pitchDifficulty TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'pitchDifficulty', 'TEXT');
+    }
+    if (oldVersion < 4) {
+      await _addColumnIfMissing(db, 'exercise_attempts', 'recordingPath', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'contourJson', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'startedAt', 'INTEGER');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'completedAt', 'INTEGER');
+    }
+  }
+
+  Future<bool> _hasColumn(Database db, String table, String column) async {
+    final info = await db.rawQuery('PRAGMA table_info($table)');
+    for (final row in info) {
+      if (row['name'] == column) return true;
+    }
+    return false;
+  }
+
+  Future<void> _addColumnIfMissing(Database db, String table, String column, String type) async {
+    final exists = await _hasColumn(db, table, column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
     }
   }
 }

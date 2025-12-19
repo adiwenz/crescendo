@@ -73,6 +73,8 @@ class ProgressRepository {
       'subScoresJson': 'TEXT',
       'notes': 'TEXT',
       'pitchDifficulty': 'TEXT',
+      'recordingPath': 'TEXT',
+      'contourJson': 'TEXT',
       'version': 'INTEGER',
     };
     final info = await db.rawQuery('PRAGMA table_info(exercise_attempts)');
