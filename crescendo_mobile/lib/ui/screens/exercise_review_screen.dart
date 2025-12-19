@@ -3,11 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../models/exercise_attempt.dart';
+import '../../models/last_take.dart';
+import '../../models/pitch_frame.dart';
 import '../../models/replay_models.dart';
 import '../../models/vocal_exercise.dart';
-import '../../services/audio_synth_service.dart';
-import '../widgets/pitch_highway_replay.dart';
 import '../widgets/pitch_snapshot_chart.dart';
+import 'pitch_highway_review_screen.dart';
 
 class ExerciseReviewScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -24,19 +25,9 @@ class ExerciseReviewScreen extends StatefulWidget {
 }
 
 class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
-  final AudioSynthService _synth = AudioSynthService();
-  bool _playing = false;
   List<PitchSample> _samples = const [];
   List<TargetNote> _targets = const [];
   int _durationMs = 6000;
-  ViewMode _mode = ViewMode.replay;
-  final GlobalKey<PitchHighwayReplayState> _replayKey = GlobalKey();
-
-  @override
-  void dispose() {
-    _synth.stop();
-    super.dispose();
-  }
 
   @override
   void initState() {
@@ -50,26 +41,6 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
         ? 6000
         : _samples.map((s) => s.timeMs).reduce((a, b) => a > b ? a : b);
     _targets = _buildTargetNotes(widget.exercise);
-  }
-
-  Future<void> _playRecording() async {
-    final path = widget.attempt.recordingPath;
-    if (path == null || path.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No recording available for this take')),
-      );
-      return;
-    }
-    setState(() => _playing = true);
-    try {
-      await _synth.playFile(path);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not play recording: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _playing = false);
-    }
   }
 
   @override
@@ -86,45 +57,15 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
           children: [
             Text('Last score: ${attempt.overallScore.toStringAsFixed(0)}'),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () {
-                    if (_mode != ViewMode.replay) {
-                      setState(() => _mode = ViewMode.replay);
-                    }
-                    _replayKey.currentState?.replay();
-                    _playRecording();
-                  },
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Replay recording'),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _mode = _mode == ViewMode.replay
-                          ? ViewMode.snapshot
-                          : ViewMode.replay;
-                    });
-                  },
-                  child: Text(_mode == ViewMode.replay
-                      ? 'Snapshot view'
-                      : 'Replay view'),
-                ),
-              ],
+            ElevatedButton.icon(
+              onPressed: _samples.isEmpty ? null : _openReplay,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Replay on highway'),
             ),
             const SizedBox(height: 24),
-            if (_samples.isNotEmpty && _mode == ViewMode.replay)
-              PitchHighwayReplay(
-                key: _replayKey,
-                targetNotes: _targets,
-                recordedSamples: _samples,
-                takeDurationMs: _durationMs,
-                height: 360,
-                showControls: true,
-              ),
-            if (_samples.isNotEmpty && _mode == ViewMode.snapshot)
+            const Text('Snapshot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            if (_samples.isNotEmpty)
               PitchSnapshotChart(
                 targetNotes: _targets,
                 recordedSamples: _samples,
@@ -171,6 +112,42 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
       );
     }).toList();
   }
-}
 
-enum ViewMode { replay, snapshot }
+  void _openReplay() {
+    final take = _buildLastTake();
+    if (take == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No recorded take available')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PitchHighwayReviewScreen(
+          exercise: widget.exercise,
+          lastTake: take,
+        ),
+      ),
+    );
+  }
+
+  LastTake? _buildLastTake() {
+    if (_samples.isEmpty) return null;
+    final frames = _samples.map((s) {
+      return PitchFrame(
+        time: s.timeMs / 1000.0,
+        hz: s.freqHz,
+        midi: s.midi,
+      );
+    }).toList();
+    return LastTake(
+      exerciseId: widget.exercise.id,
+      recordedAt: widget.attempt.completedAt ?? DateTime.now(),
+      frames: frames,
+      durationSec: _durationMs / 1000.0,
+      audioPath: widget.attempt.recordingPath,
+      pitchDifficulty: widget.attempt.pitchDifficulty,
+    );
+  }
+}

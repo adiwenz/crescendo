@@ -28,6 +28,7 @@ class ExerciseSegment {
 class RangeExerciseGenerator {
   static const int safeMinMidi = 36;
   static const int safeMaxMidi = 84;
+  static const bool enableRangeGeneration = false;
 
   List<ExerciseSegment> buildTransposedSegments({
     required List<int> patternOffsets,
@@ -91,6 +92,18 @@ class RangeExerciseGenerator {
     final specSegments = exercise.highwaySpec!.segments;
     final baseRootMidi = _rootMidiFromSpec(specSegments);
     final offsets = _patternOffsets(specSegments, baseRootMidi);
+    if (!enableRangeGeneration) {
+      final range = _segmentMidiRange(specSegments);
+      return [
+        ExerciseInstance(
+          baseExerciseId: exercise.id,
+          transposeSemitones: 0,
+          minNote: range.lowMidi,
+          maxNote: range.highMidi,
+          label: 'Base: ${_noteName(baseRootMidi)}',
+        ),
+      ];
+    }
     final builtSegments = buildTransposedSegments(
       patternOffsets: offsets,
       userLowestMidi: lowestMidi,
@@ -128,6 +141,24 @@ class RangeExerciseGenerator {
       }
     }
     return offsets;
+  }
+
+  SegmentRange _segmentMidiRange(List<PitchSegment> segments) {
+    var minMidi = segments.first.midiNote;
+    var maxMidi = segments.first.midiNote;
+    for (final seg in segments) {
+      minMidi = math.min(minMidi, seg.midiNote);
+      maxMidi = math.max(maxMidi, seg.midiNote);
+      if (seg.startMidi != null) {
+        minMidi = math.min(minMidi, seg.startMidi!);
+        maxMidi = math.max(maxMidi, seg.startMidi!);
+      }
+      if (seg.endMidi != null) {
+        minMidi = math.min(minMidi, seg.endMidi!);
+        maxMidi = math.max(maxMidi, seg.endMidi!);
+      }
+    }
+    return SegmentRange(lowMidi: minMidi, highMidi: maxMidi);
   }
 
   String _noteName(int midi) {

@@ -11,11 +11,9 @@ import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/pitch_segment.dart';
-import '../../models/exercise_instance.dart';
 import '../../services/audio_synth_service.dart';
-import '../../services/range_exercise_generator.dart';
-import '../../services/range_store.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
@@ -47,11 +45,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   double? _audioPositionSec;
   bool _audioStarted = false;
   late final double _audioLatencyMs;
-  final _rangeStore = RangeStore();
-  final _rangeGenerator = RangeExerciseGenerator();
   List<ReferenceNote> _notes = const [];
   double _durationSec = 1.0;
   final double _leadInSec = 2.0;
+  bool _loggedGraphInfo = false;
 
   @override
   void initState() {
@@ -61,7 +58,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
             PitchHighwayDifficulty.medium;
     _notes = _buildReferenceNotes(widget.exercise, difficulty);
     _durationSec = _computeDuration(_notes);
-    unawaited(_loadRangeNotes(widget.exercise, difficulty));
     _ticker = createTicker(_onTick);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
@@ -148,76 +144,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     });
   }
 
-  Future<void> _loadRangeNotes(
-    VocalExercise exercise,
-    PitchHighwayDifficulty difficulty,
-  ) async {
-    final range = await _rangeStore.getRange();
-    final lowest = range.$1;
-    final highest = range.$2;
-    if (!mounted || lowest == null || highest == null) return;
-    final instances = _rangeGenerator.generate(
-      exercise: exercise,
-      lowestMidi: lowest,
-      highestMidi: highest,
-    );
-    if (instances.isEmpty) return;
-    final scaledSegments = _scaledSegments(exercise, difficulty);
-    final stitched = _concatenateSegments(scaledSegments, instances);
-    final notes = _segmentsToNotes(stitched);
-    if (!mounted) return;
-    setState(() {
-      _notes = notes;
-      _durationSec = _computeDuration(notes);
-    });
-  }
-
   double _computeDuration(List<ReferenceNote> notes) {
     final specDuration =
         notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).fold(0.0, math.max);
     return math.max(widget.lastTake.durationSec, specDuration) +
         AudioSynthService.tailSeconds;
-  }
-
-  List<PitchSegment> _scaledSegments(
-    VocalExercise exercise,
-    PitchHighwayDifficulty difficulty,
-  ) {
-    final spec = exercise.highwaySpec;
-    if (spec == null) return const [];
-    final multiplier =
-        PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
-    return PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
-  }
-
-  List<PitchSegment> _concatenateSegments(
-    List<PitchSegment> baseSegments,
-    List<ExerciseInstance> instances,
-  ) {
-    const gapMs = 1000;
-    final stitched = <PitchSegment>[];
-    var cursorMs = 0;
-    for (final instance in instances) {
-      var localEnd = 0;
-      for (final seg in baseSegments) {
-        stitched.add(PitchSegment(
-          startMs: seg.startMs + cursorMs,
-          endMs: seg.endMs + cursorMs,
-          midiNote: seg.midiNote + instance.transposeSemitones,
-          toleranceCents: seg.toleranceCents,
-          label: seg.label,
-          startMidi: seg.startMidi != null
-              ? seg.startMidi! + instance.transposeSemitones
-              : null,
-          endMidi: seg.endMidi != null
-              ? seg.endMidi! + instance.transposeSemitones
-              : null,
-        ));
-        if (seg.endMs > localEnd) localEnd = seg.endMs;
-      }
-      cursorMs += localEnd + gapMs;
-    }
-    return stitched;
   }
 
   List<ReferenceNote> _buildReferenceNotes(
@@ -266,9 +197,31 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   @override
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
-    final midiValues = _notes.map((n) => n.midi).toList();
-    final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
-    final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
+    final noteMidis = _notes.map((n) => n.midi.toDouble()).toList();
+    final contourMidis = widget.lastTake.frames
+        .map((f) => f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null))
+        .whereType<double>()
+        .toList();
+    final combined = [...noteMidis, ...contourMidis];
+    final minMidi = combined.isNotEmpty
+        ? (combined.reduce(math.min).floor() - 3)
+        : 48;
+    final maxMidi = combined.isNotEmpty
+        ? (combined.reduce(math.max).ceil() + 3)
+        : 72;
+    assert(() {
+      debugPrint('[Review] exerciseId: ${widget.lastTake.exerciseId}');
+      if (noteMidis.isNotEmpty) {
+        debugPrint('[Review] note midi range: '
+            '${noteMidis.reduce(math.min)}..${noteMidis.reduce(math.max)}');
+      }
+      if (contourMidis.isNotEmpty) {
+        debugPrint('[Review] contour midi range: '
+            '${contourMidis.reduce(math.min)}..${contourMidis.reduce(math.max)}');
+      }
+      debugPrint('[Review] viewport midi: $minMidi..$maxMidi');
+      return true;
+    }());
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -281,50 +234,75 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _playing ? _stop : _start,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: PitchHighwayPainter(
-                      notes: _notes,
-                      pitchTail: widget.lastTake.frames,
-                      time: _time,
-                      pixelsPerSecond: 160,
-                      playheadFraction: 0.45,
-                      smoothingWindowSec: 0.12,
-                      drawBackground: false,
-                      showLivePitch: false,
-                      showPlayheadLine: false,
-                      midiMin: minMidi,
-                      midiMax: maxMidi,
-                      colors: colors,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (kDebugMode && !_loggedGraphInfo) {
+                  debugPrint(
+                    'REVIEW GRAPH: height=${constraints.maxHeight} '
+                    'topPad=0.0 bottomPad=0.0 '
+                    'viewportMinMidi=$minMidi viewportMaxMidi=$maxMidi',
+                  );
+                  _loggedGraphInfo = true;
+                }
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: PitchHighwayPainter(
+                          notes: _notes,
+                          pitchTail: widget.lastTake.frames,
+                          time: _time,
+                          pixelsPerSecond: 160,
+                          playheadFraction: 0.45,
+                          smoothingWindowSec: 0.12,
+                          drawBackground: false,
+                          showLivePitch: false,
+                          showPlayheadLine: false,
+                          midiMin: minMidi,
+                          midiMax: maxMidi,
+                          colors: colors,
+                          debugLogMapping: true,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: PitchContourPainter(
-                      frames: widget.lastTake.frames,
-                      time: _time,
-                      pixelsPerSecond: 160,
-                      playheadFraction: 0.45,
-                      midiMin: minMidi,
-                      midiMax: maxMidi,
-                      glowColor: colors.goldAccent,
-                      coreColor: colors.goldAccent,
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: PitchContourPainter(
+                          frames: widget.lastTake.frames,
+                          time: _time,
+                          pixelsPerSecond: 160,
+                          playheadFraction: 0.45,
+                          midiMin: minMidi,
+                          midiMax: maxMidi,
+                          glowColor: colors.goldAccent,
+                          coreColor: colors.goldAccent,
+                          debugLogMapping: true,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _PlayheadPainter(
-                      playheadFraction: 0.45,
-                      lineColor: colors.blueAccent.withOpacity(0.7),
-                      shadowColor: Colors.black.withOpacity(0.3),
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _PlayheadPainter(
+                          playheadFraction: 0.45,
+                          lineColor: colors.blueAccent.withOpacity(0.7),
+                          shadowColor: Colors.black.withOpacity(0.3),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                    if (kDebugMode && _notes.isNotEmpty)
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _DebugYLinePainter(
+                            midi: _notes.first.midi.toDouble(),
+                            midiMin: minMidi,
+                            midiMax: maxMidi,
+                            color: Colors.red.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -360,5 +338,41 @@ class _PlayheadPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PlayheadPainter oldDelegate) {
     return oldDelegate.playheadFraction != playheadFraction;
+  }
+}
+
+class _DebugYLinePainter extends CustomPainter {
+  final double midi;
+  final int midiMin;
+  final int midiMax;
+  final Color color;
+
+  _DebugYLinePainter({
+    required this.midi,
+    required this.midiMin,
+    required this.midiMax,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = PitchMath.midiToY(
+      midi: midi,
+      height: size.height,
+      midiMin: midiMin,
+      midiMax: midiMax,
+    );
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DebugYLinePainter oldDelegate) {
+    return oldDelegate.midi != midi ||
+        oldDelegate.midiMin != midiMin ||
+        oldDelegate.midiMax != midiMax ||
+        oldDelegate.color != color;
   }
 }

@@ -11,6 +11,8 @@ import '../theme/app_theme.dart';
 
 enum PitchMatch { good, near, off }
 
+final Set<int> _loggedNoteMappingPainters = <int>{};
+
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
   final List<PitchFrame> pitchTail;
@@ -27,6 +29,7 @@ class PitchHighwayPainter extends CustomPainter {
   final ValueListenable<double?>? liveMidi;
   final double pitchTailTimeOffsetSec;
   final List<TailPoint>? tailPoints;
+  final bool debugLogMapping;
 
   PitchHighwayPainter({
     required this.notes,
@@ -43,6 +46,7 @@ class PitchHighwayPainter extends CustomPainter {
     this.liveMidi,
     this.pitchTailTimeOffsetSec = 0,
     this.tailPoints,
+    this.debugLogMapping = false,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
         super(repaint: liveMidi == null ? time : Listenable.merge([time, liveMidi]));
@@ -88,6 +92,29 @@ class PitchHighwayPainter extends CustomPainter {
     final currentNote = _noteAtTime(currentTime);
     final smoothedMidi = liveMidi?.value ?? _smoothedMidiAt(currentTime);
     final currentStatus = _statusForTime(currentTime, smoothedMidi);
+
+    if (debugLogMapping && kDebugMode && _loggedNoteMappingPainters.add(identityHashCode(this))) {
+      assert(midiMax > midiMin);
+      for (var i = 0; i < math.min(3, notes.length); i++) {
+        final n = notes[i];
+        assert(n.midi > 0 && n.midi < 127);
+        final y = PitchMath.midiToY(
+          midi: n.midi.toDouble(),
+          height: size.height,
+          midiMin: midiMin,
+          midiMax: midiMax,
+        );
+        debugPrint(
+          'NOTE Y: label=${n.lyric ?? ''} midi=${n.midi.toStringAsFixed(2)} '
+          'y=${y.toStringAsFixed(2)}',
+        );
+        debugPrint(
+          'NOTE PILL TOP: label=${n.lyric ?? ''} '
+          'pillTop=${(y - barHeight / 2).toStringAsFixed(2)} '
+          'pillHeight=$barHeight',
+        );
+      }
+    }
 
     for (final n in notes) {
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
