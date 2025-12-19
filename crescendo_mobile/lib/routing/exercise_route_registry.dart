@@ -40,4 +40,11 @@ class ExerciseRouteRegistry {
 
   static List<ExerciseRouteEntry> entriesForCategory(String categoryId) =>
       _entries.values.where((e) => e.categoryId == categoryId).toList();
+
+  static bool open(BuildContext context, String exerciseId) {
+    final entry = entryFor(exerciseId);
+    if (entry == null) return false;
+    Navigator.push(context, MaterialPageRoute(builder: entry.builder));
+    return true;
+  }
 }

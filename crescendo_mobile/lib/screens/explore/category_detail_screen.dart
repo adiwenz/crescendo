@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../data/seed_library.dart';
 import '../../models/category.dart';
-import '../../routing/exercise_route_registry.dart';
 import '../../state/library_store.dart';
 import '../../widgets/abstract_banner_painter.dart';
 import '../../widgets/exercise_row_banner.dart';
+import 'exercise_preview_screen.dart';
 
 class CategoryDetailScreen extends StatelessWidget {
   final Category category;
@@ -41,27 +41,12 @@ class CategoryDetailScreen extends StatelessWidget {
                 bannerStyleId: e.bannerStyleId,
                 completed: completed.contains(e.id),
                 onTap: () {
-                  final entry = ExerciseRouteRegistry.entryFor(e.id);
-                  if (entry != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: entry.builder),
-                    );
-                  } else {
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Not wired yet'),
-                        content: Text('Exercise ${e.title} is not wired to a screen.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ExercisePreviewScreen(exerciseId: e.id),
+                    ),
+                  );
                 },
               ),
             ),

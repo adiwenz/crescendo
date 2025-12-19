@@ -4,11 +4,11 @@ import '../../data/seed_library.dart';
 import '../../design/app_colors.dart';
 import '../../design/app_text.dart';
 import '../../models/category.dart';
-import '../../routing/exercise_route_registry.dart';
 import '../../widgets/home/continue_card.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import '../../widgets/home/home_hero_header.dart';
 import '../explore/category_detail_screen.dart';
+import '../explore/exercise_preview_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -56,8 +56,7 @@ class HomeScreen extends StatelessWidget {
                             progress: 0.35,
                             pillText: 'Session in progress',
                             bannerStyleId: warmup.bannerStyleId,
-                            onTap: () =>
-                                _openExercise(context, warmup.id, warmup.title),
+                        onTap: () => _openExercise(context, warmup.id, warmup.title),
                           ),
                         if (pitch != null)
                           ContinueCard(
@@ -65,8 +64,7 @@ class HomeScreen extends StatelessWidget {
                             subtitle: 'Level 2',
                             progress: 0.65,
                             bannerStyleId: pitch.bannerStyleId,
-                            onTap: () =>
-                                _openExercise(context, pitch.id, pitch.title),
+                        onTap: () => _openExercise(context, pitch.id, pitch.title),
                           ),
                       ],
                     ),
@@ -123,20 +121,10 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _openExercise(BuildContext context, String id, String title) {
-    final entry = ExerciseRouteRegistry.entryFor(id);
-    if (entry != null) {
-      Navigator.push(context, MaterialPageRoute(builder: entry.builder));
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Not wired yet'),
-        content: Text('Exercise $title is not wired to a screen.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('OK')),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExercisePreviewScreen(exerciseId: id),
       ),
     );
   }

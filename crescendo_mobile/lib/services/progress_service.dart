@@ -6,6 +6,7 @@ import '../models/exercise_attempt.dart';
 import '../models/progress_stats.dart';
 import '../services/progress_stats.dart';
 import 'exercise_repository.dart';
+import '../state/library_store.dart';
 
 class ProgressService {
   static final ProgressService _instance = ProgressService._internal();
@@ -28,6 +29,12 @@ class ProgressService {
 
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
     await _repo.saveAttempt(attempt);
+    // Mirror into the simpler library store so the rest of the app (Home/Explore/Progress)
+    // can reflect completions immediately.
+    libraryStore.markCompleted(
+      attempt.exerciseId,
+      score: attempt.overallScore.round(),
+    );
     await refresh();
   }
 

@@ -28,8 +28,8 @@ class _ExerciseSessionScreenState extends State<ExerciseSessionScreen> {
               ? null
               : () async {
                   setState(() => _finished = true);
-                  libraryStore.markCompleted(widget.exercise.id);
                   final score = 70 + Random().nextInt(29);
+                  libraryStore.markCompleted(widget.exercise.id, score: score);
                   if (!mounted) return;
                   Navigator.pushReplacement(
                     context,

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 class RecentActivityRow extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final String dateLabel;
   final String scoreLabel;
 
   const RecentActivityRow({
     super.key,
     required this.title,
+    this.subtitle,
     required this.dateLabel,
     required this.scoreLabel,
   });
@@ -17,7 +19,15 @@ class RecentActivityRow extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(title, style: Theme.of(context).textTheme.titleMedium),
-      subtitle: Text(dateLabel, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (subtitle != null)
+            Text(subtitle!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+          Text(dateLabel, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+        ],
+      ),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
