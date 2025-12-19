@@ -7,6 +7,7 @@ import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/replay_models.dart';
 import '../../models/vocal_exercise.dart';
+import '../../services/attempt_repository.dart';
 import '../widgets/pitch_snapshot_chart.dart';
 import 'pitch_highway_review_screen.dart';
 
@@ -25,18 +26,43 @@ class ExerciseReviewScreen extends StatefulWidget {
 }
 
 class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
+  final AttemptRepository _attempts = AttemptRepository.instance;
   List<PitchSample> _samples = const [];
   List<TargetNote> _targets = const [];
   int _durationMs = 6000;
+  late ExerciseAttempt _currentAttempt;
 
   @override
   void initState() {
     super.initState();
-    _loadReplayData();
+    _currentAttempt = widget.attempt;
+    _loadReplayData(_currentAttempt);
+    _attempts.addListener(_onAttemptsChanged);
+    _attempts.ensureLoaded().then((_) => _refreshFromRepo());
   }
 
-  void _loadReplayData() {
-    _samples = _parseContour(widget.attempt.contourJson);
+  @override
+  void dispose() {
+    _attempts.removeListener(_onAttemptsChanged);
+    super.dispose();
+  }
+
+  void _onAttemptsChanged() {
+    _refreshFromRepo();
+  }
+
+  void _refreshFromRepo() {
+    final latest = _attempts.latestFor(widget.exercise.id);
+    if (latest == null || latest.id == _currentAttempt.id) return;
+    if (!mounted) return;
+    setState(() {
+      _currentAttempt = latest;
+      _loadReplayData(_currentAttempt);
+    });
+  }
+
+  void _loadReplayData(ExerciseAttempt attempt) {
+    _samples = _parseContour(attempt.contourJson);
     _durationMs = _samples.isEmpty
         ? 6000
         : _samples.map((s) => s.timeMs).reduce((a, b) => a > b ? a : b);
@@ -45,7 +71,7 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final attempt = widget.attempt;
+    final attempt = _currentAttempt;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -100,34 +126,6 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Text('No contour available for this take'),
                 ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _samples.isEmpty ? null : _openReplay,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Play'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _samples.isEmpty ? null : _openReplay,
-                      icon: const Icon(Icons.replay),
-                      label: const Text('Replay'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -199,11 +197,11 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
     }).toList();
     return LastTake(
       exerciseId: widget.exercise.id,
-      recordedAt: widget.attempt.completedAt ?? DateTime.now(),
+      recordedAt: _currentAttempt.completedAt ?? DateTime.now(),
       frames: frames,
       durationSec: _durationMs / 1000.0,
-      audioPath: widget.attempt.recordingPath,
-      pitchDifficulty: widget.attempt.pitchDifficulty,
+      audioPath: _currentAttempt.recordingPath,
+      pitchDifficulty: _currentAttempt.pitchDifficulty,
     );
   }
 }

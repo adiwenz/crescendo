@@ -10,6 +10,7 @@ import '../../widgets/banner_card.dart';
 import '../../ui/screens/exercise_review_screen.dart';
 import '../../models/reference_note.dart';
 import 'dart:math' as math;
+import '../../ui/route_observer.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -20,7 +21,7 @@ class ExercisePreviewScreen extends StatefulWidget {
   State<ExercisePreviewScreen> createState() => _ExercisePreviewScreenState();
 }
 
-class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
+class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with RouteAware {
   final ExerciseRepository _repo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
   final AudioSynthService _synth = AudioSynthService();
@@ -37,9 +38,24 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _synth.stop();
     super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    _refreshLatest();
   }
 
   Future<void> _load() async {
@@ -57,6 +73,15 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
       _exercise = ex;
       _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
       _loading = false;
+    });
+  }
+
+  Future<void> _refreshLatest() async {
+    await _attempts.refresh();
+    final latest = _attempts.latestFor(widget.exerciseId);
+    if (!mounted) return;
+    setState(() {
+      _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
     });
   }
 
