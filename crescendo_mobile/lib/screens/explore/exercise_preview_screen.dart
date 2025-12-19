@@ -47,7 +47,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
       (e) => e.id == widget.exerciseId,
       orElse: () => _repo.getExercises().first,
     );
-    await _attempts.ensureLoaded();
+    await _attempts.refresh();
     final latest = _attempts.latestFor(widget.exerciseId);
     if (latest == null) {
       debugPrint('[Preview] latest attempt not found for ${widget.exerciseId}');
@@ -171,8 +171,15 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
 
   void _reviewLast() {
     final ex = _exercise;
-    final attempt = _latest;
-    if (ex == null || attempt == null || attempt.recordingPath == null || attempt.recordingPath!.isEmpty) {
+    final latest = _attempts.latestFor(widget.exerciseId);
+    final attempt = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
+    if (attempt == null || ex == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No previous attempt yet')),
+      );
+      return;
+    }
+    if (attempt.recordingPath == null || attempt.recordingPath!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No previous recording available')),
       );
