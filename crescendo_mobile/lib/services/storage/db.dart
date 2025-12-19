@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 5, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 7, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -44,6 +44,17 @@ class AppDatabase {
         version INTEGER
       )
     ''');
+    await db.execute('''
+      CREATE TABLE exercise_progress(
+        exerciseId TEXT PRIMARY KEY,
+        highestUnlockedLevel INTEGER,
+        lastSelectedLevel INTEGER,
+        bestScoresJson TEXT,
+        lastScoresJson TEXT,
+        attemptsJson TEXT,
+        updatedAt INTEGER
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -73,6 +84,22 @@ class AppDatabase {
       await _addColumnIfMissing(db, 'exercise_attempts', 'contourJson', 'TEXT');
       await _addColumnIfMissing(db, 'exercise_attempts', 'startedAt', 'INTEGER');
       await _addColumnIfMissing(db, 'exercise_attempts', 'completedAt', 'INTEGER');
+    }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS exercise_progress(
+          exerciseId TEXT PRIMARY KEY,
+          highestUnlockedLevel INTEGER,
+          lastSelectedLevel INTEGER,
+          bestScoresJson TEXT,
+          lastScoresJson TEXT,
+          attemptsJson TEXT,
+          updatedAt INTEGER
+        )
+      ''');
+    }
+    if (oldVersion < 7) {
+      await _addColumnIfMissing(db, 'exercise_progress', 'lastSelectedLevel', 'INTEGER');
     }
   }
 

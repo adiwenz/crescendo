@@ -49,6 +49,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   double _durationSec = 1.0;
   final double _leadInSec = 2.0;
   bool _loggedGraphInfo = false;
+  late final double _pixelsPerSecond;
 
   @override
   void initState() {
@@ -58,6 +59,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
             PitchHighwayDifficulty.medium;
     _notes = _buildReferenceNotes(widget.exercise, difficulty);
     _durationSec = _computeDuration(_notes);
+    _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(difficulty);
     _ticker = createTicker(_onTick);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
@@ -252,7 +254,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                           notes: _notes,
                           pitchTail: widget.lastTake.frames,
                           time: _time,
-                          pixelsPerSecond: 160,
+                          pixelsPerSecond: _pixelsPerSecond,
                           playheadFraction: 0.45,
                           smoothingWindowSec: 0.12,
                           drawBackground: false,
@@ -270,7 +272,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                         painter: PitchContourPainter(
                           frames: widget.lastTake.frames,
                           time: _time,
-                          pixelsPerSecond: 160,
+                          pixelsPerSecond: _pixelsPerSecond,
                           playheadFraction: 0.45,
                           midiMin: minMidi,
                           midiMax: maxMidi,

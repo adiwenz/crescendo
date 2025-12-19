@@ -141,4 +141,6 @@ class VocalExercise {
     }
     return sampled;
   }
+
+  bool get usesPitchHighway => type == ExerciseType.pitchHighway;
 }

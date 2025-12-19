@@ -10,15 +10,17 @@ import 'package:flutter/foundation.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/pitch_highway_spec.dart';
+import '../../models/pitch_segment.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
+import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
-import '../../services/unlock_service.dart';
+import '../../services/exercise_level_progress_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/debug_overlay.dart';
@@ -30,7 +32,6 @@ import '../../utils/pitch_ball_controller.dart';
 import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
-import 'level_up_screen.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -45,6 +46,42 @@ class ExercisePlayerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPitchHighway = exercise.type == ExerciseType.pitchHighway;
+    final Widget body = switch (exercise.type) {
+      ExerciseType.pitchHighway => pitchDifficulty == null
+          ? FutureBuilder(
+              future: ExerciseLevelProgressRepository()
+                  .getExerciseProgress(exercise.id),
+              builder: (context, snapshot) {
+                final progress = snapshot.data;
+                if (snapshot.connectionState != ConnectionState.done &&
+                    progress == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final resolved = progress == null
+                    ? PitchHighwayDifficulty.easy
+                    : pitchHighwayDifficultyFromLevel(
+                        progress.highestUnlockedLevel,
+                      );
+                return PitchHighwayPlayer(
+                  exercise: exercise,
+                  showBackButton: true,
+                  pitchDifficulty: resolved,
+                );
+              },
+            )
+          : PitchHighwayPlayer(
+              exercise: exercise,
+              showBackButton: true,
+              pitchDifficulty: pitchDifficulty ?? PitchHighwayDifficulty.medium,
+            ),
+      ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
+      ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
+      ExerciseType.sustainedPitchHold => SustainedPitchHoldPlayer(exercise: exercise),
+      ExerciseType.pitchMatchListening => PitchMatchListeningPlayer(exercise: exercise),
+      ExerciseType.articulationRhythm => ArticulationRhythmPlayer(exercise: exercise),
+      ExerciseType.dynamicsRamp => DynamicsRampPlayer(exercise: exercise),
+      ExerciseType.cooldownRecovery => CooldownRecoveryPlayer(exercise: exercise),
+    };
     return Scaffold(
       appBar: isPitchHighway
           ? null
@@ -56,20 +93,7 @@ class ExercisePlayerScreen extends StatelessWidget {
               ),
               title: Text(exercise.name),
             ),
-      body: switch (exercise.type) {
-        ExerciseType.pitchHighway => PitchHighwayPlayer(
-            exercise: exercise,
-            showBackButton: true,
-            pitchDifficulty: pitchDifficulty ?? PitchHighwayDifficulty.medium,
-          ),
-        ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
-        ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
-        ExerciseType.sustainedPitchHold => SustainedPitchHoldPlayer(exercise: exercise),
-        ExerciseType.pitchMatchListening => PitchMatchListeningPlayer(exercise: exercise),
-        ExerciseType.articulationRhythm => ArticulationRhythmPlayer(exercise: exercise),
-        ExerciseType.dynamicsRamp => DynamicsRampPlayer(exercise: exercise),
-        ExerciseType.cooldownRecovery => CooldownRecoveryPlayer(exercise: exercise),
-      },
+      body: body,
     );
   }
 }
@@ -98,7 +122,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final List<PitchFrame> _captured = [];
   final ProgressService _progress = ProgressService();
   final LastTakeStore _lastTakeStore = LastTakeStore();
-  final UnlockService _unlockService = UnlockService();
+  final ExerciseLevelProgressRepository _levelProgress =
+      ExerciseLevelProgressRepository();
   final PerformanceClock _clock = PerformanceClock();
   final PitchBallController _pitchBall = PitchBallController();
   final PitchState _pitchState = PitchState();
@@ -130,6 +155,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   String? _lastRecordingPath;
   String? _lastContourJson;
   late final PitchHighwaySpec? _scaledSpec;
+  late final double _tempoMultiplier;
+  late final double _pixelsPerSecond;
   double? _audioPositionSec;
   double _manualOffsetMs = 0;
   late final double _audioLatencyMs;
@@ -146,6 +173,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     super.initState();
     _ticker = createTicker(_onTick);
     _scaledSpec = _buildScaledSpec();
+    _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
@@ -153,14 +181,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   PitchHighwaySpec? _buildScaledSpec() {
     final spec = widget.exercise.highwaySpec;
+    final segments = spec?.segments ?? const <PitchSegment>[];
+    _tempoMultiplier =
+        PitchHighwayTempo.multiplierFor(widget.pitchDifficulty, segments);
     if (spec == null || spec.segments.isEmpty) return spec;
-    final tempoMultiplier = PitchHighwayTempo.multiplierFor(
-      widget.pitchDifficulty,
-      spec.segments,
-    );
     final scaledSegments = PitchHighwayTempo.scaleSegments(
       spec.segments,
-      tempoMultiplier,
+      _tempoMultiplier,
     );
     return PitchHighwaySpec(segments: scaledSegments);
   }
@@ -490,20 +517,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
-    final levelResult = await _unlockService.applyResult(
+    final level = pitchHighwayDifficultyLevel(widget.pitchDifficulty);
+    final updated = await _levelProgress.saveAttempt(
       exerciseId: widget.exercise.id,
-      difficulty: widget.pitchDifficulty,
+      level: level,
       score: score.round(),
     );
-    if (levelResult.levelUp && mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => LevelUpScreen(
-            exerciseName: widget.exercise.name,
-            score: score.round(),
-            unlockedDifficulty: levelResult.unlockedDifficulty,
-          ),
-        ),
+    if (score > 90 && level == updated.highestUnlockedLevel && level < ExerciseLevelProgress.maxLevel) {
+      await _levelProgress.updateUnlockedLevel(
+        exerciseId: widget.exercise.id,
+        newLevel: level + 1,
       );
     }
     if (!mounted) return;
@@ -550,6 +573,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           pitchTail: const [],
                           tailPoints: _tailBuffer.points,
                           time: _time,
+                          pixelsPerSecond: _pixelsPerSecond,
                           liveMidi: _liveMidi,
                           pitchTailTimeOffsetSec: 0,
                           drawBackground: false,

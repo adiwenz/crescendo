@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/vocal_exercise.dart';
 import '../../models/exercise_instance.dart';
+import '../../models/exercise_level_progress.dart';
 import '../../services/exercise_repository.dart';
-import '../../services/unlock_service.dart';
+import '../../services/exercise_level_progress_repository.dart';
 import '../../services/range_exercise_generator.dart';
 import '../../services/range_store.dart';
 import '../theme/app_theme.dart';
@@ -12,7 +13,6 @@ import '../widgets/exercise_preview_mini.dart';
 import '../widgets/exercise_tile.dart';
 import 'exercise_info_screen.dart';
 import 'exercise_player_screen.dart';
-import '../../models/pitch_highway_difficulty.dart';
 
 class ExerciseListScreen extends StatefulWidget {
   final String categoryId;
@@ -30,7 +30,7 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
     final repo = ExerciseRepository();
     final category = repo.getCategory(widget.categoryId);
     final exercises = repo.getExercisesForCategory(widget.categoryId);
-    final unlockFuture = _loadUnlocks(exercises);
+    final progressFuture = _loadProgress(exercises);
     final rangeFuture = RangeStore().getRange();
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -40,12 +40,14 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
       ),
       body: AppBackground(
         child: SafeArea(
-          child: FutureBuilder<(Map<String, int>, (int?, int?))>(
-            future: Future.wait([unlockFuture, rangeFuture]).then(
-              (values) => (values[0] as Map<String, int>, values[1] as (int?, int?)),
+          child: FutureBuilder<(Map<String, ExerciseLevelProgress>, (int?, int?))>(
+            future: Future.wait([progressFuture, rangeFuture]).then(
+              (values) =>
+                  (values[0] as Map<String, ExerciseLevelProgress>, values[1] as (int?, int?)),
             ),
             builder: (context, snapshot) {
-              final unlocks = snapshot.data?.$1 ?? const {};
+              final progressMap =
+                  snapshot.data?.$1 ?? const <String, ExerciseLevelProgress>{};
               final range = snapshot.data?.$2 ?? (null, null);
               final lowest = range.$1;
               final highest = range.$2;
@@ -76,8 +78,10 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
                       itemCount: exercises.length,
                       itemBuilder: (context, index) {
                         final exercise = exercises[index];
+                        final progress = progressMap[exercise.id] ??
+                            ExerciseLevelProgress.empty(exercise.id);
                         final badge = exercise.type == ExerciseType.pitchHighway
-                            ? _buildUnlockBadge(context, unlocks[exercise.id] ?? 0)
+                            ? _buildUnlockBadge(context, progress)
                             : null;
                         final instances =
                             (exercise.type == ExerciseType.pitchHighway &&
@@ -139,20 +143,21 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
     };
   }
 
-  Future<Map<String, int>> _loadUnlocks(List<VocalExercise> exercises) async {
-    final service = UnlockService();
-    final Map<String, int> unlocks = {};
+  Future<Map<String, ExerciseLevelProgress>> _loadProgress(
+      List<VocalExercise> exercises) async {
+    final repo = ExerciseLevelProgressRepository();
+    final Map<String, ExerciseLevelProgress> progress = {};
     for (final ex in exercises) {
       if (ex.type != ExerciseType.pitchHighway) continue;
-      unlocks[ex.id] = await service.getMaxUnlocked(ex.id);
+      progress[ex.id] = await repo.getExerciseProgress(ex.id);
     }
-    return unlocks;
+    return progress;
   }
 
-  Widget _buildUnlockBadge(BuildContext context, int maxUnlocked) {
+  Widget _buildUnlockBadge(BuildContext context, ExerciseLevelProgress progress) {
     final colors = AppThemeColors.of(context);
-    final level = (maxUnlocked + 1).clamp(1, 3);
-    final locked = maxUnlocked < 2;
+    final level = progress.highestUnlockedLevel.clamp(1, 3);
+    final best = progress.bestScoreByLevel[level];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -160,20 +165,23 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: colors.borderSubtle),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Lvl $level',
+            'Unlocked: Level $level',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: colors.textPrimary,
                 ),
           ),
-          if (locked) ...[
-            const SizedBox(width: 4),
-            Icon(Icons.lock, size: 12, color: colors.textPrimary),
-          ],
+          if (best != null)
+            Text(
+              'Best $best%',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+            ),
         ],
       ),
     );
@@ -190,10 +198,10 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
       MaterialPageRoute(
         builder: (_) => ExercisePlayerScreen(
           exercise: ex,
-          pitchDifficulty: PitchHighwayDifficulty.medium,
+          pitchDifficulty: null,
         ),
       ),
-    );
+    ).then((_) => setState(() {}));
   }
 }
 

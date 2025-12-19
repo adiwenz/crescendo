@@ -2,28 +2,27 @@ import '../models/pitch_highway_difficulty.dart';
 import '../models/pitch_segment.dart';
 
 class PitchHighwayTempo {
-  static const double easyMultiplier = 0.80;
-  static const double mediumMultiplier = 1.00;
-  static const double hardMultiplier = 1.15;
-  static const double hardReducedMultiplier = 1.10;
+  static const double level1Multiplier = 0.85;
+  static const double level2Multiplier = 1.00;
+  static const double level3Multiplier = 1.15;
   static const double maxMultiplier = 1.20;
+  static const double basePixelsPerSecond = 160;
   static const int minDurationMs = 200;
-  static const double shortNoteMedianSec = 0.35;
 
   static double multiplierFor(
     PitchHighwayDifficulty difficulty,
-    List<PitchSegment> segments,
+    List<PitchSegment> _segments,
   ) {
-    var base = switch (difficulty) {
-      PitchHighwayDifficulty.easy => easyMultiplier,
-      PitchHighwayDifficulty.medium => mediumMultiplier,
-      PitchHighwayDifficulty.hard => hardMultiplier,
+    final base = switch (difficulty) {
+      PitchHighwayDifficulty.easy => level1Multiplier,
+      PitchHighwayDifficulty.medium => level2Multiplier,
+      PitchHighwayDifficulty.hard => level3Multiplier,
     };
-    if (difficulty == PitchHighwayDifficulty.hard &&
-        _medianDurationSec(segments) < shortNoteMedianSec) {
-      base = hardReducedMultiplier;
-    }
     return base.clamp(0.01, maxMultiplier);
+  }
+
+  static double pixelsPerSecondFor(PitchHighwayDifficulty difficulty) {
+    return basePixelsPerSecond * multiplierFor(difficulty, const []);
   }
 
   static List<PitchSegment> scaleSegments(
@@ -49,16 +48,4 @@ class PitchHighwayTempo {
         .toList(growable: false);
   }
 
-  static double _medianDurationSec(List<PitchSegment> segments) {
-    if (segments.isEmpty) return 0.0;
-    final durations = segments
-        .map((s) => (s.endMs - s.startMs) / 1000.0)
-        .where((d) => d.isFinite && d > 0)
-        .toList();
-    if (durations.isEmpty) return 0.0;
-    durations.sort();
-    final mid = durations.length ~/ 2;
-    if (durations.length.isOdd) return durations[mid];
-    return (durations[mid - 1] + durations[mid]) / 2;
-  }
 }

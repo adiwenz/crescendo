@@ -4,6 +4,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/exercise_attempt.dart';
 import '../../routing/exercise_route_registry.dart';
 import '../../services/attempt_repository.dart';
+import '../../services/exercise_level_progress_repository.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
@@ -11,6 +12,8 @@ import '../../ui/screens/exercise_review_screen.dart';
 import '../../models/reference_note.dart';
 import 'dart:math' as math;
 import '../../ui/route_observer.dart';
+import '../../models/exercise_level_progress.dart';
+import '../../models/pitch_highway_difficulty.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -24,11 +27,18 @@ class ExercisePreviewScreen extends StatefulWidget {
 class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with RouteAware {
   final ExerciseRepository _repo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
+  final ExerciseLevelProgressRepository _levelProgress =
+      ExerciseLevelProgressRepository();
   final AudioSynthService _synth = AudioSynthService();
   VocalExercise? _exercise;
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
   bool _previewing = false;
+  int _highestUnlockedLevel = ExerciseLevelProgress.minLevel;
+  int _selectedLevel = ExerciseLevelProgress.minLevel;
+  int? _highlightedLevel;
+  Map<int, int> _bestScoresByLevel = const <int, int>{};
+  bool _progressLoaded = false;
 
   @override
   void initState() {
@@ -56,6 +66,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   @override
   void didPopNext() {
     _refreshLatest();
+    _refreshProgress(showToast: true);
   }
 
   Future<void> _load() async {
@@ -63,6 +74,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
       (e) => e.id == widget.exerciseId,
       orElse: () => _repo.getExercises().first,
     );
+    await _refreshProgress();
     await _attempts.refresh();
     final latest = _attempts.latestFor(widget.exerciseId);
     if (latest == null) {
@@ -83,6 +95,43 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
     setState(() {
       _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
     });
+  }
+
+  Future<void> _refreshProgress({bool showToast = false}) async {
+    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId);
+    if (!mounted) return;
+    final previousHighest = _highestUnlockedLevel;
+    final nextHighest = progress.highestUnlockedLevel;
+    var nextSelected = _selectedLevel;
+    if (!_progressLoaded ||
+        nextSelected > nextHighest ||
+        nextSelected < ExerciseLevelProgress.minLevel) {
+      final preferred = progress.lastSelectedLevel;
+      if (preferred != null &&
+          preferred >= ExerciseLevelProgress.minLevel &&
+          preferred <= nextHighest) {
+        nextSelected = preferred;
+      } else {
+        nextSelected = nextHighest;
+      }
+    }
+    final levelUp = showToast && nextHighest > previousHighest;
+    setState(() {
+      _highestUnlockedLevel = nextHighest;
+      _bestScoresByLevel = progress.bestScoreByLevel;
+      _progressLoaded = true;
+      _highlightedLevel = levelUp ? nextHighest : null;
+      _selectedLevel = nextSelected;
+    });
+    if (levelUp && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
+      );
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        setState(() => _highlightedLevel = null);
+      });
+    }
   }
 
   @override
@@ -140,6 +189,96 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                     ),
                   ),
                 ),
+                if (ex?.usesPitchHighway == true) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Difficulty', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: List.generate(3, (index) {
+                              final level = index + 1;
+                              final unlocked = level <= _highestUnlockedLevel;
+                              final selected = _selectedLevel == level;
+                              final highlighted = _highlightedLevel == level;
+                              final best = _bestScoresByLevel[level];
+                              final difficulty = pitchHighwayDifficultyFromLevel(level);
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 250),
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: highlighted ? Colors.amber.withOpacity(0.2) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ChoiceChip(
+                                      label: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text('Level $level'),
+                                          if (!unlocked) ...[
+                                            const SizedBox(width: 6),
+                                            Icon(Icons.lock, size: 14, color: Colors.grey[600]),
+                                          ],
+                                        ],
+                                      ),
+                                      selected: selected,
+                                      onSelected: unlocked
+                                          ? (_) async {
+                                              setState(() => _selectedLevel = level);
+                                              await _levelProgress.setLastSelectedLevel(
+                                                exerciseId: widget.exerciseId,
+                                                level: level,
+                                              );
+                                            }
+                                          : null,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      pitchHighwayDifficultySpeedLabel(difficulty),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(color: Colors.grey[600]),
+                                    ),
+                                    if (best != null)
+                                      Text(
+                                        'Best: $best%',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(color: Colors.grey[600]),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ),
+                          if (_highestUnlockedLevel < ExerciseLevelProgress.maxLevel)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                'Score 90%+ on the previous level to unlock.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -179,7 +318,17 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   }
 
   Future<void> _startExercise() async {
-    final opened = ExerciseRouteRegistry.open(context, widget.exerciseId);
+    if (_exercise?.usesPitchHighway == true) {
+      await _levelProgress.setLastSelectedLevel(
+        exerciseId: widget.exerciseId,
+        level: _selectedLevel,
+      );
+    }
+    final opened = ExerciseRouteRegistry.open(
+      context,
+      widget.exerciseId,
+      difficultyLevel: _selectedLevel,
+    );
     if (!opened) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Exercise not wired yet')),
