@@ -47,33 +47,89 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
   Widget build(BuildContext context) {
     final attempt = widget.attempt;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Review: ${widget.exercise.name}'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Last score: ${attempt.overallScore.toStringAsFixed(0)}'),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _samples.isEmpty ? null : _openReplay,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Replay on highway'),
-            ),
-            const SizedBox(height: 24),
-            const Text('Snapshot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            if (_samples.isNotEmpty)
-              PitchSnapshotChart(
-                targetNotes: _targets,
-                recordedSamples: _samples,
-                durationMs: _durationMs,
-                height: 260,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Review: ${widget.exercise.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
-            if (_samples.isEmpty) const Text('No contour available for this take'),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                'Last score: ${attempt.overallScore.toStringAsFixed(0)}',
+                style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _samples.isEmpty ? null : _openReplay,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Play recording'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (_samples.isNotEmpty)
+                PitchSnapshotView(
+                  targetNotes: _targets,
+                  pitchSamples: _samples,
+                  durationMs: _durationMs,
+                  height: 220,
+                ),
+              if (_samples.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('No contour available for this take'),
+                ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _samples.isEmpty ? null : _openReplay,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Play'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _samples.isEmpty ? null : _openReplay,
+                      icon: const Icon(Icons.replay),
+                      label: const Text('Replay'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
