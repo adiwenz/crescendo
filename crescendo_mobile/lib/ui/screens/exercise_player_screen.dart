@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -126,6 +127,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  String? _lastRecordingPath;
+  String? _lastContourJson;
   late final PitchHighwaySpec? _scaledSpec;
   double? _audioPositionSec;
   double _manualOffsetMs = 0;
@@ -282,6 +285,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _visualState.reset();
     _tailBuffer.clear();
     await _saveLastTake(recordingResult?.audioPath);
+    _lastRecordingPath =
+        (recordingResult?.audioPath != null && recordingResult!.audioPath!.isNotEmpty)
+            ? recordingResult.audioPath
+            : null;
+    _lastContourJson = _buildContourJson();
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
     await _completeAndPop(score, {'intonation': score});
@@ -317,6 +325,25 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       pitchDifficulty: widget.pitchDifficulty.name,
     );
     await _lastTakeStore.saveLastTake(take);
+  }
+
+  String? _buildContourJson() {
+    if (_captured.isEmpty) return null;
+    try {
+      final sanitized = _captured.map((f) {
+        final midi = f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
+        return {
+          't': f.time,
+          'hz': f.hz,
+          'midi': midi,
+          'v': f.voicedProb,
+          'rms': f.rms,
+        };
+      }).toList();
+      return jsonEncode(sanitized);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _simulatePitch(double t) {
@@ -453,6 +480,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       overallScore: score.clamp(0.0, 100.0),
       subScores: subScores,
       pitchDifficulty: widget.pitchDifficulty.name,
+      recordingPath: _lastRecordingPath,
+      contourJson: _lastContourJson,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);

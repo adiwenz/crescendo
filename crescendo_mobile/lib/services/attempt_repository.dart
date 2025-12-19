@@ -17,7 +17,13 @@ class AttemptRepository extends ChangeNotifier {
   int get revision => _revision;
 
   Future<List<ExerciseAttempt>> refresh() async {
-    _cache = await _repo.fetchAllAttempts();
+    try {
+      final attempts = await _repo.fetchAllAttempts();
+      _cache = attempts;
+      debugPrint('[AttemptRepository] refreshed: ${_cache.length} attempts (instance=${identityHashCode(this)})');
+    } catch (e, st) {
+      debugPrint('[AttemptRepository] refresh failed: $e\n$st');
+    }
     _loaded = true;
     _revision++;
     notifyListeners();
@@ -33,10 +39,14 @@ class AttemptRepository extends ChangeNotifier {
   }
 
   ExerciseAttempt? latestFor(String exerciseId) {
-    for (final a in _cache) {
-      if (a.exerciseId == exerciseId) return a;
-    }
-    return null;
+    final list = _cache.where((a) => a.exerciseId == exerciseId).toList();
+    if (list.isEmpty) return null;
+    list.sort((a, b) {
+      DateTime aTime = a.completedAt ?? a.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      DateTime bTime = b.completedAt ?? b.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+    return list.first;
   }
 
   List<ExerciseAttempt> recent({int limit = 10}) {

@@ -32,6 +32,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[Preview] exerciseId=${widget.exerciseId}');
     _load();
   }
 
@@ -48,6 +49,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
     );
     await _attempts.ensureLoaded();
     final latest = _attempts.latestFor(widget.exerciseId);
+    if (latest == null) {
+      debugPrint('[Preview] latest attempt not found for ${widget.exerciseId}');
+    }
     if (!mounted) return;
     setState(() {
       _exercise = ex;

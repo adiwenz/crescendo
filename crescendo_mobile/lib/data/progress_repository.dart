@@ -39,6 +39,17 @@ class ProgressRepository {
     return rows.map((row) => ExerciseAttempt.fromDbMap(row, onWarning: _logWarn)).toList();
   }
 
+  Future<int> countAttemptsForExercise(String exerciseId) async {
+    final db = overrideDb ?? await _db.database;
+    await _ensureMigrated(db);
+    final res = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM exercise_attempts WHERE exerciseId = ?',
+      [exerciseId],
+    );
+    final count = Sqflite.firstIntValue(res) ?? 0;
+    return count;
+  }
+
   Future<void> deleteAll() async {
     final db = overrideDb ?? await _db.database;
     await _ensureMigrated(db);

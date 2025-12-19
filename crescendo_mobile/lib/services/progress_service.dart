@@ -8,6 +8,7 @@ import '../services/progress_stats.dart';
 import 'exercise_repository.dart';
 import 'attempt_repository.dart';
 import '../state/library_store.dart';
+import 'package:flutter/foundation.dart';
 
 class ProgressService {
   static final ProgressService _instance = ProgressService._internal();
@@ -29,7 +30,10 @@ class ProgressService {
   }
 
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
+    debugPrint('[Complete] saving attempt exerciseId=${attempt.exerciseId}');
     await _repo.saveAttempt(attempt);
+    final count = await _repo.countAttemptsForExercise(attempt.exerciseId);
+    debugPrint('[Progress] attempts for ${attempt.exerciseId}: $count');
     await AttemptRepository.instance.refresh();
     // Mirror into the simpler library store so the rest of the app (Home/Explore/Progress)
     // can reflect completions immediately.
