@@ -14,6 +14,7 @@ import 'dart:math' as math;
 import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
+import '../../utils/pitch_highway_tempo.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -377,8 +378,17 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
         );
         return;
       }
+      final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+      final multiplier = PitchHighwayTempo.multiplierFor(
+        difficulty,
+        ex.highwaySpec!.segments,
+      );
       // Use synth to render a short preview from the first few segments.
-      final segments = ex.highwaySpec!.segments.take(8).toList();
+      final scaledSegments = PitchHighwayTempo.scaleSegments(
+        ex.highwaySpec!.segments,
+        multiplier,
+      );
+      final segments = scaledSegments.take(8).toList();
       final notes = segments
           .take(8)
           .map((s) => ReferenceNote(
