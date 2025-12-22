@@ -1,4 +1,0 @@
-analyzer:
-  strong-mode:
-    implicit-casts: false
-include: package:pedantic/analysis_options.yaml
