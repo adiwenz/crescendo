@@ -17,15 +17,56 @@ The goal is simple: **make vocal practice clear, measurable, and motivating**—
 * 🔓 Difficulty levels that unlock as you improve
 * 🔁 Review your last take and replay pitch contours
 
-## Screenshots / Workflow
+## User Flow
 
-<!-- TODO: Add screenshots here -->
+<p align="center">
+  <em>A quick tour of the Crescendo workflow.</em>
+</p>
 
-<!-- Example:
-![Home Screen](screenshots/home.png)
-![Pitch Highway](screenshots/pitch_highway.png)
-![Progress](screenshots/progress.png)
--->
+<table>
+  <tr>
+    <td width="50%">
+      <b>Home</b><br/>
+      Daily recommendations and recent progress.<br/><br/>
+      <img src="screenshots/home_page.png" width="100%"/>
+    </td>
+    <td width="50%">
+      <b>Explore</b><br/>
+      Browse exercises by category and focus area.<br/><br/>
+      <img src="screenshots/explore_page.png" width="100%"/>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <b>Exercise List</b><br/>
+      Drill into a category to pick an exercise.<br/><br/>
+      <img src="screenshots/explore_detail_page.png" width="100%"/>
+    </td>
+    <td width="50%">
+      <b>Exercise Preview</b><br/>
+      See the goal and instructions before starting.<br/><br/>
+      <img src="screenshots/exercise_preview_page.png" width="100%"/>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <b>Pitch Highway</b><br/>
+      Real-time pitch feedback while you sing.<br/><br/>
+      <img src="screenshots/pitch_highway_page.png" width="100%"/>
+    </td>
+    <td width="50%">
+      <b>Progress</b><br/>
+      Track completions and improvements over time.<br/><br/>
+      <img src="screenshots/progress_page.png" width="100%"/>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <b>Piano</b> — Explore pitch and reference notes interactively.<br/><br/>
+  <img src="screenshots/piano_page.png" width="420"/>
+</p>
+
 
 ## Tech Stack
 
