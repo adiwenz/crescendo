@@ -85,7 +85,7 @@ The goal is simple: **make vocal practice clear, measurable, and motivating**—
 ### Setup
 
 ```bash
-git clone https://github.com/your-username/crescendo.git
+git clone https://github.com/adiwenz/crescendo.git
 cd crescendo_mobile
 flutter pub get
 ```
