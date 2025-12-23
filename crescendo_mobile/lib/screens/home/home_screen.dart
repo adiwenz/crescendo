@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../data/seed_library.dart';
-import '../../widgets/home/exercise_mini_card.dart';
-import '../../widgets/home/greeting_header.dart';
-import '../../widgets/home/illustrated_tile.dart';
+import '../../widgets/home/checklist_row.dart';
 import '../../widgets/home/illustration_assets.dart';
-import '../../widgets/home/soft_card.dart';
-import '../../widgets/home/training_timeline.dart';
-import '../../widgets/home/training_timeline_card.dart';
+import '../../widgets/home/soft_pill_card.dart';
 import '../explore/exercise_preview_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -19,196 +16,195 @@ class HomeScreen extends StatelessWidget {
     final pitch = seedExercisesFor('pitch').firstOrNull;
     final lipTrills = seedExercisesFor('agility').firstOrNull;
 
-    // Training timeline cards
-    final trainingCards = [
-      TrainingTimelineCard(
-        title: 'Warmup',
-        subtitle: 'Complete',
-        status: TrainingStatus.completed,
-        backgroundImagePath: IllustrationAssets.warmupWatermark,
-        onTap: warmup != null
-            ? () => _openExercise(context, warmup.id, warmup.title)
-            : null,
-      ),
-      TrainingTimelineCard(
-        title: 'Pitch Slides',
-        subtitle: 'In Progress • Level 2',
-        status: TrainingStatus.inProgress,
-        progress: 0.72,
-        trailingText: 'Level 2',
-        backgroundImagePath: IllustrationAssets.pitchWatermark,
-        onTap: pitch != null
-            ? () => _openExercise(context, pitch.id, pitch.title)
-            : null,
-      ),
-      TrainingTimelineCard(
-        title: 'Lip Trills',
-        subtitle: 'Next • Level 2',
-        status: TrainingStatus.next,
-        trailingText: 'Level 2',
-        backgroundImagePath: IllustrationAssets.lipTrillsWatermark,
-        onTap: lipTrills != null
-            ? () => _openExercise(context, lipTrills.id, lipTrills.title)
-            : null,
-      ),
-    ];
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFFF0FDF9), // Light mint top
-              const Color(0xFFE0F5F0), // Mint bottom
-            ],
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              // Greeting Header
-              const GreetingHeader(
-                greeting: 'Good morning',
-                subtitle: 'Let\'s train your voice',
-              ),
-              // Main Content
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Category tiles (Warmup / Pitch / Agility)
-                    Row(
-                      children: [
-                        IllustratedTile(
-                          label: 'Warmup',
-                          subtitle: '3–5 min',
-                          icon: Icons.fitness_center,
-                          backgroundColor: IllustrationAssets.warmupColor,
-                          onTap: warmup != null
-                              ? () => _openExercise(
-                                  context, warmup.id, warmup.title)
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        IllustratedTile(
-                          label: 'Pitch',
-                          subtitle: '5–10 min',
-                          icon: Icons.music_note,
-                          backgroundColor: IllustrationAssets.pitchColor,
-                          onTap: pitch != null
-                              ? () =>
-                                  _openExercise(context, pitch.id, pitch.title)
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        IllustratedTile(
-                          label: 'Agility',
-                          subtitle: '5–10 min',
-                          icon: Icons.speed,
-                          backgroundColor: IllustrationAssets.agilityColor,
-                          onTap: lipTrills != null
-                              ? () => _openExercise(
-                                  context, lipTrills.id, lipTrills.title)
-                              : null,
-                        ),
-                      ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light, // White status bar content
+      child: Scaffold(
+        body: Container(
+          color: Colors.white, // White background
+          child: SafeArea(
+            bottom: false,
+            top:
+                false, // Remove top safe area so header extends into status bar
+            child: Column(
+              children: [
+                // Mint green header (extends into status bar)
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top + 16,
+                    left: 20,
+                    right: 20,
+                    bottom: 20,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF7FD1B9), // Mint green
+                  ),
+                  child: const Text(
+                    'Today',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
-                    const SizedBox(height: 40),
-                    // Continue Training Section Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Continue Training',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2E2E2E),
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () {},
-                          child: const Icon(
-                            Icons.chevron_right,
-                            size: 20,
-                            color: Color(0xFFA5A5A5),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    // Continue Training Card (single large card with list inside)
-                    SoftCard(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          TrainingTimeline(cards: trainingCards),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    // Today's Exercises Section Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Today\'s Exercises',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2E2E2E),
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () {},
-                          child: const Icon(
-                            Icons.chevron_right,
-                            size: 20,
-                            color: Color(0xFFA5A5A5),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Exercise Cards (2 side-by-side)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ExerciseMiniCard(
-                          title: 'Warmup',
-                          level: 'Level 1',
-                          progress: 0.65,
-                          backgroundImagePath:
-                              IllustrationAssets.warmupExercise,
-                          onTap: warmup != null
-                              ? () => _openExercise(
-                                  context, warmup.id, warmup.title)
-                              : null,
-                        ),
-                        const SizedBox(width: 12),
-                        ExerciseMiniCard(
-                          title: 'Build pitch accuracy',
-                          level: 'Level 1',
-                          progress: 0.45,
-                          backgroundImagePath: IllustrationAssets.pitchAccuracy,
-                          onTap: pitch != null
-                              ? () =>
-                                  _openExercise(context, pitch.id, pitch.title)
-                              : null,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                // Main content
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      // Main checklist content
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Today's Exercises section (moved to top)
+                            const Padding(
+                              padding:
+                                  EdgeInsets.only(left: 4, bottom: 8, top: 24),
+                              child: Text(
+                                'Today\'s Exercises',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2E2E2E),
+                                ),
+                              ),
+                            ),
+                            SoftPillCard(
+                              onTap: warmup != null
+                                  ? () => _openExercise(
+                                      context, warmup.id, warmup.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Warmup',
+                                subtitle: 'Level 1',
+                                icon: Icons.fitness_center,
+                                accentColor: IllustrationAssets.warmupColor,
+                                isCompleted: true, // Marked as completed
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SoftPillCard(
+                              onTap: pitch != null
+                                  ? () => _openExercise(
+                                      context, pitch.id, pitch.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Build pitch accuracy',
+                                subtitle: 'Level 1',
+                                icon: Icons.music_note,
+                                accentColor: IllustrationAssets.pitchColor,
+                                isCompleted: false,
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  size: 20,
+                                  color: Color(0xFFA5A5A5),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            // Continue Training section
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4, bottom: 8),
+                              child: Text(
+                                'Continue Training',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2E2E2E),
+                                ),
+                              ),
+                            ),
+                            SoftPillCard(
+                              onTap: warmup != null
+                                  ? () => _openExercise(
+                                      context, warmup.id, warmup.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Warmup',
+                                subtitle: 'Complete',
+                                icon: Icons.fitness_center,
+                                accentColor: IllustrationAssets.warmupColor,
+                                isCompleted: true,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SoftPillCard(
+                              onTap: pitch != null
+                                  ? () => _openExercise(
+                                      context, pitch.id, pitch.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Pitch Slides',
+                                subtitle: 'In Progress • Level 2',
+                                icon: Icons.music_note,
+                                accentColor: IllustrationAssets.pitchColor,
+                                isCompleted: false,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'Level 2',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF7A7A7A),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      size: 20,
+                                      color: Color(0xFFA5A5A5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SoftPillCard(
+                              onTap: lipTrills != null
+                                  ? () => _openExercise(
+                                      context, lipTrills.id, lipTrills.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Lip Trills',
+                                subtitle: 'Next • Level 2',
+                                icon: Icons.speed,
+                                accentColor: IllustrationAssets.agilityColor,
+                                isCompleted: false,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'Level 2',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF7A7A7A),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      size: 20,
+                                      color: Color(0xFFA5A5A5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
