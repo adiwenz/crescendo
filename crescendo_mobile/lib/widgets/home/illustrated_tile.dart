@@ -25,7 +25,7 @@ class IllustratedTile extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            clipBehavior: Clip.antiAlias, // Clip overflow to card borders
             decoration: BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(24),
@@ -41,51 +41,79 @@ class IllustratedTile extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
               children: [
-                // Centered illustration icon
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Image.asset(
-                    illustrationPath,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Label
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2E2E2E),
-                    height: 1.0,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  // Subtitle
-                  Text(
-                    subtitle!,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF7A7A7A),
-                      height: 1.0,
+                // Background image that overflows (will be clipped by container)
+                Positioned(
+                  left: -20,
+                  top: -20,
+                  right: -20,
+                  bottom: -20,
+                  child: Opacity(
+                    opacity: 0.4,
+                    child: Image.asset(
+                      illustrationPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox(),
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
+                ),
+                // Scrim gradient overlay for text readability (almost white)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withOpacity(0.5),
+                          Colors.white.withOpacity(0.7),
+                          Colors.white.withOpacity(0.85),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+                // Content (text only, centered)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Label
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2E2E2E),
+                          height: 1.0,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        // Subtitle
+                        Text(
+                          subtitle!,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF7A7A7A),
+                            height: 1.0,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
