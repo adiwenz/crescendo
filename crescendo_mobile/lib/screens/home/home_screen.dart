@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../data/seed_library.dart';
+import '../../widgets/home/exercise_mini_card.dart';
 import '../../widgets/home/greeting_header.dart';
-import '../../widgets/home/today_exercise_card.dart';
-import '../../widgets/home/training_timeline_row.dart';
+import '../../widgets/home/quick_action_card.dart';
+import '../../widgets/home/training_timeline.dart';
+import '../../widgets/home/training_timeline_card.dart';
 import '../explore/exercise_preview_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -15,118 +17,182 @@ class HomeScreen extends StatelessWidget {
     final pitch = seedExercisesFor('pitch').firstOrNull;
     final lipTrills = seedExercisesFor('agility').firstOrNull;
 
-    // Training timeline steps
-    final trainingSteps = [
-      TrainingTimelineRow(
+    // Training timeline cards
+    final trainingCards = [
+      TrainingTimelineCard(
         title: 'Warmup',
-        statusText: 'Completed',
+        subtitle: 'Complete',
         status: TrainingStatus.completed,
-        levelText: 'Level 1',
+        cardTintColor: const Color(0xFF7FD1B9).withOpacity(0.3), // Mint tint
+        trailingText: '100%',
+        watermarkIcon: Icons.music_note_outlined,
         onTap: warmup != null
             ? () => _openExercise(context, warmup.id, warmup.title)
             : null,
-        isFirst: true,
       ),
-      TrainingTimelineRow(
+      TrainingTimelineCard(
         title: 'Pitch Slides',
-        statusText: 'In progress',
+        subtitle: 'In Progress • Level 2',
         status: TrainingStatus.inProgress,
-        progress: 0.35,
-        levelText: 'Level 2',
+        progress: 0.72,
+        cardTintColor: const Color(0xFF7FD1B9).withOpacity(0.3), // Mint tint
+        trailingText: 'Level 2',
+        watermarkIcon: Icons.trending_up_outlined,
         onTap: pitch != null
             ? () => _openExercise(context, pitch.id, pitch.title)
             : null,
       ),
-      TrainingTimelineRow(
+      TrainingTimelineCard(
         title: 'Lip Trills',
-        statusText: 'Next',
+        subtitle: 'Next • Level 2',
         status: TrainingStatus.next,
-        levelText: 'Level 1',
+        cardTintColor:
+            const Color(0xFFF3B7A6).withOpacity(0.3), // Soft peach tint
+        trailingText: 'Level 2',
+        watermarkIcon: Icons.speed_outlined,
         onTap: lipTrills != null
             ? () => _openExercise(context, lipTrills.id, lipTrills.title)
             : null,
-        isLast: true,
       ),
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFBF5), // Warm off-white background
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            // Greeting Header
-            const GreetingHeader(
-              greeting: 'Good morning',
-              subtitle: 'Let\'s train your voice',
-            ),
-            // Main Content
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 32),
-                  // Continue Training Section
-                  const Text(
-                    'Continue Training',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1D1D1F),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF7FD1B9).withOpacity(0.08), // Mint
+              const Color(0xFFF1D27A).withOpacity(0.06), // Butter yellow
+            ],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              // Greeting Header with gradient
+              const GreetingHeader(
+                greeting: 'Good morning',
+                subtitle: 'Let\'s train your voice',
+              ),
+              // Main Content
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 12),
+                    // Recents and Favorites Cards
+                    Row(
+                      children: [
+                        QuickActionCard(
+                          title: 'Recents',
+                          icon: Icons.history_outlined,
+                          cardTintColor: const Color(0xFFF1D27A)
+                              .withOpacity(0.3), // Butter yellow
+                          onTap: () {},
+                        ),
+                        const SizedBox(width: 12),
+                        QuickActionCard(
+                          title: 'Favorites',
+                          icon: Icons.favorite_outline,
+                          cardTintColor: const Color(0xFFFFB88C)
+                              .withOpacity(0.3), // Soft orange
+                          onTap: () {},
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Checklist Timeline - vertical line is part of this component
-                  ...trainingSteps,
-                  const SizedBox(height: 40),
-                  // Today's Exercises Section
-                  const Text(
-                    'Today\'s Exercises',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1D1D1F),
+                    const SizedBox(height: 32),
+                    // Continue Training Section Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Continue Training',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2E2E2E),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () {},
+                          child: const Icon(
+                            Icons.chevron_right,
+                            size: 20,
+                            color: Color(0xFFA5A5A5),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Exercise Cards (2 side-by-side)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (warmup != null)
-                        TodayExerciseCard(
+                    const SizedBox(height: 20),
+                    // Training Timeline
+                    TrainingTimeline(cards: trainingCards),
+                    const SizedBox(height: 40),
+                    // Today's Exercises Section Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Today\'s Exercises',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2E2E2E),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () {},
+                          child: const Icon(
+                            Icons.chevron_right,
+                            size: 20,
+                            color: Color(0xFFA5A5A5),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Exercise Cards (2 side-by-side)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ExerciseMiniCard(
                           title: 'Warmup',
                           level: 'Level 1',
                           progress: 0.65,
-                          icon: Icons.wb_sunny_outlined,
-                          cardColor: const Color(0xFFB9B6F3)
-                              .withOpacity(0.3), // Pastel lavender
-                          onTap: () =>
-                              _openExercise(context, warmup.id, warmup.title),
+                          cardTintColor: const Color(0xFFF1D27A)
+                              .withOpacity(0.35), // Butter yellow
+                          watermarkIcon: Icons.music_note_outlined,
+                          onTap: warmup != null
+                              ? () => _openExercise(
+                                  context, warmup.id, warmup.title)
+                              : null,
                         ),
-                      if (warmup != null && pitch != null)
                         const SizedBox(width: 12),
-                      if (pitch != null)
-                        TodayExerciseCard(
-                          title: 'Pitch Slides',
-                          level: 'Level 2',
+                        ExerciseMiniCard(
+                          title: 'Build pitch accuracy',
+                          level: 'Level 1',
                           progress: 0.45,
-                          icon: Icons.trending_up_outlined,
-                          cardColor: const Color(0xFFF3B7A6)
-                              .withOpacity(0.3), // Soft peach
-                          onTap: () =>
-                              _openExercise(context, pitch.id, pitch.title),
+                          cardTintColor: const Color(0xFFF3B7A6)
+                              .withOpacity(0.35), // Soft peach
+                          watermarkIcon: Icons.trending_up_outlined,
+                          onTap: pitch != null
+                              ? () =>
+                                  _openExercise(context, pitch.id, pitch.title)
+                              : null,
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
