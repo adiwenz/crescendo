@@ -6,7 +6,6 @@ import '../../widgets/home/greeting_header.dart';
 import '../../widgets/home/illustrated_tile.dart';
 import '../../widgets/home/illustration_assets.dart';
 import '../../widgets/home/soft_card.dart';
-import '../../widgets/home/start_training_cta.dart';
 import '../../widgets/home/training_timeline.dart';
 import '../../widgets/home/training_timeline_card.dart';
 import '../explore/exercise_preview_screen.dart';
@@ -83,9 +82,6 @@ class HomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Start Training Session CTA
-                    const StartTrainingCTA(),
-                    const SizedBox(height: 32),
                     // Category tiles (Warmup / Pitch / Agility)
                     Row(
                       children: [
