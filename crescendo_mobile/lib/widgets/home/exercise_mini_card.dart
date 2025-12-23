@@ -4,7 +4,7 @@ class ExerciseMiniCard extends StatelessWidget {
   final String title;
   final String level;
   final double progress;
-  final String? watermarkImagePath;
+  final String? backgroundImagePath;
   final VoidCallback? onTap;
 
   const ExerciseMiniCard({
@@ -12,7 +12,7 @@ class ExerciseMiniCard extends StatelessWidget {
     required this.title,
     required this.level,
     required this.progress,
-    this.watermarkImagePath,
+    this.backgroundImagePath,
     this.onTap,
   });
 
@@ -41,22 +41,25 @@ class ExerciseMiniCard extends StatelessWidget {
             ],
           ),
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Watermark illustration (right side)
-              if (watermarkImagePath != null)
+              // Background illustration (off to the side, larger)
+              if (backgroundImagePath != null)
                 Positioned(
-                  top: 0,
-                  right: 0,
+                  right: -15,
+                  top: -10,
+                  bottom: -10,
                   child: Opacity(
-                    opacity: 0.15,
+                    opacity: 0.3,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(20),
                       child: SizedBox(
-                        width: 90,
-                        height: 90,
+                        width: 120,
+                        height: double.infinity,
                         child: Image.asset(
-                          watermarkImagePath!,
-                          fit: BoxFit.contain,
+                          backgroundImagePath!,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.centerRight,
                           errorBuilder: (context, error, stackTrace) =>
                               const SizedBox(),
                         ),
@@ -64,6 +67,25 @@ class ExerciseMiniCard extends StatelessWidget {
                     ),
                   ),
                 ),
+              // Gradient overlay for readability
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        Colors.white,
+                        Colors.white.withOpacity(0.9),
+                        Colors.white.withOpacity(0.5),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              // Content
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

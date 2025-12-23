@@ -26,7 +26,7 @@ class HomeScreen extends StatelessWidget {
         title: 'Warmup',
         subtitle: 'Complete',
         status: TrainingStatus.completed,
-        watermarkImagePath: IllustrationAssets.warmupWatermark,
+        backgroundImagePath: IllustrationAssets.warmupWatermark,
         onTap: warmup != null
             ? () => _openExercise(context, warmup.id, warmup.title)
             : null,
@@ -37,7 +37,7 @@ class HomeScreen extends StatelessWidget {
         status: TrainingStatus.inProgress,
         progress: 0.72,
         trailingText: 'Level 2',
-        watermarkImagePath: IllustrationAssets.pitchWatermark,
+        backgroundImagePath: IllustrationAssets.pitchWatermark,
         onTap: pitch != null
             ? () => _openExercise(context, pitch.id, pitch.title)
             : null,
@@ -47,7 +47,7 @@ class HomeScreen extends StatelessWidget {
         subtitle: 'Next • Level 2',
         status: TrainingStatus.next,
         trailingText: 'Level 2',
-        watermarkImagePath: IllustrationAssets.lipTrillsWatermark,
+        backgroundImagePath: IllustrationAssets.lipTrillsWatermark,
         onTap: lipTrills != null
             ? () => _openExercise(context, lipTrills.id, lipTrills.title)
             : null,
@@ -185,7 +185,8 @@ class HomeScreen extends StatelessWidget {
                           title: 'Warmup',
                           level: 'Level 1',
                           progress: 0.65,
-                          watermarkImagePath: IllustrationAssets.warmupExercise,
+                          backgroundImagePath:
+                              IllustrationAssets.warmupExercise,
                           onTap: warmup != null
                               ? () => _openExercise(
                                   context, warmup.id, warmup.title)
@@ -196,7 +197,7 @@ class HomeScreen extends StatelessWidget {
                           title: 'Build pitch accuracy',
                           level: 'Level 1',
                           progress: 0.45,
-                          watermarkImagePath: IllustrationAssets.pitchAccuracy,
+                          backgroundImagePath: IllustrationAssets.pitchAccuracy,
                           onTap: pitch != null
                               ? () =>
                                   _openExercise(context, pitch.id, pitch.title)

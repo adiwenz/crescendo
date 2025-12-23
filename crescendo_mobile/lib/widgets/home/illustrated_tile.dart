@@ -37,42 +37,71 @@ class IllustratedTile extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Illustration (centered, 48-64px)
-              SizedBox(
-                width: 64,
-                height: 64,
-                child: Image.asset(
-                  illustrationPath,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const SizedBox(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2E2E2E),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    color: Color(0xFF7A7A7A),
+              // Background illustration (subtle, off to side)
+              Positioned(
+                right: -10,
+                top: -5,
+                bottom: -5,
+                child: Opacity(
+                  opacity: 0.2,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: SizedBox(
+                      width: 80,
+                      height: double.infinity,
+                      child: Image.asset(
+                        illustrationPath,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerRight,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const SizedBox(),
+                      ),
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ],
+              ),
+              // Content
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Centered illustration icon (smaller, on top)
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Image.asset(
+                      illustrationPath,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2E2E2E),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF7A7A7A),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ),
@@ -80,4 +109,3 @@ class IllustratedTile extends StatelessWidget {
     );
   }
 }
-

@@ -35,6 +35,7 @@ flutter:
   assets:
     - assets/icon.png
     - assets/
+    - assets/illustrations/
 
 flutter_launcher_icons:
   image_path: "assets/logo_bg_removed_other_crop.png"

@@ -12,7 +12,7 @@ class TrainingTimelineCard extends StatelessWidget {
   final TrainingStatus status;
   final double? progress;
   final String? trailingText;
-  final String? watermarkImagePath;
+  final String? backgroundImagePath;
   final VoidCallback? onTap;
 
   const TrainingTimelineCard({
@@ -22,7 +22,7 @@ class TrainingTimelineCard extends StatelessWidget {
     required this.status,
     this.progress,
     this.trailingText,
-    this.watermarkImagePath,
+    this.backgroundImagePath,
     this.onTap,
   });
 
@@ -50,23 +50,25 @@ class TrainingTimelineCard extends StatelessWidget {
           ],
         ),
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // Watermark illustration
-            if (watermarkImagePath != null)
+            // Background illustration (off to the side, larger, more visible)
+            if (backgroundImagePath != null)
               Positioned(
-                right: 12,
-                top: 0,
-                bottom: 0,
+                right: -20,
+                top: -10,
+                bottom: -10,
                 child: Opacity(
-                  opacity: 0.12,
+                  opacity: 0.25,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     child: SizedBox(
-                      width: 80,
-                      height: 80,
+                      width: 140,
+                      height: double.infinity,
                       child: Image.asset(
-                        watermarkImagePath!,
-                        fit: BoxFit.contain,
+                        backgroundImagePath!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerRight,
                         errorBuilder: (context, error, stackTrace) =>
                             const SizedBox(),
                       ),
@@ -74,6 +76,25 @@ class TrainingTimelineCard extends StatelessWidget {
                   ),
                 ),
               ),
+            // Content layer with slight gradient overlay for readability
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Colors.white,
+                      Colors.white.withOpacity(0.85),
+                      Colors.white.withOpacity(0.6),
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            // Text content
             Row(
               children: [
                 Expanded(
@@ -111,6 +132,7 @@ class TrainingTimelineCard extends StatelessWidget {
                   ),
                 ),
                 if (trailingText != null) ...[
+                  const SizedBox(width: 8),
                   Text(
                     trailingText!,
                     style: const TextStyle(
