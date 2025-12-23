@@ -30,136 +30,136 @@ class TrainingTimelineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = status == TrainingStatus.inProgress;
+    // Determine card color based on status
+    Color? cardColor;
+    if (status == TrainingStatus.inProgress) {
+      cardColor = const Color(0xFF7FD1B9).withOpacity(0.1); // Mint/teal tint
+    } else if (status == TrainingStatus.completed) {
+      cardColor = const Color(0xFF8FC9A8).withOpacity(0.1); // Green tint
+    }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Timeline connector
-        SizedBox(
-          width: 24,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!isFirst) ...[
-                Container(
-                  width: 2,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: status == TrainingStatus.completed
-                        ? const Color(0xFF8E8E93)
-                        : const Color(0xFFE5E5EA),
-                    borderRadius: BorderRadius.circular(1),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Vertical timeline connector - core visual element
+          SizedBox(
+            width: 28,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isFirst) ...[
+                  Container(
+                    width: 2,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: status == TrainingStatus.completed
+                          ? const Color(0xFF8FC9A8) // Completion green
+                          : const Color(0xFFD1D1D6), // Light gray
+                      borderRadius: BorderRadius.circular(1),
+                    ),
                   ),
-                ),
-              ],
-              _StatusIcon(status: status),
-              if (!isLast) ...[
-                Container(
-                  width: 2,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: status == TrainingStatus.completed
-                        ? const Color(0xFF8E8E93)
-                        : const Color(0xFFE5E5EA),
-                    borderRadius: BorderRadius.circular(1),
+                ],
+                _StatusIcon(status: status),
+                if (!isLast) ...[
+                  Container(
+                    width: 2,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: status == TrainingStatus.completed
+                          ? const Color(0xFF8FC9A8) // Completion green
+                          : const Color(0xFFD1D1D6), // Light gray
+                      borderRadius: BorderRadius.circular(1),
+                    ),
                   ),
-                ),
-              ] else ...[
-                const SizedBox(height: 20),
+                ] else ...[
+                  const SizedBox(height: 20),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-        const SizedBox(width: 16),
-        // Content
-        Expanded(
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: EdgeInsets.all(isActive ? 16 : 0),
-              decoration: isActive
-                  ? BoxDecoration(
-                      color: const Color(0xFFFFE5F0), // Soft pink
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    )
-                  : null,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight:
-                                    isActive ? FontWeight.w600 : FontWeight.w500,
-                                color: const Color(0xFF1D1D1F),
+          const SizedBox(width: 16),
+          // Content card
+          Expanded(
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cardColor ?? Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFFE5E5EA),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1D1D1F),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              statusText,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF8E8E93),
+                              const SizedBox(height: 4),
+                              Text(
+                                statusText,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w400,
+                                  color: status == TrainingStatus.completed
+                                      ? const Color(0xFF8FC9A8)
+                                      : status == TrainingStatus.inProgress
+                                          ? const Color(0xFF7FD1B9)
+                                          : const Color(0xFF8E8E93),
+                                ),
                               ),
-                            ),
-                            if (isActive && progress != null) ...[
-                              const SizedBox(height: 12),
-                              _ProgressBar(value: progress!),
+                              if (status == TrainingStatus.inProgress &&
+                                  progress != null) ...[
+                                const SizedBox(height: 12),
+                                _ProgressBar(value: progress!),
+                              ],
                             ],
-                          ],
-                        ),
-                      ),
-                      if (levelText != null) ...[
-                        Text(
-                          levelText!,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            color: isActive
-                                ? const Color(0xFF1D1D1F)
-                                : const Color(0xFF8E8E93),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.chevron_right,
-                          size: 18,
-                          color: isActive
-                              ? const Color(0xFF1D1D1F)
-                              : const Color(0xFF8E8E93),
-                        ),
+                        if (levelText != null) ...[
+                          Text(
+                            levelText!,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF8E8E93),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: Color(0xFF8E8E93),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                  if (isActive) ...[
-                    const SizedBox(height: 12),
-                    _ResumeButton(onTap: onTap),
+                    ),
                   ],
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -178,8 +178,8 @@ class _StatusIcon extends StatelessWidget {
         return Container(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            color: const Color(0xFF34C759), // Green check
+          decoration: const BoxDecoration(
+            color: Color(0xFF8FC9A8), // Completion green
             shape: BoxShape.circle,
           ),
           child: const Icon(
@@ -192,8 +192,8 @@ class _StatusIcon extends StatelessWidget {
         return Container(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFF3B30), // Red/pink accent
+          decoration: const BoxDecoration(
+            color: Color(0xFF7FD1B9), // Mint/teal accent
             shape: BoxShape.circle,
           ),
         );
@@ -227,57 +227,9 @@ class _ProgressBar extends StatelessWidget {
         child: LinearProgressIndicator(
           value: value.clamp(0.0, 1.0),
           backgroundColor: const Color(0xFFE5E5EA),
-          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF3B30)),
+          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7FD1B9)),
         ),
       ),
     );
   }
 }
-
-class _ResumeButton extends StatelessWidget {
-  final VoidCallback? onTap;
-
-  const _ResumeButton({this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.play_arrow,
-              size: 18,
-              color: Color(0xFF1D1D1F),
-            ),
-            const SizedBox(width: 6),
-            const Text(
-              'Resume',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1D1D1F),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-

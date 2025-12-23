@@ -19,7 +19,7 @@ class HomeScreen extends StatelessWidget {
     final trainingSteps = [
       TrainingTimelineRow(
         title: 'Warmup',
-        statusText: 'Complete',
+        statusText: 'Completed',
         status: TrainingStatus.completed,
         levelText: 'Level 1',
         onTap: warmup != null
@@ -29,7 +29,7 @@ class HomeScreen extends StatelessWidget {
       ),
       TrainingTimelineRow(
         title: 'Pitch Slides',
-        statusText: 'In Progress',
+        statusText: 'In progress',
         status: TrainingStatus.inProgress,
         progress: 0.35,
         levelText: 'Level 2',
@@ -50,7 +50,7 @@ class HomeScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFBFE), // Very light background
+      backgroundColor: const Color(0xFFFFFBF5), // Warm off-white background
       body: SafeArea(
         bottom: false,
         child: ListView(
@@ -79,6 +79,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  // Checklist Timeline - vertical line is part of this component
                   ...trainingSteps,
                   const SizedBox(height: 40),
                   // Today's Exercises Section
@@ -101,8 +102,8 @@ class HomeScreen extends StatelessWidget {
                           level: 'Level 1',
                           progress: 0.65,
                           icon: Icons.wb_sunny_outlined,
-                          gradientStart: const Color(0xFFE8F4FD), // Soft blue
-                          gradientEnd: const Color(0xFFD6EBF9),
+                          cardColor: const Color(0xFFB9B6F3)
+                              .withOpacity(0.3), // Pastel lavender
                           onTap: () =>
                               _openExercise(context, warmup.id, warmup.title),
                         ),
@@ -114,8 +115,8 @@ class HomeScreen extends StatelessWidget {
                           level: 'Level 2',
                           progress: 0.45,
                           icon: Icons.trending_up_outlined,
-                          gradientStart: const Color(0xFFFFE5F0), // Soft pink
-                          gradientEnd: const Color(0xFFFFD6E8),
+                          cardColor: const Color(0xFFF3B7A6)
+                              .withOpacity(0.3), // Soft peach
                           onTap: () =>
                               _openExercise(context, pitch.id, pitch.title),
                         ),

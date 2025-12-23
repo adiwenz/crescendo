@@ -5,8 +5,7 @@ class TodayExerciseCard extends StatelessWidget {
   final String level;
   final double progress;
   final IconData icon;
-  final Color gradientStart;
-  final Color gradientEnd;
+  final Color cardColor;
   final VoidCallback? onTap;
 
   const TodayExerciseCard({
@@ -15,8 +14,7 @@ class TodayExerciseCard extends StatelessWidget {
     required this.level,
     required this.progress,
     required this.icon,
-    required this.gradientStart,
-    required this.gradientEnd,
+    required this.cardColor,
     this.onTap,
   });
 
@@ -25,32 +23,25 @@ class TodayExerciseCard extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
           height: 160,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [gradientStart, gradientEnd],
+            color: cardColor,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: const Color(0xFFE5E5EA),
+              width: 1,
             ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
                 icon,
-                size: 32,
-                color: Colors.white.withOpacity(0.9),
+                size: 28,
+                color: const Color(0xFF1D1D1F).withOpacity(0.7),
               ),
               const Spacer(),
               Text(
@@ -93,11 +84,10 @@ class _ProgressBar extends StatelessWidget {
         height: 4,
         child: LinearProgressIndicator(
           value: value.clamp(0.0, 1.0),
-          backgroundColor: Colors.white.withOpacity(0.3),
+          backgroundColor: const Color(0xFFE5E5EA),
           valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1D1D1F)),
         ),
       ),
     );
   }
 }
-

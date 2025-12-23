@@ -14,15 +14,8 @@ class GreetingHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF5F0FF), // Very light lavender
-            Color(0xFFFFF0F5), // Very light pink
-          ],
-        ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFFBF5), // Warm off-white
       ),
       child: SafeArea(
         bottom: false,
@@ -57,4 +50,3 @@ class GreetingHeader extends StatelessWidget {
     );
   }
 }
-
