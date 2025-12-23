@@ -22,51 +22,68 @@ class ExerciseMiniCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        child: Container(
-          height: 160,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: const Color(0xFFE6E1DC),
-              width: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            height: 160,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.89),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 24,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // Background illustration (full card)
-              if (backgroundImagePath != null)
+            child: Stack(
+              children: [
+                // Watermark illustration (bottom-right, very low opacity)
+                if (backgroundImagePath != null)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Opacity(
+                      opacity: 0.08,
+                      child: SizedBox(
+                        width: 90,
+                        height: 90,
+                        child: Image.asset(
+                          backgroundImagePath!,
+                          fit: BoxFit.contain,
+                          alignment: Alignment.bottomRight,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const SizedBox(),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Optional readability scrim (left-to-right gradient)
                 Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      backgroundImagePath!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          Container(color: Colors.white),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.white.withOpacity(0.92),
+                          Colors.white.withOpacity(0.55),
+                          Colors.white.withOpacity(0.10),
+                        ],
+                        stops: const [0.0, 0.55, 1.0],
+                      ),
                     ),
                   ),
                 ),
-              // Content with semi-transparent backgrounds for readability
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
+                // Content
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Spacer(),
+                    Text(
                       title,
                       style: const TextStyle(
                         fontSize: 17,
@@ -74,16 +91,8 @@ class ExerciseMiniCard extends StatelessWidget {
                         color: Color(0xFF2E2E2E),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
+                    const SizedBox(height: 4),
+                    Text(
                       level,
                       style: const TextStyle(
                         fontSize: 15,
@@ -91,12 +100,12 @@ class ExerciseMiniCard extends StatelessWidget {
                         color: Color(0xFF7A7A7A),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _ProgressBar(value: progress),
-                ],
-              ),
-            ],
+                    const SizedBox(height: 12),
+                    _ProgressBar(value: progress),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

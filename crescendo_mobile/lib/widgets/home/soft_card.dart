@@ -19,17 +19,14 @@ class SoftCard extends StatelessWidget {
     Widget content = Container(
       padding: padding ?? const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: backgroundColor ?? Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(
-          color: const Color(0xFFE6E1DC),
-          width: 1,
-        ),
+        color: backgroundColor ?? Colors.white.withOpacity(0.89),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 24,
+            spreadRadius: 0,
+            offset: const Offset(0, 10),
           ),
         ],
       ),

@@ -17,12 +17,16 @@ class StartTrainingCTA extends StatelessWidget {
         height: 56,
         padding: const EdgeInsets.symmetric(horizontal: 24),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1D27A).withOpacity(0.3), // Warm butter/yellow tint
+          color: const Color(0xFFF5F5F0), // Neutral light gray/cream
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: const Color(0xFFE6E1DC),
-            width: 1,
-          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 24,
+              spreadRadius: 0,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Center(
           child: Text(
@@ -38,4 +42,3 @@ class StartTrainingCTA extends StatelessWidget {
     );
   }
 }
-

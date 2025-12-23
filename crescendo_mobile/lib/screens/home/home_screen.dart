@@ -60,8 +60,8 @@ class HomeScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFFF9D6E2), // Subtle pink top
-              const Color(0xFFF6F2EE), // Warm off-white bottom
+              const Color(0xFFFFF4F6), // Single-hue blush top
+              const Color(0xFFFBEAEC), // Single-hue blush bottom
             ],
           ),
         ),
