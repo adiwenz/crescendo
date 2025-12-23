@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../data/seed_library.dart';
 import '../../widgets/home/checklist_row.dart';
+import '../../widgets/home/horizontal_item_card.dart';
 import '../../widgets/home/illustration_assets.dart';
 import '../../widgets/home/soft_pill_card.dart';
 import '../explore/exercise_preview_screen.dart';
@@ -59,7 +60,7 @@ class HomeScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Today's Exercises section (moved to top)
+                            // Today's Exercises section
                             const Padding(
                               padding:
                                   EdgeInsets.only(left: 4, bottom: 8, top: 24),
@@ -102,6 +103,71 @@ class HomeScreen extends StatelessWidget {
                                   size: 20,
                                   color: Color(0xFFA5A5A5),
                                 ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            // Try Next section
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4, bottom: 8),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    size: 20,
+                                    color: Color(0xFFF1D27A), // Butter yellow
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Try Next',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF2E2E2E),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: 120,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.only(left: 0),
+                                children: [
+                                  HorizontalItemCard(
+                                    title: 'Pitch Slides',
+                                    subtitle: 'Level 2',
+                                    icon: Icons.music_note,
+                                    accentColor: const Color(
+                                        0xFFF1D27A), // Butter yellow
+                                    onTap: pitch != null
+                                        ? () => _openExercise(
+                                            context, pitch.id, pitch.title)
+                                        : null,
+                                  ),
+                                  HorizontalItemCard(
+                                    title: 'Lip Trills',
+                                    subtitle: 'Level 2',
+                                    icon: Icons.speed,
+                                    accentColor: const Color(
+                                        0xFFF1D27A), // Butter yellow
+                                    onTap: lipTrills != null
+                                        ? () => _openExercise(context,
+                                            lipTrills.id, lipTrills.title)
+                                        : null,
+                                  ),
+                                  HorizontalItemCard(
+                                    title: 'Range Building',
+                                    subtitle: 'Level 1',
+                                    icon: Icons.trending_up,
+                                    accentColor: const Color(
+                                        0xFFF1D27A), // Butter yellow
+                                    onTap: warmup != null
+                                        ? () => _openExercise(
+                                            context, warmup.id, warmup.title)
+                                        : null,
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 14),
