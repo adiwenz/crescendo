@@ -16,6 +16,7 @@ class HomeScreen extends StatelessWidget {
     final warmup = seedExercisesFor('warmup').firstOrNull;
     final pitch = seedExercisesFor('pitch').firstOrNull;
     final lipTrills = seedExercisesFor('agility').firstOrNull;
+    final stability = seedExercisesFor('stability').firstOrNull;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light, // White status bar content
@@ -62,20 +63,30 @@ class HomeScreen extends StatelessWidget {
                           children: [
                             // Today's Exercises section
                             Padding(
-                              padding: const EdgeInsets.only(
-                                  left: 4, bottom: 8, top: 24),
+                              padding:
+                                  const EdgeInsets.only(bottom: 8, top: 24),
                               child: Container(
+                                width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
+                                    horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF7FD1B9)
-                                      .withOpacity(0.2), // Mint/teal pill
+                                  color: const Color(0xFFF4A3C4)
+                                      .withOpacity(0.25), // Blush pink pill
                                   borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFF4A3C4)
+                                          .withOpacity(0.15),
+                                      blurRadius: 12,
+                                      spreadRadius: 0,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
                                 ),
                                 child: const Text(
                                   'Today\'s Exercises',
                                   style: TextStyle(
-                                    fontSize: 18,
+                                    fontSize: 17,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF2E2E2E),
                                   ),
@@ -114,32 +125,59 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 10),
+                            SoftPillCard(
+                              onTap: stability != null
+                                  ? () => _openExercise(
+                                      context, stability.id, stability.title)
+                                  : null,
+                              child: ChecklistRow(
+                                title: 'Range Building',
+                                subtitle: 'Level 1',
+                                icon: Icons.trending_up,
+                                accentColor: IllustrationAssets.agilityColor,
+                                isCompleted: false,
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  size: 20,
+                                  color: Color(0xFFA5A5A5),
+                                ),
+                              ),
+                            ),
                             const SizedBox(height: 24),
                             // Try Next section
                             Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 4, bottom: 8),
+                              padding: const EdgeInsets.only(bottom: 8),
                               child: Container(
+                                width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
+                                    horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF1D27A)
-                                      .withOpacity(0.2), // Butter yellow pill
+                                      .withOpacity(0.25), // Butter yellow pill
                                   borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFF1D27A)
+                                          .withOpacity(0.15),
+                                      blurRadius: 12,
+                                      spreadRadius: 0,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
                                 ),
                                 child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
                                       Icons.star,
-                                      size: 20,
+                                      size: 18,
                                       color: Color(0xFFF1D27A), // Butter yellow
                                     ),
                                     SizedBox(width: 6),
                                     Text(
                                       'Try Next',
                                       style: TextStyle(
-                                        fontSize: 18,
+                                        fontSize: 17,
                                         fontWeight: FontWeight.w600,
                                         color: Color(0xFF2E2E2E),
                                       ),
@@ -193,20 +231,29 @@ class HomeScreen extends StatelessWidget {
                             const SizedBox(height: 14),
                             // Continue Training section
                             Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 4, bottom: 8),
+                              padding: const EdgeInsets.only(bottom: 8),
                               child: Container(
+                                width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
+                                    horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF3B7A6)
-                                      .withOpacity(0.2), // Soft peach pill
+                                  color: const Color(0xFF7FD1B9)
+                                      .withOpacity(0.25), // Mint/teal pill
                                   borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF7FD1B9)
+                                          .withOpacity(0.15),
+                                      blurRadius: 12,
+                                      spreadRadius: 0,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
                                 ),
                                 child: const Text(
                                   'Continue Training',
                                   style: TextStyle(
-                                    fontSize: 18,
+                                    fontSize: 17,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF2E2E2E),
                                   ),
