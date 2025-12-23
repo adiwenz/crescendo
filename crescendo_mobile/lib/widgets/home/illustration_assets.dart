@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Mapping of exercise types and UI elements to illustration asset paths
 /// Available assets:
 /// - abstract_1.png through abstract_9.png
@@ -20,6 +22,11 @@ class IllustrationAssets {
   // Quick actions (optional, can use abstract_set2_*)
   static const String recents = 'assets/illustrations/abstract_set2_4.png';
   static const String favorites = 'assets/illustrations/abstract_set2_5.png';
+
+  // Background colors extracted from illustrations (teal/coral/yellow/navy palette)
+  static const Color warmupColor = Color(0xFF7FD1B9); // Mint/teal
+  static const Color pitchColor = Color(0xFFF3B7A6); // Soft coral/peach
+  static const Color agilityColor = Color(0xFFF1D27A); // Warm butter yellow
 
   /// Get watermark asset for a given exercise type
   static String? getWatermarkForType(String type) {

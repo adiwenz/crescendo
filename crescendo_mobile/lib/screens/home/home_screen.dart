@@ -93,6 +93,7 @@ class HomeScreen extends StatelessWidget {
                           label: 'Warmup',
                           subtitle: '3–5 min',
                           illustrationPath: IllustrationAssets.warmup,
+                          backgroundColor: IllustrationAssets.warmupColor,
                           onTap: warmup != null
                               ? () => _openExercise(
                                   context, warmup.id, warmup.title)
@@ -103,6 +104,7 @@ class HomeScreen extends StatelessWidget {
                           label: 'Pitch',
                           subtitle: '5–10 min',
                           illustrationPath: IllustrationAssets.pitch,
+                          backgroundColor: IllustrationAssets.pitchColor,
                           onTap: pitch != null
                               ? () =>
                                   _openExercise(context, pitch.id, pitch.title)
@@ -113,6 +115,7 @@ class HomeScreen extends StatelessWidget {
                           label: 'Agility',
                           subtitle: '5–10 min',
                           illustrationPath: IllustrationAssets.agility,
+                          backgroundColor: IllustrationAssets.agilityColor,
                           onTap: lipTrills != null
                               ? () => _openExercise(
                                   context, lipTrills.id, lipTrills.title)

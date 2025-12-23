@@ -4,12 +4,14 @@ class IllustratedTile extends StatelessWidget {
   final String label;
   final String? subtitle;
   final String illustrationPath;
+  final Color backgroundColor;
   final VoidCallback? onTap;
 
   const IllustratedTile({
     super.key,
     required this.label,
     required this.illustrationPath,
+    required this.backgroundColor,
     this.subtitle,
     this.onTap,
   });
@@ -23,7 +25,7 @@ class IllustratedTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: backgroundColor,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: const Color(0xFFE6E1DC),
@@ -37,71 +39,42 @@ class IllustratedTile extends StatelessWidget {
               ),
             ],
           ),
-          child: Stack(
-            clipBehavior: Clip.none,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Background illustration (subtle, off to side)
-              Positioned(
-                right: -10,
-                top: -5,
-                bottom: -5,
-                child: Opacity(
-                  opacity: 0.2,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: SizedBox(
-                      width: 80,
-                      height: double.infinity,
-                      child: Image.asset(
-                        illustrationPath,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.centerRight,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const SizedBox(),
-                      ),
-                    ),
-                  ),
+              // Centered illustration icon
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: Image.asset(
+                  illustrationPath,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox(),
                 ),
               ),
-              // Content
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Centered illustration icon (smaller, on top)
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Image.asset(
-                      illustrationPath,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const SizedBox(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2E2E2E),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        color: Color(0xFF7A7A7A),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ],
+              const SizedBox(height: 12),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2E2E2E),
+                ),
+                textAlign: TextAlign.center,
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF7A7A7A),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ],
           ),
         ),

@@ -26,7 +26,6 @@ class ExerciseMiniCard extends StatelessWidget {
           height: 160,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: const Color(0xFFE6E1DC),
@@ -41,70 +40,56 @@ class ExerciseMiniCard extends StatelessWidget {
             ],
           ),
           child: Stack(
-            clipBehavior: Clip.none,
             children: [
-              // Background illustration (off to the side, larger)
+              // Background illustration (full card)
               if (backgroundImagePath != null)
-                Positioned(
-                  right: -15,
-                  top: -10,
-                  bottom: -10,
-                  child: Opacity(
-                    opacity: 0.3,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: SizedBox(
-                        width: 120,
-                        height: double.infinity,
-                        child: Image.asset(
-                          backgroundImagePath!,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.centerRight,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const SizedBox(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              // Gradient overlay for readability
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
+                Positioned.fill(
+                  child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Colors.white,
-                        Colors.white.withOpacity(0.9),
-                        Colors.white.withOpacity(0.5),
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
+                    child: Image.asset(
+                      backgroundImagePath!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          Container(color: Colors.white),
                     ),
                   ),
                 ),
-              ),
-              // Content
+              // Content with semi-transparent backgrounds for readability
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Spacer(),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2E2E2E),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2E2E2E),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    level,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF7A7A7A),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      level,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF7A7A7A),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

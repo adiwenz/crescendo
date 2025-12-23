@@ -52,48 +52,27 @@ class TrainingTimelineCard extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Background illustration (off to the side, larger, more visible)
+            // Background illustration (off to the right)
             if (backgroundImagePath != null)
               Positioned(
                 right: -20,
                 top: -10,
                 bottom: -10,
-                child: Opacity(
-                  opacity: 0.25,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: 140,
-                      height: double.infinity,
-                      child: Image.asset(
-                        backgroundImagePath!,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.centerRight,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const SizedBox(),
-                      ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 140,
+                    height: double.infinity,
+                    child: Image.asset(
+                      backgroundImagePath!,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerRight,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox(),
                     ),
                   ),
                 ),
               ),
-            // Content layer with slight gradient overlay for readability
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Colors.white,
-                      Colors.white.withOpacity(0.85),
-                      Colors.white.withOpacity(0.6),
-                    ],
-                    stops: const [0.0, 0.6, 1.0],
-                  ),
-                ),
-              ),
-            ),
             // Text content
             Row(
               children: [
