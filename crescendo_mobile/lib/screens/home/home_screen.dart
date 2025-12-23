@@ -60,8 +60,8 @@ class HomeScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFFFFF4F6), // Single-hue blush top
-              const Color(0xFFFBEAEC), // Single-hue blush bottom
+              const Color(0xFFF0FDF9), // Light mint top
+              const Color(0xFFE0F5F0), // Mint bottom
             ],
           ),
         ),
@@ -88,7 +88,7 @@ class HomeScreen extends StatelessWidget {
                         IllustratedTile(
                           label: 'Warmup',
                           subtitle: '3–5 min',
-                          illustrationPath: IllustrationAssets.warmup,
+                          icon: Icons.fitness_center,
                           backgroundColor: IllustrationAssets.warmupColor,
                           onTap: warmup != null
                               ? () => _openExercise(
@@ -99,7 +99,7 @@ class HomeScreen extends StatelessWidget {
                         IllustratedTile(
                           label: 'Pitch',
                           subtitle: '5–10 min',
-                          illustrationPath: IllustrationAssets.pitch,
+                          icon: Icons.music_note,
                           backgroundColor: IllustrationAssets.pitchColor,
                           onTap: pitch != null
                               ? () =>
@@ -110,7 +110,7 @@ class HomeScreen extends StatelessWidget {
                         IllustratedTile(
                           label: 'Agility',
                           subtitle: '5–10 min',
-                          illustrationPath: IllustrationAssets.agility,
+                          icon: Icons.speed,
                           backgroundColor: IllustrationAssets.agilityColor,
                           onTap: lipTrills != null
                               ? () => _openExercise(
