@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/seed_library.dart';
+import '../../widgets/home/balance_bar_row.dart';
 import '../../widgets/home/checklist_row.dart';
+import '../../widgets/home/daily_balance_card.dart';
 import '../../widgets/home/horizontal_item_card.dart';
 import '../../widgets/home/illustration_assets.dart';
 import '../../widgets/home/soft_pill_card.dart';
@@ -61,6 +63,32 @@ class HomeScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Today's Balance section
+                            Padding(
+                              padding: const EdgeInsets.only(top: 24, bottom: 24),
+                              child: DailyBalanceCard(
+                                bars: [
+                                  BalanceBarData(
+                                    label: 'Warmup',
+                                    value: 0.75, // 75% progress
+                                    icon: Icons.fitness_center,
+                                    accentColor: IllustrationAssets.warmupColor,
+                                  ),
+                                  BalanceBarData(
+                                    label: 'Pitch',
+                                    value: 0.45, // 45% progress
+                                    icon: Icons.music_note,
+                                    accentColor: IllustrationAssets.pitchColor,
+                                  ),
+                                  BalanceBarData(
+                                    label: 'Range',
+                                    value: 0.60, // 60% progress
+                                    icon: Icons.trending_up,
+                                    accentColor: IllustrationAssets.agilityColor,
+                                  ),
+                                ],
+                              ),
+                            ),
                             // Today's Exercises section
                             Padding(
                               padding:
