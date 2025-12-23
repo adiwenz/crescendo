@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../../data/seed_library.dart';
 import '../../widgets/home/exercise_mini_card.dart';
 import '../../widgets/home/greeting_header.dart';
-import '../../widgets/home/quick_action_card.dart';
+import '../../widgets/home/illustrated_tile.dart';
+import '../../widgets/home/illustration_assets.dart';
+import '../../widgets/home/soft_card.dart';
+import '../../widgets/home/start_training_cta.dart';
 import '../../widgets/home/training_timeline.dart';
 import '../../widgets/home/training_timeline_card.dart';
 import '../explore/exercise_preview_screen.dart';
@@ -23,8 +26,7 @@ class HomeScreen extends StatelessWidget {
         title: 'Warmup',
         subtitle: 'Complete',
         status: TrainingStatus.completed,
-        cardTintColor: const Color(0xFF8FC9A8).withOpacity(0.4), // Green
-        singingIcon: Icons.mic_external_on,
+        watermarkImagePath: IllustrationAssets.warmupWatermark,
         onTap: warmup != null
             ? () => _openExercise(context, warmup.id, warmup.title)
             : null,
@@ -34,10 +36,8 @@ class HomeScreen extends StatelessWidget {
         subtitle: 'In Progress • Level 2',
         status: TrainingStatus.inProgress,
         progress: 0.72,
-        cardTintColor:
-            const Color(0xFF8FC9A8).withOpacity(0.25), // Lighter green
         trailingText: 'Level 2',
-        singingIcon: Icons.trending_up,
+        watermarkImagePath: IllustrationAssets.pitchWatermark,
         onTap: pitch != null
             ? () => _openExercise(context, pitch.id, pitch.title)
             : null,
@@ -46,9 +46,8 @@ class HomeScreen extends StatelessWidget {
         title: 'Lip Trills',
         subtitle: 'Next • Level 2',
         status: TrainingStatus.next,
-        cardTintColor: const Color(0xFFFFB88C).withOpacity(0.4), // Orange
         trailingText: 'Level 2',
-        singingIcon: Icons.waves,
+        watermarkImagePath: IllustrationAssets.lipTrillsWatermark,
         onTap: lipTrills != null
             ? () => _openExercise(context, lipTrills.id, lipTrills.title)
             : null,
@@ -59,11 +58,11 @@ class HomeScreen extends StatelessWidget {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFF7FD1B9).withOpacity(0.08), // Mint
-              const Color(0xFFF1D27A).withOpacity(0.06), // Butter yellow
+              const Color(0xFFF9D6E2), // Subtle pink top
+              const Color(0xFFF6F2EE), // Warm off-white bottom
             ],
           ),
         ),
@@ -84,28 +83,44 @@ class HomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(height: 8),
-                    // Recents and Favorites Cards
+                    // Start Training Session CTA
+                    const StartTrainingCTA(),
+                    const SizedBox(height: 32),
+                    // Category tiles (Warmup / Pitch / Agility)
                     Row(
                       children: [
-                        QuickActionCard(
-                          title: 'Recents',
-                          icon: Icons.history_outlined,
-                          cardTintColor: const Color(0xFFF1D27A)
-                              .withOpacity(0.3), // Butter yellow
-                          onTap: () {},
+                        IllustratedTile(
+                          label: 'Warmup',
+                          subtitle: '3–5 min',
+                          illustrationPath: IllustrationAssets.warmup,
+                          onTap: warmup != null
+                              ? () => _openExercise(
+                                  context, warmup.id, warmup.title)
+                              : null,
                         ),
                         const SizedBox(width: 12),
-                        QuickActionCard(
-                          title: 'Favorites',
-                          icon: Icons.favorite_outline,
-                          cardTintColor: const Color(0xFFFFB88C)
-                              .withOpacity(0.3), // Soft orange
-                          onTap: () {},
+                        IllustratedTile(
+                          label: 'Pitch',
+                          subtitle: '5–10 min',
+                          illustrationPath: IllustrationAssets.pitch,
+                          onTap: pitch != null
+                              ? () =>
+                                  _openExercise(context, pitch.id, pitch.title)
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        IllustratedTile(
+                          label: 'Agility',
+                          subtitle: '5–10 min',
+                          illustrationPath: IllustrationAssets.agility,
+                          onTap: lipTrills != null
+                              ? () => _openExercise(
+                                  context, lipTrills.id, lipTrills.title)
+                              : null,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 40),
                     // Continue Training Section Header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -129,8 +144,15 @@ class HomeScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // Training Timeline
-                    TrainingTimeline(cards: trainingCards),
+                    // Continue Training Card (single large card with list inside)
+                    SoftCard(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          TrainingTimeline(cards: trainingCards),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 40),
                     // Today's Exercises Section Header
                     Row(
@@ -163,9 +185,7 @@ class HomeScreen extends StatelessWidget {
                           title: 'Warmup',
                           level: 'Level 1',
                           progress: 0.65,
-                          cardTintColor: const Color(0xFFFFB88C)
-                              .withOpacity(0.4), // Orange
-                          watermarkIcon: Icons.local_fire_department,
+                          watermarkImagePath: IllustrationAssets.warmupExercise,
                           onTap: warmup != null
                               ? () => _openExercise(
                                   context, warmup.id, warmup.title)
@@ -176,9 +196,7 @@ class HomeScreen extends StatelessWidget {
                           title: 'Build pitch accuracy',
                           level: 'Level 1',
                           progress: 0.45,
-                          cardTintColor: const Color(0xFFF1D27A)
-                              .withOpacity(0.4), // Yellow
-                          watermarkIcon: Icons.graphic_eq,
+                          watermarkImagePath: IllustrationAssets.pitchAccuracy,
                           onTap: pitch != null
                               ? () =>
                                   _openExercise(context, pitch.id, pitch.title)

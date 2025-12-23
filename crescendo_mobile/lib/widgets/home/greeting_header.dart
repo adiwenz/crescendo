@@ -14,7 +14,7 @@ class GreetingHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 32, 20, 40),
+      padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -23,7 +23,7 @@ class GreetingHeader extends StatelessWidget {
             style: const TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF1D1D1F),
+              color: Color(0xFF2E2E2E),
               height: 1.2,
             ),
           ),
