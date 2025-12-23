@@ -20,6 +20,9 @@ class ExerciseMiniCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine singing icon if not provided
+    IconData icon = watermarkIcon ?? _getSingingIcon(title);
+
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -30,53 +33,107 @@ class ExerciseMiniCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardTintColor,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFE6E1DC),
+              width: 2,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: Stack(
             children: [
-              // Watermark icon (faint)
-              if (watermarkIcon != null)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Opacity(
-                    opacity: 0.1,
-                    child: Icon(
-                      watermarkIcon,
-                      size: 72,
-                      color: const Color(0xFF2E2E2E),
-                    ),
+              // Large singing-themed decorative icon
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Opacity(
+                  opacity: 0.2,
+                  child: Icon(
+                    icon,
+                    size: 90,
+                    color: const Color(0xFF2E2E2E),
                   ),
                 ),
+              ),
+              // Small decorative music notes
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Opacity(
+                  opacity: 0.3,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.music_note,
+                        size: 16,
+                        color: const Color(0xFF2E2E2E),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.music_note,
+                        size: 14,
+                        color: const Color(0xFF2E2E2E),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Spacer(),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2E2E2E),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2E2E2E),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    level,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF7A7A7A),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      level,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2E2E2E),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _ProgressBar(value: progress),
+                  Row(
+                    children: [
+                      Expanded(child: _ProgressBar(value: progress)),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${(progress * 100).toInt()}%',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2E2E2E),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -84,6 +141,15 @@ class ExerciseMiniCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  IconData _getSingingIcon(String title) {
+    if (title.toLowerCase().contains('warmup')) {
+      return Icons.local_fire_department;
+    } else if (title.toLowerCase().contains('pitch')) {
+      return Icons.graphic_eq;
+    }
+    return Icons.mic;
   }
 }
 
@@ -95,16 +161,15 @@ class _ProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(2),
+      borderRadius: BorderRadius.circular(4),
       child: SizedBox(
-        height: 4,
+        height: 6,
         child: LinearProgressIndicator(
           value: value.clamp(0.0, 1.0),
-          backgroundColor: const Color(0xFFE6E1DC),
+          backgroundColor: Colors.white.withOpacity(0.5),
           valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2E2E2E)),
         ),
       ),
     );
   }
 }
-

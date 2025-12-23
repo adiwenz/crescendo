@@ -13,7 +13,6 @@ class TrainingTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     if (cards.isEmpty) return const SizedBox.shrink();
 
-    // Calculate total height needed
     const cardSpacing = 16.0;
     const circleSize = 24.0;
     const lineTopOffset = 12.0;
@@ -112,6 +111,11 @@ class _StatusCircle extends StatelessWidget {
               color: const Color(0xFFD1D1D6),
               width: 2,
             ),
+          ),
+          child: const Icon(
+            Icons.add,
+            size: 16,
+            color: Color(0xFFD1D1D6),
           ),
         );
     }

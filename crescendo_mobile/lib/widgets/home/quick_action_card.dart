@@ -26,10 +26,14 @@ class QuickActionCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardTintColor,
             borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: const Color(0xFFE6E1DC),
+              width: 2,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
             ],
@@ -37,17 +41,24 @@ class QuickActionCard extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 20,
-                color: const Color(0xFF2E2E2E),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: const Color(0xFF2E2E2E),
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Text(
                 title,
                 style: const TextStyle(
                   fontSize: 15,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   color: Color(0xFF2E2E2E),
                 ),
               ),

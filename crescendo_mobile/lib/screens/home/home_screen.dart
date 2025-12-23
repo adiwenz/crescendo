@@ -23,9 +23,8 @@ class HomeScreen extends StatelessWidget {
         title: 'Warmup',
         subtitle: 'Complete',
         status: TrainingStatus.completed,
-        cardTintColor: const Color(0xFF7FD1B9).withOpacity(0.3), // Mint tint
-        trailingText: '100%',
-        watermarkIcon: Icons.music_note_outlined,
+        cardTintColor: const Color(0xFF8FC9A8).withOpacity(0.4), // Green
+        singingIcon: Icons.mic_external_on,
         onTap: warmup != null
             ? () => _openExercise(context, warmup.id, warmup.title)
             : null,
@@ -35,9 +34,10 @@ class HomeScreen extends StatelessWidget {
         subtitle: 'In Progress • Level 2',
         status: TrainingStatus.inProgress,
         progress: 0.72,
-        cardTintColor: const Color(0xFF7FD1B9).withOpacity(0.3), // Mint tint
+        cardTintColor:
+            const Color(0xFF8FC9A8).withOpacity(0.25), // Lighter green
         trailingText: 'Level 2',
-        watermarkIcon: Icons.trending_up_outlined,
+        singingIcon: Icons.trending_up,
         onTap: pitch != null
             ? () => _openExercise(context, pitch.id, pitch.title)
             : null,
@@ -46,10 +46,9 @@ class HomeScreen extends StatelessWidget {
         title: 'Lip Trills',
         subtitle: 'Next • Level 2',
         status: TrainingStatus.next,
-        cardTintColor:
-            const Color(0xFFF3B7A6).withOpacity(0.3), // Soft peach tint
+        cardTintColor: const Color(0xFFFFB88C).withOpacity(0.4), // Orange
         trailingText: 'Level 2',
-        watermarkIcon: Icons.speed_outlined,
+        singingIcon: Icons.waves,
         onTap: lipTrills != null
             ? () => _openExercise(context, lipTrills.id, lipTrills.title)
             : null,
@@ -73,7 +72,7 @@ class HomeScreen extends StatelessWidget {
           child: ListView(
             padding: EdgeInsets.zero,
             children: [
-              // Greeting Header with gradient
+              // Greeting Header
               const GreetingHeader(
                 greeting: 'Good morning',
                 subtitle: 'Let\'s train your voice',
@@ -85,7 +84,7 @@ class HomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     // Recents and Favorites Cards
                     Row(
                       children: [
@@ -115,7 +114,7 @@ class HomeScreen extends StatelessWidget {
                           'Continue Training',
                           style: TextStyle(
                             fontSize: 22,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: Color(0xFF2E2E2E),
                           ),
                         ),
@@ -141,7 +140,7 @@ class HomeScreen extends StatelessWidget {
                           'Today\'s Exercises',
                           style: TextStyle(
                             fontSize: 22,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: Color(0xFF2E2E2E),
                           ),
                         ),
@@ -164,9 +163,9 @@ class HomeScreen extends StatelessWidget {
                           title: 'Warmup',
                           level: 'Level 1',
                           progress: 0.65,
-                          cardTintColor: const Color(0xFFF1D27A)
-                              .withOpacity(0.35), // Butter yellow
-                          watermarkIcon: Icons.music_note_outlined,
+                          cardTintColor: const Color(0xFFFFB88C)
+                              .withOpacity(0.4), // Orange
+                          watermarkIcon: Icons.local_fire_department,
                           onTap: warmup != null
                               ? () => _openExercise(
                                   context, warmup.id, warmup.title)
@@ -177,9 +176,9 @@ class HomeScreen extends StatelessWidget {
                           title: 'Build pitch accuracy',
                           level: 'Level 1',
                           progress: 0.45,
-                          cardTintColor: const Color(0xFFF3B7A6)
-                              .withOpacity(0.35), // Soft peach
-                          watermarkIcon: Icons.trending_up_outlined,
+                          cardTintColor: const Color(0xFFF1D27A)
+                              .withOpacity(0.4), // Yellow
+                          watermarkIcon: Icons.graphic_eq,
                           onTap: pitch != null
                               ? () =>
                                   _openExercise(context, pitch.id, pitch.title)
