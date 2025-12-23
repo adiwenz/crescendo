@@ -27,18 +27,24 @@ class HorizontalItemCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.90),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: const Color(0xFFE6E1DC).withOpacity(0.6),
-            width: 1,
+            color: const Color(0xFFD4D0CA),
+            width: 1.0,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 24,
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 32,
               spreadRadius: 0,
-              offset: const Offset(0, 10),
+              offset: const Offset(0, 12),
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 16,
+              spreadRadius: 0,
+              offset: const Offset(0, 4),
             ),
           ],
         ),

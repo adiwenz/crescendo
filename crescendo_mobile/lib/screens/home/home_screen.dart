@@ -93,56 +93,132 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            SoftPillCard(
-                              onTap: warmup != null
-                                  ? () => _openExercise(
-                                      context, warmup.id, warmup.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Warmup',
-                                subtitle: 'Level 1',
-                                icon: Icons.fitness_center,
-                                accentColor: IllustrationAssets.warmupColor,
-                                isCompleted: true, // Marked as completed
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SoftPillCard(
-                              onTap: pitch != null
-                                  ? () => _openExercise(
-                                      context, pitch.id, pitch.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Build pitch accuracy',
-                                subtitle: 'Level 1',
-                                icon: Icons.music_note,
-                                accentColor: IllustrationAssets.pitchColor,
-                                isCompleted: false,
-                                trailing: const Icon(
-                                  Icons.chevron_right,
-                                  size: 20,
-                                  color: Color(0xFFA5A5A5),
+                            // Today's Exercises timeline with vertical line and checkmarks
+                            Stack(
+                              children: [
+                                // Vertical connecting line
+                                Positioned(
+                                  left: 12,
+                                  top: 12,
+                                  bottom: 12,
+                                  child: Container(
+                                    width: 2,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE6E1DC),
+                                      borderRadius: BorderRadius.circular(1),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SoftPillCard(
-                              onTap: stability != null
-                                  ? () => _openExercise(
-                                      context, stability.id, stability.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Range Building',
-                                subtitle: 'Level 1',
-                                icon: Icons.trending_up,
-                                accentColor: IllustrationAssets.agilityColor,
-                                isCompleted: false,
-                                trailing: const Icon(
-                                  Icons.chevron_right,
-                                  size: 20,
-                                  color: Color(0xFFA5A5A5),
+                                // Exercise cards with checkmarks
+                                Column(
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Checkmark circle area
+                                        SizedBox(
+                                          width: 28,
+                                          child: _ExerciseCheckmark(
+                                              isCompleted: true),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        // Card
+                                        Expanded(
+                                          child: SoftPillCard(
+                                            onTap: warmup != null
+                                                ? () => _openExercise(context,
+                                                    warmup.id, warmup.title)
+                                                : null,
+                                            child: ChecklistRow(
+                                              title: 'Warmup',
+                                              subtitle: 'Level 1',
+                                              icon: Icons.fitness_center,
+                                              accentColor: IllustrationAssets
+                                                  .warmupColor,
+                                              isCompleted: true,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Checkmark circle area
+                                        SizedBox(
+                                          width: 28,
+                                          child: _ExerciseCheckmark(
+                                              isCompleted: false),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        // Card
+                                        Expanded(
+                                          child: SoftPillCard(
+                                            onTap: pitch != null
+                                                ? () => _openExercise(context,
+                                                    pitch.id, pitch.title)
+                                                : null,
+                                            child: ChecklistRow(
+                                              title: 'Build pitch accuracy',
+                                              subtitle: 'Level 1',
+                                              icon: Icons.music_note,
+                                              accentColor:
+                                                  IllustrationAssets.pitchColor,
+                                              isCompleted: false,
+                                              trailing: const Icon(
+                                                Icons.chevron_right,
+                                                size: 20,
+                                                color: Color(0xFFA5A5A5),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Checkmark circle area
+                                        SizedBox(
+                                          width: 28,
+                                          child: _ExerciseCheckmark(
+                                              isCompleted: false),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        // Card
+                                        Expanded(
+                                          child: SoftPillCard(
+                                            onTap: stability != null
+                                                ? () => _openExercise(
+                                                    context,
+                                                    stability.id,
+                                                    stability.title)
+                                                : null,
+                                            child: ChecklistRow(
+                                              title: 'Range Building',
+                                              subtitle: 'Level 1',
+                                              icon: Icons.trending_up,
+                                              accentColor: IllustrationAssets
+                                                  .agilityColor,
+                                              isCompleted: false,
+                                              trailing: const Icon(
+                                                Icons.chevron_right,
+                                                size: 20,
+                                                color: Color(0xFFA5A5A5),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                              ),
+                              ],
                             ),
                             const SizedBox(height: 24),
                             // Try Next section
@@ -361,6 +437,45 @@ class HomeScreen extends StatelessWidget {
         builder: (_) => ExercisePreviewScreen(exerciseId: id),
       ),
     );
+  }
+}
+
+class _ExerciseCheckmark extends StatelessWidget {
+  final bool isCompleted;
+
+  const _ExerciseCheckmark({required this.isCompleted});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 24.0;
+
+    if (isCompleted) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: const BoxDecoration(
+          color: Color(0xFF8FC9A8), // Completion green
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.check,
+          size: 16,
+          color: Colors.white,
+        ),
+      );
+    } else {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFD1D1D6),
+            width: 2,
+          ),
+        ),
+      );
+    }
   }
 }
 
