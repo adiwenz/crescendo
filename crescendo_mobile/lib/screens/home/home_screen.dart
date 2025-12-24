@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../widgets/home/floating_accent.dart';
 import '../../widgets/home/gradient_feature_bar.dart';
-import '../../widgets/home/home_bar_card.dart';
-import '../../widgets/home/timeline_track.dart';
-import '../../widgets/home/vocal_warmup_item.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +13,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   // Temporary in-memory completion state
   // TODO: Connect to SQLite/database later
-  final Set<String> _completedIds = {'lip_trills', 'sirens', 'vocal_scales'};
+  final Set<String> _completedIds = {'lip_trills', 'sirens'};
 
   void _toggleCompletion(String id) {
     setState(() {
@@ -31,14 +27,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final centerX = screenWidth / 2;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark, // Dark status bar content
       child: Scaffold(
         body: Container(
+          width: double.infinity,
+          height: double.infinity,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -54,243 +49,109 @@ class _HomeScreenState extends State<HomeScreen> {
           child: SafeArea(
             child: Stack(
               children: [
-                // Scrollable content with timeline
+                // Scrollable content
                 SingleChildScrollView(
                   padding: EdgeInsets.zero,
-                  child: Stack(
-                    children: [
-                      // Centered vertical timeline
-                      Positioned(
-                        left: centerX - 1,
-                        top: 0,
-                        bottom: 0,
-                        child: CustomPaint(
-                          painter: TimelineTrack(
-                            width: 2,
-                            height: 2000, // Large enough for scroll
-                            segments: [
-                              TimelineSegment(
-                                length: 120, // Top spacing
-                                color: const Color(0xFF7FD1B9), // Teal
-                                isDashed: false,
-                              ),
-                              TimelineSegment(
-                                length: 80, // After first exercise
-                                color: const Color(0xFF7FD1B9), // Teal
-                                isDashed: false,
-                                hasNode: true,
-                              ),
-                              TimelineSegment(
-                                length: 80, // After second exercise
-                                color: const Color(0xFF7FD1B9), // Teal
-                                isDashed: false,
-                                hasNode: true,
-                              ),
-                              TimelineSegment(
-                                length: 80, // After third exercise
-                                color: const Color(0xFF7FD1B9), // Teal
-                                isDashed: false,
-                                hasNode: true,
-                              ),
-                              TimelineSegment(
-                                length: 40, // Transition space
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: true,
-                              ),
-                              TimelineSegment(
-                                length: 100, // After Breathing Techniques
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: false,
-                              ),
-                              TimelineSegment(
-                                length: 100, // After Stretch & Relax
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: false,
-                              ),
-                              TimelineSegment(
-                                length: 100, // After Stats & Insights
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: false,
-                              ),
-                              TimelineSegment(
-                                length: 100, // After Calendar & Notes
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: false,
-                              ),
-                              TimelineSegment(
-                                length: 200, // Bottom spacing
-                                color: const Color(0xFFF3B7A6), // Orange/peach
-                                isDashed: true,
-                              ),
-                            ],
-                          ),
-                          size: const Size(2, 2000),
-                        ),
-                      ),
-                      // Content
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 40),
-                            // Today's Vocal Warmup section
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 16),
-                              child: Text(
-                                'Today\'s Vocal Warmup',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2E2E2E),
-                                ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.04),
+                            // Good morning text
+                            const Text(
+                              'Good morning',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF2E2E2E),
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // Lip Trills
-                            VocalWarmupItem(
-                              title: 'Lip Trills',
-                              isCompleted: _completedIds.contains('lip_trills'),
-                              onTap: () => _toggleCompletion('lip_trills'),
-                            ),
-                            const SizedBox(height: 12),
-                            // Sirens
-                            VocalWarmupItem(
-                              title: 'Sirens',
-                              isCompleted: _completedIds.contains('sirens'),
-                              onTap: () => _toggleCompletion('sirens'),
-                            ),
-                            const SizedBox(height: 12),
-                            // Vocal Scales
-                            VocalWarmupItem(
-                              title: 'Vocal Scales',
-                              isCompleted: _completedIds.contains('vocal_scales'),
-                              onTap: () => _toggleCompletion('vocal_scales'),
-                            ),
-                            const SizedBox(height: 40),
-                            // Breathing Techniques
-                            HomeBarCard(
-                              onTap: () {},
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Breathing Techniques',
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF2E2E2E),
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.chevron_right,
-                                    size: 20,
-                                    color: Color(0xFFA5A5A5),
-                                  ),
-                                ],
+                            const Text(
+                              'Let\'s train your voice',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF7A7A7A),
                               ),
                             ),
-                            const SizedBox(height: 20),
-                            // Stretch & Relax (gradient feature bar)
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.03),
+                            // Today's Intention title
+                            const Text(
+                              'Today\'s Intention',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF2E2E2E),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Smooth transitions gradient card
                             GradientFeatureBar(
-                              title: 'Stretch & Relax',
+                              title: 'Smooth transitions through your passagio',
                               icon: Icons.favorite,
                               onTap: () {},
                             ),
-                            const SizedBox(height: 20),
-                            // Stats & Insights (slightly right of center)
-                            HomeBarCard(
-                              alignment: Alignment.centerRight,
-                              width: screenWidth * 0.85,
-                              onTap: () {},
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: 20,
-                                        color: Color(0xFFB9B6F3), // Purple
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.03),
+                            // Today's Exercises title with progress
+                            Builder(
+                              builder: (context) {
+                                // Count completed exercises (first 3: lip_trills, sirens, vocal_scales)
+                                final completedCount = [
+                                  'lip_trills',
+                                  'sirens',
+                                  'vocal_scales'
+                                ].where((id) => _completedIds.contains(id)).length;
+                                return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    const Text(
+                                      'Today\'s Exercises',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2E2E2E),
                                       ),
-                                      SizedBox(width: 12),
-                                      Text(
-                                        'Stats & Insights',
-                                        style: TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF2E2E2E),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Icon(
-                                    Icons.chevron_right,
-                                    size: 20,
-                                    color: Color(0xFFA5A5A5),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            // Calendar & Notes
-                            Stack(
-                              children: [
-                                HomeBarCard(
-                                  onTap: () {},
-                                  child: const Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.calendar_today,
-                                            size: 20,
-                                            color: Color(0xFFB9B6F3), // Purple
-                                          ),
-                                          SizedBox(width: 12),
-                                          Text(
-                                            'Calendar & Notes',
-                                            style: TextStyle(
-                                              fontSize: 17,
-                                              fontWeight: FontWeight.w500,
-                                              color: Color(0xFF2E2E2E),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Orange capsule button floating on right
-                                Positioned(
-                                  right: -12,
-                                  top: 0,
-                                  bottom: 0,
-                                  child: Center(
-                                    child: OrangeCapsuleButton(
-                                      onTap: () {},
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            // Bottom gradient pill bar
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  colors: [
-                                    Color(0xFFF4A3C4), // Blush pink
-                                    Color(0xFFF1D27A), // Butter yellow
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '$completedCount of 3 complete',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: const Color(0xFF7A7A7A),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '8min',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w400,
+                                            color: const Color(0xFFA5A5A5),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
-                                ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            // Daily exercises - single clickable card with timeline
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.85),
                                 borderRadius: BorderRadius.circular(28),
+                                border: Border.all(
+                                  color: const Color(0xFFE6E1DC).withOpacity(0.6),
+                                  width: 1,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.06),
@@ -300,44 +161,305 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ],
                               ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              child: Stack(
                                 children: [
-                                  Text(
-                                    'Calendar & Notes',
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF2E2E2E),
+                                  // Timeline line on the left
+                                  Positioned(
+                                    left: 12,
+                                    top: 12,
+                                    bottom: 12,
+                                    child: Container(
+                                      width: 2,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF7FD1B9), // Teal
+                                        borderRadius: BorderRadius.circular(1),
+                                      ),
                                     ),
                                   ),
-                                  Icon(
-                                    Icons.person_outline,
-                                    size: 20,
-                                    color: Color(0xFF2E2E2E),
+                                  // Exercise items
+                                  Column(
+                                    children: [
+                                      InkWell(
+                                        onTap: () => _toggleCompletion('lip_trills'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Checkmark circle area
+                                              SizedBox(
+                                                width: 28,
+                                                child: _ExerciseCheckmark(
+                                                  isCompleted: _completedIds
+                                                      .contains('lip_trills'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              // Exercise text and level
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                                                    Text(
+                                                      'Lip Trills',
+                                                      style: const TextStyle(
+                                                        fontSize: 17,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF2E2E2E),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Level 1',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: const Color(0xFF7A7A7A),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (_completedIds
+                                                  .contains('lip_trills'))
+                                                const Icon(
+                                                  Icons.check,
+                                                  size: 20,
+                                                  color: Color(0xFFA5A5A5),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      InkWell(
+                                        onTap: () => _toggleCompletion('sirens'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Checkmark circle area
+                  SizedBox(
+                                                width: 28,
+                                                child: _ExerciseCheckmark(
+                                                  isCompleted: _completedIds
+                                                      .contains('sirens'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              // Exercise text and level
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                                                    Text(
+                                                      'Sirens',
+                                                      style: const TextStyle(
+                                                        fontSize: 17,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF2E2E2E),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Level 2',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: const Color(0xFF7A7A7A),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (_completedIds.contains('sirens'))
+                                                const Icon(
+                                                  Icons.check,
+                                                  size: 20,
+                                                  color: Color(0xFFA5A5A5),
+                          ),
+                      ],
+                    ),
+                  ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      InkWell(
+                                        onTap: () => _toggleCompletion('vocal_scales'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Checkmark circle area
+                                              SizedBox(
+                                                width: 28,
+                                                child: _ExerciseCheckmark(
+                                                  isCompleted: _completedIds
+                                                      .contains('vocal_scales'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              // Exercise text and level
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                                                    Text(
+                                                      'Vocal Scales',
+                                                      style: const TextStyle(
+                                                        fontSize: 17,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF2E2E2E),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Level 1',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: const Color(0xFF7A7A7A),
+              ),
+            ),
+          ],
+        ),
+      ),
+                                              if (_completedIds
+                                                  .contains('vocal_scales'))
+                                                const Icon(
+                                                  Icons.check,
+                                                  size: 20,
+                                                  color: Color(0xFFA5A5A5),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      InkWell(
+                                        onTap: () => _toggleCompletion('breathing'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Checkmark circle area
+                                              SizedBox(
+                                                width: 28,
+                                                child: _ExerciseCheckmark(
+                                                  isCompleted: _completedIds
+                                                      .contains('breathing'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              // Exercise text and level
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'Breathing Exercises',
+                                                      style: const TextStyle(
+                                                        fontSize: 17,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF2E2E2E),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Level 2',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: const Color(0xFF7A7A7A),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (_completedIds.contains('breathing'))
+                                                const Icon(
+                                                  Icons.check,
+                                                  size: 20,
+                                                  color: Color(0xFFA5A5A5),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      InkWell(
+                                        onTap: () => _toggleCompletion('range_building'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Checkmark circle area
+                                              SizedBox(
+                                                width: 28,
+                                                child: _ExerciseCheckmark(
+                                                  isCompleted: _completedIds
+                                                      .contains('range_building'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              // Exercise text and level
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'Range Building',
+                                                      style: const TextStyle(
+                                                        fontSize: 17,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Color(0xFF2E2E2E),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Level 1',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.w400,
+                                                        color: const Color(0xFF7A7A7A),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (_completedIds
+                                                  .contains('range_building'))
+                                                const Icon(
+                                                  Icons.check,
+                                                  size: 20,
+                                                  color: Color(0xFFA5A5A5),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 60),
-                          ],
-                        ),
-                      ),
-                    ],
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.04),
+                      ],
+                    ),
                   ),
-                ),
-                // Floating accents (positioned relative to screen)
-                // Pink gradient square (right side mid-screen)
-                Positioned(
-                  right: 20,
-                  top: screenHeight * 0.4,
-                  child: const PinkGradientSquare(),
-                ),
-                // Purple chat bubble (left side)
-                Positioned(
-                  left: 20,
-                  top: screenHeight * 0.5,
-                  child: const PurpleChatBubble(),
                 ),
               ],
             ),
@@ -345,5 +467,44 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+}
+
+class _ExerciseCheckmark extends StatelessWidget {
+  final bool isCompleted;
+
+  const _ExerciseCheckmark({required this.isCompleted});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 24.0;
+
+    if (isCompleted) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: const BoxDecoration(
+          color: Color(0xFF7FD1B9), // Mint/teal
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.check,
+          size: 16,
+          color: Colors.white,
+        ),
+      );
+    } else {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFD1D1D6),
+            width: 2,
+          ),
+        ),
+      );
+    }
   }
 }

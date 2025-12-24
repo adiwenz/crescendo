@@ -4,12 +4,14 @@ class VocalWarmupItem extends StatelessWidget {
   final String title;
   final bool isCompleted;
   final VoidCallback? onTap;
+  final bool showLeftCheckmark;
 
   const VocalWarmupItem({
     super.key,
     required this.title,
     required this.isCompleted,
     this.onTap,
+    this.showLeftCheckmark = true,
   });
 
   @override
@@ -40,31 +42,33 @@ class VocalWarmupItem extends StatelessWidget {
           children: [
             Row(
               children: [
-                // Left side: teal circle with check or outlined circle
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: isCompleted
-                        ? const Color(0xFF7FD1B9) // Mint/teal
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
+                if (showLeftCheckmark) ...[
+                  // Left side: teal circle with check or outlined circle
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
                       color: isCompleted
-                          ? const Color(0xFF7FD1B9)
-                          : const Color(0xFFD1D1D6),
-                      width: isCompleted ? 0 : 2,
+                          ? const Color(0xFF7FD1B9) // Mint/teal
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isCompleted
+                            ? const Color(0xFF7FD1B9)
+                            : const Color(0xFFD1D1D6),
+                        width: isCompleted ? 0 : 2,
+                      ),
                     ),
+                    child: isCompleted
+                        ? const Icon(
+                            Icons.check,
+                            size: 16,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
-                  child: isCompleted
-                      ? const Icon(
-                          Icons.check,
-                          size: 16,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 12),
+                  const SizedBox(width: 12),
+                ],
                 Text(
                   title,
                   style: const TextStyle(

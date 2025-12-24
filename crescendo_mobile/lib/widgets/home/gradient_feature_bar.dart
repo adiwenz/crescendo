@@ -41,20 +41,26 @@ class GradientFeatureBar extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF5A3A2A), // Dark red/brown
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF5A3A2A), // Dark red/brown
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (icon != null)
+            if (icon != null) ...[
+              const SizedBox(width: 12),
               Icon(
                 icon,
                 color: const Color(0xFFD45A7A), // Dark pink
                 size: 24,
               ),
+            ],
           ],
         ),
       ),
