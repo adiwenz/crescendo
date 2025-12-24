@@ -14,6 +14,15 @@ class _HomeScreenState extends State<HomeScreen> {
   // Temporary in-memory completion state
   // TODO: Connect to SQLite/database later
   final Set<String> _completedIds = {'lip_trills', 'sirens'};
+  
+  // All exercise IDs for today
+  static const List<String> _allExerciseIds = [
+    'lip_trills',
+    'sirens',
+    'vocal_scales',
+    'breathing',
+    'range_building',
+  ];
 
   void _toggleCompletion(String id) {
     setState(() {
@@ -24,6 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
   }
+  
+  bool get _isComplete {
+    return _completedIds.length == _allExerciseIds.length;
+  }
+  
+  int get _completedCount => _completedIds.length;
+  
+  int get _totalCount => _allExerciseIds.length;
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Scrollable content
                 SingleChildScrollView(
                   padding: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+            Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -211,30 +230,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                       onTap: () => _toggleCompletion('range_building'),
                                     ),
                                   ],
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: MediaQuery.of(context).size.height * 0.04),
-                            // Colored bottom accent
-                            Container(
-                              width: double.infinity,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  colors: [
-                                    Color(0xFFF1D27A), // Butter yellow
-                                    Color(0xFFF3B7A6), // Soft peach
-                                    Color(0xFFF4A3C4), // Blush pink
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            SizedBox(height: MediaQuery.of(context).size.height * 0.02),
+                          ),
                       ],
                     ),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.04),
+                          ],
+                        ),
+                      ),
+                      // Status affirmation band (last item in scroll) - full width, outside padding
+                      _StatusAffirmationBand(
+                        isComplete: _isComplete,
+                        completedCount: _completedCount,
+                        totalCount: _totalCount,
+                      ),
+                      SizedBox(height: MediaQuery.of(context).size.height * 0.02),
+                    ],
                   ),
                 ),
               ],
@@ -302,7 +312,7 @@ class _ExerciseCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
-                children: [
+                    children: [
                   Text(
                     title,
                     style: const TextStyle(
@@ -332,6 +342,78 @@ class _ExerciseCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StatusAffirmationBand extends StatelessWidget {
+  final bool isComplete;
+  final int completedCount;
+  final int totalCount;
+
+  const _StatusAffirmationBand({
+    required this.isComplete,
+    required this.completedCount,
+    required this.totalCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = isComplete
+        ? [
+            'Nice work today!',
+            'Great job completing your exercises!',
+            'You\'re doing amazing!',
+          ]
+        : [
+            'Keep going, you\'ve got this!',
+            'You\'re making progress!',
+            'Every step counts!',
+          ];
+    
+    final message = messages[completedCount % messages.length];
+    final icon = isComplete ? Icons.check_circle_outline : Icons.favorite_outline;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE6E1DC).withOpacity(0.3),
+          width: 0.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            spreadRadius: 0,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: const Color(0xFF7FD1B9).withOpacity(0.7), // Muted mint
+          ),
+          const SizedBox(width: 8),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF8E8E93), // Muted gray
+            ),
+          ),
+        ],
       ),
     );
   }
