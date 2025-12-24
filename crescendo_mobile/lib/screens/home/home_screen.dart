@@ -165,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       exerciseId: 'lip_trills',
                                       title: 'Lip Trills',
                                       level: 'Level 1',
-                                      category: 'Warmup',
+                                      categoryIcon: Icons.local_fire_department,
                                       categoryColor: const Color(0xFF7FD1B9), // Mint/teal
                                       isCompleted: _completedIds.contains('lip_trills'),
                                       onTap: () => _toggleCompletion('lip_trills'),
@@ -175,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       exerciseId: 'sirens',
                                       title: 'Sirens',
                                       level: 'Level 2',
-                                      category: 'Agility',
+                                      categoryIcon: Icons.speed,
                                       categoryColor: const Color(0xFFF1D27A), // Butter yellow
                                       isCompleted: _completedIds.contains('sirens'),
                                       onTap: () => _toggleCompletion('sirens'),
@@ -185,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       exerciseId: 'vocal_scales',
                                       title: 'Vocal Scales',
                                       level: 'Level 1',
-                                      category: 'Scales',
+                                      categoryIcon: Icons.library_music,
                                       categoryColor: const Color(0xFFB9B6F3), // Pastel lavender
                                       isCompleted: _completedIds.contains('vocal_scales'),
                                       onTap: () => _toggleCompletion('vocal_scales'),
@@ -195,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       exerciseId: 'breathing',
                                       title: 'Breathing Exercises',
                                       level: 'Level 2',
-                                      category: 'Pitch Accuracy',
+                                      categoryIcon: Icons.tune,
                                       categoryColor: const Color(0xFFF3B7A6), // Soft peach
                                       isCompleted: _completedIds.contains('breathing'),
                                       onTap: () => _toggleCompletion('breathing'),
@@ -205,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       exerciseId: 'range_building',
                                       title: 'Range Building',
                                       level: 'Level 1',
-                                      category: 'Agility',
+                                      categoryIcon: Icons.trending_up,
                                       categoryColor: const Color(0xFFF1D27A), // Butter yellow
                                       isCompleted: _completedIds.contains('range_building'),
                                       onTap: () => _toggleCompletion('range_building'),
@@ -250,7 +250,7 @@ class _ExerciseCard extends StatelessWidget {
   final String exerciseId;
   final String title;
   final String level;
-  final String category;
+  final IconData categoryIcon;
   final Color categoryColor;
   final bool isCompleted;
   final VoidCallback onTap;
@@ -259,7 +259,7 @@ class _ExerciseCard extends StatelessWidget {
     required this.exerciseId,
     required this.title,
     required this.level,
-    required this.category,
+    required this.categoryIcon,
     required this.categoryColor,
     required this.isCompleted,
     required this.onTap,
@@ -289,7 +289,7 @@ class _ExerciseCard extends StatelessWidget {
           ],
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Checkmark circle area
             SizedBox(
@@ -301,6 +301,7 @@ class _ExerciseCard extends StatelessWidget {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     title,
@@ -321,22 +322,13 @@ class _ExerciseCard extends StatelessWidget {
                   ),
                 ],
               ),
-                ),
-            // Category label on the right
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: categoryColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                category,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: categoryColor,
-                ),
-              ),
+            ),
+            const SizedBox(width: 8),
+            // Category icon on the right (centered vertically, moved left)
+            Icon(
+              categoryIcon,
+              size: 28,
+              color: categoryColor,
             ),
           ],
         ),
