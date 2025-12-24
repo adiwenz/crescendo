@@ -1,454 +1,343 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../data/seed_library.dart';
-import '../../widgets/home/balance_bar_row.dart';
-import '../../widgets/home/checklist_row.dart';
-import '../../widgets/home/daily_balance_card.dart';
-import '../../widgets/home/horizontal_item_card.dart';
-import '../../widgets/home/illustration_assets.dart';
-import '../../widgets/home/soft_pill_card.dart';
-import '../explore/exercise_preview_screen.dart';
+import '../../widgets/home/floating_accent.dart';
+import '../../widgets/home/gradient_feature_bar.dart';
+import '../../widgets/home/home_bar_card.dart';
+import '../../widgets/home/timeline_track.dart';
+import '../../widgets/home/vocal_warmup_item.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  // Temporary in-memory completion state
+  // TODO: Connect to SQLite/database later
+  final Set<String> _completedIds = {'lip_trills', 'sirens', 'vocal_scales'};
+
+  void _toggleCompletion(String id) {
+    setState(() {
+      if (_completedIds.contains(id)) {
+        _completedIds.remove(id);
+      } else {
+        _completedIds.add(id);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final warmup = seedExercisesFor('warmup').firstOrNull;
-    final pitch = seedExercisesFor('pitch').firstOrNull;
-    final lipTrills = seedExercisesFor('agility').firstOrNull;
-    final stability = seedExercisesFor('stability').firstOrNull;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final centerX = screenWidth / 2;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light, // White status bar content
+      value: SystemUiOverlayStyle.dark, // Dark status bar content
       child: Scaffold(
         body: Container(
-          color: Colors.white, // White background
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withOpacity(0.95), // Faint cool white at top
+                const Color(0xFFFFF4F6), // Soft cream/blush
+                const Color(0xFFFBEAEC), // Soft peach
+              ],
+              stops: const [0.0, 0.3, 1.0],
+            ),
+          ),
           child: SafeArea(
-            bottom: false,
-            top:
-                false, // Remove top safe area so header extends into status bar
-            child: Column(
+            child: Stack(
               children: [
-                // Mint green header (extends into status bar)
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top + 16,
-                    left: 20,
-                    right: 20,
-                    bottom: 20,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF7FD1B9), // Mint green
-                  ),
-                  child: const Text(
-                    'Today',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                // Main content
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
+                // Scrollable content with timeline
+                SingleChildScrollView(
+                  padding: EdgeInsets.zero,
+                  child: Stack(
                     children: [
-                      // Main checklist content
+                      // Centered vertical timeline
+                      Positioned(
+                        left: centerX - 1,
+                        top: 0,
+                        bottom: 0,
+                        child: CustomPaint(
+                          painter: TimelineTrack(
+                            width: 2,
+                            height: 2000, // Large enough for scroll
+                            segments: [
+                              TimelineSegment(
+                                length: 120, // Top spacing
+                                color: const Color(0xFF7FD1B9), // Teal
+                                isDashed: false,
+                              ),
+                              TimelineSegment(
+                                length: 80, // After first exercise
+                                color: const Color(0xFF7FD1B9), // Teal
+                                isDashed: false,
+                                hasNode: true,
+                              ),
+                              TimelineSegment(
+                                length: 80, // After second exercise
+                                color: const Color(0xFF7FD1B9), // Teal
+                                isDashed: false,
+                                hasNode: true,
+                              ),
+                              TimelineSegment(
+                                length: 80, // After third exercise
+                                color: const Color(0xFF7FD1B9), // Teal
+                                isDashed: false,
+                                hasNode: true,
+                              ),
+                              TimelineSegment(
+                                length: 40, // Transition space
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: true,
+                              ),
+                              TimelineSegment(
+                                length: 100, // After Breathing Techniques
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: false,
+                              ),
+                              TimelineSegment(
+                                length: 100, // After Stretch & Relax
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: false,
+                              ),
+                              TimelineSegment(
+                                length: 100, // After Stats & Insights
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: false,
+                              ),
+                              TimelineSegment(
+                                length: 100, // After Calendar & Notes
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: false,
+                              ),
+                              TimelineSegment(
+                                length: 200, // Bottom spacing
+                                color: const Color(0xFFF3B7A6), // Orange/peach
+                                isDashed: true,
+                              ),
+                            ],
+                          ),
+                          size: const Size(2, 2000),
+                        ),
+                      ),
+                      // Content
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Today's Balance section
-                            Padding(
-                              padding: const EdgeInsets.only(top: 24, bottom: 24),
-                              child: DailyBalanceCard(
-                                bars: [
-                                  BalanceBarData(
-                                    label: 'Warmup',
-                                    value: 0.75, // 75% progress
-                                    icon: Icons.fitness_center,
-                                    accentColor: IllustrationAssets.warmupColor,
+                            const SizedBox(height: 40),
+                            // Today's Vocal Warmup section
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                'Today\'s Vocal Warmup',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2E2E2E),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Lip Trills
+                            VocalWarmupItem(
+                              title: 'Lip Trills',
+                              isCompleted: _completedIds.contains('lip_trills'),
+                              onTap: () => _toggleCompletion('lip_trills'),
+                            ),
+                            const SizedBox(height: 12),
+                            // Sirens
+                            VocalWarmupItem(
+                              title: 'Sirens',
+                              isCompleted: _completedIds.contains('sirens'),
+                              onTap: () => _toggleCompletion('sirens'),
+                            ),
+                            const SizedBox(height: 12),
+                            // Vocal Scales
+                            VocalWarmupItem(
+                              title: 'Vocal Scales',
+                              isCompleted: _completedIds.contains('vocal_scales'),
+                              onTap: () => _toggleCompletion('vocal_scales'),
+                            ),
+                            const SizedBox(height: 40),
+                            // Breathing Techniques
+                            HomeBarCard(
+                              onTap: () {},
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Breathing Techniques',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF2E2E2E),
+                                    ),
                                   ),
-                                  BalanceBarData(
-                                    label: 'Pitch',
-                                    value: 0.45, // 45% progress
-                                    icon: Icons.music_note,
-                                    accentColor: IllustrationAssets.pitchColor,
-                                  ),
-                                  BalanceBarData(
-                                    label: 'Range',
-                                    value: 0.60, // 60% progress
-                                    icon: Icons.trending_up,
-                                    accentColor: IllustrationAssets.agilityColor,
+                                  Icon(
+                                    Icons.chevron_right,
+                                    size: 20,
+                                    color: Color(0xFFA5A5A5),
                                   ),
                                 ],
                               ),
                             ),
-                            // Today's Exercises section
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: 8, top: 24),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF4A3C4)
-                                      .withOpacity(0.25), // Blush pink pill
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFF4A3C4)
-                                          .withOpacity(0.15),
-                                      blurRadius: 12,
-                                      spreadRadius: 0,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Text(
-                                  'Today\'s Exercises',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF2E2E2E),
+                            const SizedBox(height: 20),
+                            // Stretch & Relax (gradient feature bar)
+                            GradientFeatureBar(
+                              title: 'Stretch & Relax',
+                              icon: Icons.favorite,
+                              onTap: () {},
+                            ),
+                            const SizedBox(height: 20),
+                            // Stats & Insights (slightly right of center)
+                            HomeBarCard(
+                              alignment: Alignment.centerRight,
+                              width: screenWidth * 0.85,
+                              onTap: () {},
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.chat_bubble_outline,
+                                        size: 20,
+                                        color: Color(0xFFB9B6F3), // Purple
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Stats & Insights',
+                                        style: TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF2E2E2E),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    size: 20,
+                                    color: Color(0xFFA5A5A5),
+                                  ),
+                                ],
                               ),
                             ),
-                            // Today's Exercises timeline with vertical line and checkmarks
+                            const SizedBox(height: 20),
+                            // Calendar & Notes
                             Stack(
                               children: [
-                                // Vertical connecting line
-                                Positioned(
-                                  left: 12,
-                                  top: 12,
-                                  bottom: 12,
-                                  child: Container(
-                                    width: 2,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFE6E1DC),
-                                      borderRadius: BorderRadius.circular(1),
-                                    ),
+                                HomeBarCard(
+                                  onTap: () {},
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.calendar_today,
+                                            size: 20,
+                                            color: Color(0xFFB9B6F3), // Purple
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Calendar & Notes',
+                                            style: TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF2E2E2E),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                // Exercise cards with checkmarks
-                                Column(
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Checkmark circle area
-                                        SizedBox(
-                                          width: 28,
-                                          child: _ExerciseCheckmark(
-                                              isCompleted: true),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        // Card
-                                        Expanded(
-                                          child: SoftPillCard(
-                                            onTap: warmup != null
-                                                ? () => _openExercise(context,
-                                                    warmup.id, warmup.title)
-                                                : null,
-                                            child: ChecklistRow(
-                                              title: 'Warmup',
-                                              subtitle: 'Level 1',
-                                              icon: Icons.fitness_center,
-                                              accentColor: IllustrationAssets
-                                                  .warmupColor,
-                                              isCompleted: true,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                // Orange capsule button floating on right
+                                Positioned(
+                                  right: -12,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Center(
+                                    child: OrangeCapsuleButton(
+                                      onTap: () {},
                                     ),
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Checkmark circle area
-                                        SizedBox(
-                                          width: 28,
-                                          child: _ExerciseCheckmark(
-                                              isCompleted: false),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        // Card
-                                        Expanded(
-                                          child: SoftPillCard(
-                                            onTap: pitch != null
-                                                ? () => _openExercise(context,
-                                                    pitch.id, pitch.title)
-                                                : null,
-                                            child: ChecklistRow(
-                                              title: 'Build pitch accuracy',
-                                              subtitle: 'Level 1',
-                                              icon: Icons.music_note,
-                                              accentColor:
-                                                  IllustrationAssets.pitchColor,
-                                              isCompleted: false,
-                                              trailing: const Icon(
-                                                Icons.chevron_right,
-                                                size: 20,
-                                                color: Color(0xFFA5A5A5),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Checkmark circle area
-                                        SizedBox(
-                                          width: 28,
-                                          child: _ExerciseCheckmark(
-                                              isCompleted: false),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        // Card
-                                        Expanded(
-                                          child: SoftPillCard(
-                                            onTap: stability != null
-                                                ? () => _openExercise(
-                                                    context,
-                                                    stability.id,
-                                                    stability.title)
-                                                : null,
-                                            child: ChecklistRow(
-                                              title: 'Range Building',
-                                              subtitle: 'Level 1',
-                                              icon: Icons.trending_up,
-                                              accentColor: IllustrationAssets
-                                                  .agilityColor,
-                                              isCompleted: false,
-                                              trailing: const Icon(
-                                                Icons.chevron_right,
-                                                size: 20,
-                                                color: Color(0xFFA5A5A5),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 24),
-                            // Try Next section
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1D27A)
-                                      .withOpacity(0.25), // Butter yellow pill
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFF1D27A)
-                                          .withOpacity(0.15),
-                                      blurRadius: 12,
-                                      spreadRadius: 0,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(
-                                      Icons.star,
-                                      size: 18,
-                                      color: Color(0xFFF1D27A), // Butter yellow
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Try Next',
-                                      style: TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF2E2E2E),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                            const SizedBox(height: 20),
+                            // Bottom gradient pill bar
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 16,
                               ),
-                            ),
-                            SizedBox(
-                              height: 120,
-                              child: ListView(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.only(left: 0),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Color(0xFFF4A3C4), // Blush pink
+                                    Color(0xFFF1D27A), // Butter yellow
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(28),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.06),
+                                    blurRadius: 24,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  HorizontalItemCard(
-                                    title: 'Pitch Slides',
-                                    subtitle: 'Level 2',
-                                    icon: Icons.music_note,
-                                    accentColor: const Color(
-                                        0xFFF1D27A), // Butter yellow
-                                    onTap: pitch != null
-                                        ? () => _openExercise(
-                                            context, pitch.id, pitch.title)
-                                        : null,
+                                  Text(
+                                    'Calendar & Notes',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF2E2E2E),
+                                    ),
                                   ),
-                                  HorizontalItemCard(
-                                    title: 'Lip Trills',
-                                    subtitle: 'Level 2',
-                                    icon: Icons.speed,
-                                    accentColor: const Color(
-                                        0xFFF1D27A), // Butter yellow
-                                    onTap: lipTrills != null
-                                        ? () => _openExercise(context,
-                                            lipTrills.id, lipTrills.title)
-                                        : null,
-                                  ),
-                                  HorizontalItemCard(
-                                    title: 'Range Building',
-                                    subtitle: 'Level 1',
-                                    icon: Icons.trending_up,
-                                    accentColor: const Color(
-                                        0xFFF1D27A), // Butter yellow
-                                    onTap: warmup != null
-                                        ? () => _openExercise(
-                                            context, warmup.id, warmup.title)
-                                        : null,
+                                  Icon(
+                                    Icons.person_outline,
+                                    size: 20,
+                                    color: Color(0xFF2E2E2E),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 14),
-                            // Continue Training section
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF7FD1B9)
-                                      .withOpacity(0.25), // Mint/teal pill
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF7FD1B9)
-                                          .withOpacity(0.15),
-                                      blurRadius: 12,
-                                      spreadRadius: 0,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Text(
-                                  'Continue Training',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF2E2E2E),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SoftPillCard(
-                              onTap: warmup != null
-                                  ? () => _openExercise(
-                                      context, warmup.id, warmup.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Warmup',
-                                subtitle: 'Complete',
-                                icon: Icons.fitness_center,
-                                accentColor: IllustrationAssets.warmupColor,
-                                isCompleted: true,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SoftPillCard(
-                              onTap: pitch != null
-                                  ? () => _openExercise(
-                                      context, pitch.id, pitch.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Pitch Slides',
-                                subtitle: 'In Progress • Level 2',
-                                icon: Icons.music_note,
-                                accentColor: IllustrationAssets.pitchColor,
-                                isCompleted: false,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'Level 2',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF7A7A7A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(
-                                      Icons.chevron_right,
-                                      size: 20,
-                                      color: Color(0xFFA5A5A5),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SoftPillCard(
-                              onTap: lipTrills != null
-                                  ? () => _openExercise(
-                                      context, lipTrills.id, lipTrills.title)
-                                  : null,
-                              child: ChecklistRow(
-                                title: 'Lip Trills',
-                                subtitle: 'Next • Level 2',
-                                icon: Icons.speed,
-                                accentColor: IllustrationAssets.agilityColor,
-                                isCompleted: false,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'Level 2',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF7A7A7A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(
-                                      Icons.chevron_right,
-                                      size: 20,
-                                      color: Color(0xFFA5A5A5),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 32),
+                            const SizedBox(height: 60),
                           ],
                         ),
                       ),
                     ],
                   ),
+                ),
+                // Floating accents (positioned relative to screen)
+                // Pink gradient square (right side mid-screen)
+                Positioned(
+                  right: 20,
+                  top: screenHeight * 0.4,
+                  child: const PinkGradientSquare(),
+                ),
+                // Purple chat bubble (left side)
+                Positioned(
+                  left: 20,
+                  top: screenHeight * 0.5,
+                  child: const PurpleChatBubble(),
                 ),
               ],
             ),
@@ -457,56 +346,4 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
-  void _openExercise(BuildContext context, String id, String title) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ExercisePreviewScreen(exerciseId: id),
-      ),
-    );
-  }
-}
-
-class _ExerciseCheckmark extends StatelessWidget {
-  final bool isCompleted;
-
-  const _ExerciseCheckmark({required this.isCompleted});
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 24.0;
-
-    if (isCompleted) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: const BoxDecoration(
-          color: Color(0xFF8FC9A8), // Completion green
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.check,
-          size: 16,
-          color: Colors.white,
-        ),
-      );
-    } else {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFFD1D1D6),
-            width: 2,
-          ),
-        ),
-      );
-    }
-  }
-}
-
-extension<T> on List<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }
