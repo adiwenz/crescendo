@@ -10,7 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   record: ^5.0.5
-  mic_stream: ^0.7.2
   permission_handler: ^11.3.0
   wakelock_plus: ^1.2.4
   audioplayers: ^6.0.0
@@ -37,7 +36,7 @@ flutter:
     - assets/
 
 flutter_launcher_icons:
-  image_path: "assets/purple_icon.png"
+  image_path: "assets/purple_logo.png"
   remove_alpha_ios: true
   android: true
   ios: true
