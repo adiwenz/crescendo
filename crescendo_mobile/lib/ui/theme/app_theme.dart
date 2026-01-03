@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppThemeController {
   static final ValueNotifier<ThemeMode> mode =
@@ -233,6 +234,7 @@ class AppTheme {
       _build(AppThemeColors.magical, Brightness.dark);
 
   static ThemeData _build(AppThemeColors colors, Brightness brightness) {
+    final manropeTextTheme = GoogleFonts.manropeTextTheme();
     final base = ThemeData(brightness: brightness);
     return base.copyWith(
       useMaterial3: true,
@@ -247,26 +249,26 @@ class AppTheme {
         background: colors.surface0,
         onBackground: colors.textPrimary,
       ),
-      textTheme: base.textTheme.copyWith(
-        titleLarge: base.textTheme.titleLarge?.copyWith(
+      textTheme: manropeTextTheme.copyWith(
+        titleLarge: manropeTextTheme.titleLarge?.copyWith(
           color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
-        titleMedium: base.textTheme.titleMedium?.copyWith(
+        titleMedium: manropeTextTheme.titleMedium?.copyWith(
           color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
-        titleSmall: base.textTheme.titleSmall?.copyWith(
+        titleSmall: manropeTextTheme.titleSmall?.copyWith(
           color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
-        bodyMedium: base.textTheme.bodyMedium?.copyWith(
+        bodyMedium: manropeTextTheme.bodyMedium?.copyWith(
           color: colors.textSecondary,
         ),
-        bodySmall: base.textTheme.bodySmall?.copyWith(
+        bodySmall: manropeTextTheme.bodySmall?.copyWith(
           color: colors.textSecondary,
         ),
-        labelSmall: base.textTheme.labelSmall?.copyWith(
+        labelSmall: manropeTextTheme.labelSmall?.copyWith(
           color: colors.textSecondary,
         ),
       ),

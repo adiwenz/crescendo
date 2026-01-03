@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Centralized colors and styles for the Home screen.
 /// Update colors and styling here to change the Home screen appearance.
@@ -113,35 +114,35 @@ class HomeScreenStyles {
       );
 
   // Text styles (if needed beyond AppText)
-  static const TextStyle sectionTitle = TextStyle(
+  static TextStyle get sectionTitle => GoogleFonts.manrope(
     fontSize: 20,
     fontWeight: FontWeight.w700,
     color: textPrimary,
   );
 
-  static const TextStyle cardTitle = TextStyle(
+  static TextStyle get cardTitle => GoogleFonts.manrope(
     fontSize: 18,
     fontWeight: FontWeight.w700,
     color: textPrimary,
   );
 
-  static const TextStyle cardSubtitle = TextStyle(
+  static TextStyle get cardSubtitle => GoogleFonts.manrope(
     fontSize: 14,
     color: textSecondary,
   );
 
-  static const TextStyle categoryTitle = TextStyle(
+  static TextStyle get categoryTitle => GoogleFonts.manrope(
     fontSize: 16,
     fontWeight: FontWeight.w700,
     color: textPrimary,
   );
 
-  static const TextStyle categorySubtitle = TextStyle(
+  static TextStyle get categorySubtitle => GoogleFonts.manrope(
     fontSize: 14,
     color: textSecondary,
   );
 
-  static const TextStyle pillText = TextStyle(
+  static TextStyle get pillText => GoogleFonts.manrope(
     fontSize: 12,
     fontWeight: FontWeight.w600,
     color: textPrimary,

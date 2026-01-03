@@ -21,6 +21,7 @@ dependencies:
   audio_session: ^0.1.16
   wav: ^1.2.1
   pitch_detector_dart: ^0.0.7
+  google_fonts: ^6.1.0
 
 dev_dependencies:
   flutter_test:
