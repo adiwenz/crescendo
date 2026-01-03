@@ -16,9 +16,13 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: HomeScreenStyles.homeScreenGradient,
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: ListView(
           padding: EdgeInsets.zero,
           children: [
             Padding(
@@ -43,31 +47,18 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Today\'s Progress', style: AppText.h2),
-                      const Icon(Icons.chevron_right,
-                          color: HomeScreenStyles.iconInactive),
-                    ],
-                  ),
+                  Text('Today\'s Progress', style: AppText.h2),
                   const SizedBox(height: 12),
                   _TodaysProgressCard(),
                   const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Today\'s Exercises', style: AppText.h2),
-                      const Icon(Icons.chevron_right,
-                          color: HomeScreenStyles.iconInactive),
-                    ],
-                  ),
+                  Text('Today\'s Exercises', style: AppText.h2),
                   const SizedBox(height: 12),
                   ..._categoryRows(context, categories),
                 ],
               ),
             ),
           ],
+        ),
         ),
       ),
     );

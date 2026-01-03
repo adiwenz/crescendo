@@ -10,8 +10,10 @@ class HomeScreenStyles {
   static const Color bgBottom = Color(0xFFE6E6FA); // Soft periwinkle
 
   // Accent colors
-  static const Color accentPurple = Color(0xFF8B5CF6); // Saturated purple
-  static const Color accentBlue = Color(0xFF60A5FA); // Light blue
+  static const Color accentPurple =
+      Color.fromARGB(255, 217, 204, 248); // Saturated purple
+  static const Color accentBlue =
+      Color.fromARGB(255, 190, 218, 250); // Light blue
 
   // Card styling
   static const Color cardFill = Color(0xFFFFFFFF); // White
@@ -19,7 +21,8 @@ class HomeScreenStyles {
   static const Color cardBorder = Color(0x40FFFFFF); // White at ~0.25 opacity
   static const double cardBorderWidth = 1.0;
   static const double cardBorderRadius = 22.0; // 20-26 range
-  static const Color cardShadowColor = Color(0x14000000); // Black at ~0.08 opacity
+  static const Color cardShadowColor =
+      Color(0x14000000); // Black at ~0.08 opacity
   static const double cardShadowBlur = 20.0;
   static const double cardShadowSpread = 0.0;
   static const Offset cardShadowOffset = Offset(0, 4);
@@ -33,7 +36,8 @@ class HomeScreenStyles {
   static const Color iconInactive = Color(0xFF9CA3AF); // Mid-gray
 
   // Progress bar
-  static const Color progressBarBackground = Color(0x66FFFFFF); // White at ~0.4 opacity
+  static const Color progressBarBackground =
+      Color(0x66FFFFFF); // White at ~0.4 opacity
   static const Color progressBarFill = accentPurple;
 
   // Hero header background colors
@@ -43,17 +47,21 @@ class HomeScreenStyles {
   static const Color heroWave1Bottom = Color(0xFFDDEBFF);
   static const Color heroWave2Top = Color(0xFFFFF5EA);
   static const Color heroWave2Bottom = Color(0xFFFFF1D6);
-  static const Color heroBokehColor = Color(0x1F4C6FFF); // Accent with 0.12 opacity
+  static const Color heroBokehColor =
+      Color(0x1F4C6FFF); // Accent with 0.12 opacity
 
   // Continue card specific
-  static const Color continueCardOverlay = Color(0x0DFFFFFF); // White at 0.05 opacity
-  static const Color continueCardPillBg = Color(0xB3FFFFFF); // White at 0.7 opacity
+  static const Color continueCardOverlay =
+      Color(0x0DFFFFFF); // White at 0.05 opacity
+  static const Color continueCardPillBg =
+      Color(0xB3FFFFFF); // White at 0.7 opacity
   static const double continueCardBorderRadius = 20.0;
 
   // Category banner row specific
   static const Color categoryBannerBg = Color(0xFFFFFFFF);
   static const double categoryBannerBorderRadius = 20.0;
-  static const Color categoryBannerShadowColor = Color(0x0F000000); // Black at 0.06 opacity
+  static const Color categoryBannerShadowColor =
+      Color(0x0F000000); // Black at 0.06 opacity
   static const double categoryBannerShadowBlur = 14.0;
   static const Offset categoryBannerShadowOffset = Offset(0, 6);
 
@@ -63,6 +71,12 @@ class HomeScreenStyles {
     end: Alignment.bottomCenter,
     colors: [bgTop, bgMid, bgBottom],
     stops: [0.0, 0.5, 1.0],
+  );
+
+  static const LinearGradient homeScreenGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [accentPurple, accentBlue],
   );
 
   static const LinearGradient heroBaseGradient = LinearGradient(
@@ -115,37 +129,36 @@ class HomeScreenStyles {
 
   // Text styles (if needed beyond AppText)
   static TextStyle get sectionTitle => GoogleFonts.manrope(
-    fontSize: 20,
-    fontWeight: FontWeight.w700,
-    color: textPrimary,
-  );
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        color: textPrimary,
+      );
 
   static TextStyle get cardTitle => GoogleFonts.manrope(
-    fontSize: 18,
-    fontWeight: FontWeight.w700,
-    color: textPrimary,
-  );
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: textPrimary,
+      );
 
   static TextStyle get cardSubtitle => GoogleFonts.manrope(
-    fontSize: 14,
-    color: textSecondary,
-  );
+        fontSize: 14,
+        color: textSecondary,
+      );
 
   static TextStyle get categoryTitle => GoogleFonts.manrope(
-    fontSize: 16,
-    fontWeight: FontWeight.w700,
-    color: textPrimary,
-  );
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: textPrimary,
+      );
 
   static TextStyle get categorySubtitle => GoogleFonts.manrope(
-    fontSize: 14,
-    color: textSecondary,
-  );
+        fontSize: 14,
+        color: textSecondary,
+      );
 
   static TextStyle get pillText => GoogleFonts.manrope(
-    fontSize: 12,
-    fontWeight: FontWeight.w600,
-    color: textPrimary,
-  );
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: textPrimary,
+      );
 }
-
