@@ -83,10 +83,10 @@ class PitchHighwayPainter extends CustomPainter {
 
     final playheadX = size.width * playheadFraction;
     final noteColor = colors.isMagical
-        ? colors.goldAccent.withOpacity(0.65)
+        ? colors.accentPurple.withOpacity(0.65)
         : (colors.isDark
             ? colors.textPrimary.withOpacity(0.55)
-            : colors.goldAccent.withOpacity(0.55));
+            : colors.accentPurple.withOpacity(0.55));
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
@@ -143,9 +143,9 @@ class PitchHighwayPainter extends CustomPainter {
           };
         } else {
           barColor = switch (currentStatus) {
-            PitchMatch.good => colors.goldAccent.withOpacity(0.95),
-            PitchMatch.near => colors.goldAccent.withOpacity(0.75),
-            PitchMatch.off => colors.goldAccent.withOpacity(0.55),
+            PitchMatch.good => colors.accentPurple.withOpacity(0.95),
+            PitchMatch.near => colors.accentPurple.withOpacity(0.75),
+            PitchMatch.off => colors.accentPurple.withOpacity(0.55),
           };
         }
       } else {
@@ -245,7 +245,7 @@ class PitchHighwayPainter extends CustomPainter {
         shadowPaint,
       );
       final playheadPaint = Paint()
-        ..color = colors.blueAccent.withOpacity(0.7)
+        ..color = colors.accentBlue.withOpacity(0.7)
         ..strokeWidth = 2.0;
       canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
     }

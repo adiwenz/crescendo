@@ -681,7 +681,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                       child: Container(
                                         height: 6,
                                         decoration: BoxDecoration(
-                                          color: colors.blueAccent,
+                                          color: colors.accentPurple,
                                           borderRadius: BorderRadius.circular(3),
                                         ),
                                       ),

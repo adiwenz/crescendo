@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../ui/theme/app_theme.dart';
 
 class ProgressBarRow extends StatelessWidget {
   final String title;
@@ -37,7 +38,10 @@ class ProgressBarRow extends StatelessWidget {
           child: LinearProgressIndicator(
             value: pct,
             minHeight: 8,
-            backgroundColor: Colors.grey.shade200,
+            backgroundColor: AppThemeColors.light.divider,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              AppThemeColors.light.accentPurple,
+            ),
           ),
         ),
       ],

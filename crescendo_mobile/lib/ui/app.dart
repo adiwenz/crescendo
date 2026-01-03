@@ -14,6 +14,7 @@ import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'route_observer.dart';
+import 'widgets/app_background.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -77,21 +78,46 @@ class _RootScaffold extends StatelessWidget {
       const ProfileScreen(),
     ];
     return Scaffold(
-      body: IndexedStack(
-        index: currentIndex,
-        children: tabs,
+      body: AppBackground(
+        child: IndexedStack(
+          index: currentIndex,
+          children: tabs,
+        ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
-        type: BottomNavigationBarType.fixed,
-        onTap: onTab,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
-          BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
-          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppThemeColors.light.surfaceGlass,
+          border: Border(
+            top: BorderSide(
+              color: AppThemeColors.light.borderGlass,
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          type: BottomNavigationBarType.fixed,
+          onTap: onTab,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          selectedItemColor: AppThemeColors.light.accentPurple,
+          unselectedItemColor: AppThemeColors.light.iconMuted,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
+            BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
+            BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          ],
+        ),
       ),
     );
   }

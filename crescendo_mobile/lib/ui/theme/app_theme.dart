@@ -74,23 +74,23 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
   static const light = AppThemeColors(
     isDark: false,
     isMagical: false,
-    bgTop: Color(0xFFF7F9FB),
-    bgBottom: Color(0xFFCCE6EE),
-    surface0: Color(0xFFF7F9FB),
-    surface1: Color(0xFFFFFFFF),
-    surface2: Color(0xFFF2F5F7),
-    borderSubtle: Color(0xFFE6EDF3),
-    divider: Color(0xFFDDE6EE),
-    textPrimary: Color(0xFF1F2A37),
-    textSecondary: Color(0xFF6B7280),
-    iconMuted: Color(0xFF7A8A9A),
-    blueAccent: Color(0xFF7DBCD9),
-    lavenderGlow: Color(0xFF9CCEE2),
-    goldAccent: Color(0xFFFBC57D),
-    mintAccent: Color(0xFFE0F0E1),
-    glassFill: Color(0xFFFFFFFF),
-    glassBorder: Color(0xFFE6EDF3),
-    glow: Color(0x33FBC57D),
+    bgTop: Color(0xFFF7FBFF), // Very light blue
+    bgBottom: Color(0xFFE6E6FA), // Soft periwinkle
+    surface0: Color(0xFFF7FBFF),
+    surface1: Color(0xFFFFFFFF), // White for glass cards
+    surface2: Color(0xFFF3E8FF), // Pale lavender
+    borderSubtle: Color(0x40FFFFFF), // White at ~0.25 opacity
+    divider: Color(0x26FFFFFF), // White at ~0.15 opacity
+    textPrimary: Color(0xFF0D0D0D), // Near-black/navy
+    textSecondary: Color(0xFF5C6270), // Muted slate
+    iconMuted: Color(0xFF9CA3AF), // Mid-gray
+    blueAccent: Color(0xFF60A5FA), // Light blue
+    lavenderGlow: Color(0xFF8B5CF6), // Saturated purple (primary accent)
+    goldAccent: Color(0xFF8B5CF6), // Using purple instead of gold
+    mintAccent: Color(0xFF60A5FA), // Using blue instead of mint
+    glassFill: Color(0xBFFFFFFF), // White at ~0.75 opacity
+    glassBorder: Color(0x40FFFFFF), // White at ~0.25 opacity
+    glow: Color(0x1A8B5CF6), // Purple glow at low opacity
   );
 
   static const magical = AppThemeColors(
@@ -165,6 +165,37 @@ class AppThemeColors extends ThemeExtension<AppThemeColors> {
     );
   }
 
+  // Helper getters for gradients
+  LinearGradient get backgroundGradient => LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [bgTop, surface2, bgBottom],
+        stops: const [0.0, 0.5, 1.0],
+      );
+
+  // Accent colors
+  Color get accentPurple => lavenderGlow;
+  Color get accentBlue => blueAccent;
+
+  // Glass card styling
+  Color get surfaceGlass => glassFill;
+  Color get borderGlass => glassBorder;
+
+  // Border radius tokens
+  static const double radiusSm = 14.0;
+  static const double radiusMd = 20.0;
+  static const double radiusLg = 26.0;
+
+  // Shadow tokens
+  List<BoxShadow> get elevationShadow => [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.08),
+          blurRadius: 20,
+          spreadRadius: 0,
+          offset: const Offset(0, 4),
+        ),
+      ];
+
   @override
   ThemeExtension<AppThemeColors> lerp(
     ThemeExtension<AppThemeColors>? other,
@@ -207,8 +238,10 @@ class AppTheme {
       useMaterial3: true,
       scaffoldBackgroundColor: colors.surface0,
       colorScheme: base.colorScheme.copyWith(
-        primary: colors.blueAccent,
-        onPrimary: colors.textPrimary,
+        primary: colors.lavenderGlow, // Use purple as primary
+        onPrimary: Colors.white,
+        secondary: colors.blueAccent,
+        onSecondary: Colors.white,
         surface: colors.surface1,
         onSurface: colors.textPrimary,
         background: colors.surface0,
@@ -248,23 +281,27 @@ class AppTheme {
       ),
       dividerColor: colors.divider,
       cardTheme: CardThemeData(
-        color: colors.surface1,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        color: colors.glassFill,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         elevation: 0,
+        shadowColor: Colors.black.withOpacity(0.08),
+        margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: colors.blueAccent,
-          foregroundColor: colors.surface1,
+          backgroundColor: colors.lavenderGlow, // Purple primary
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: colors.textPrimary,
-          side: BorderSide(color: colors.divider),
+          foregroundColor: colors.lavenderGlow,
+          side: BorderSide(color: colors.lavenderGlow.withOpacity(0.5), width: 1.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         ),
       ),
       extensions: <ThemeExtension<dynamic>>[

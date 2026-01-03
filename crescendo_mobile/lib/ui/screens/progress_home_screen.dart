@@ -36,6 +36,7 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
   }
 
   void _onAttemptsChanged() {
+    if (!mounted) return;
     setState(() {
       _future = _loadSummary();
     });

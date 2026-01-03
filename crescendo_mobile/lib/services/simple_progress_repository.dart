@@ -60,9 +60,9 @@ class SimpleProgressRepository {
   Future<ProgressSummary> buildSummary() async {
     try {
       await AttemptRepository.instance.ensureLoaded();
-      final attempts = AttemptRepository.instance.cache.isEmpty
-          ? await AttemptRepository.instance.refresh()
-          : AttemptRepository.instance.cache;
+      // After ensureLoaded(), the cache is already populated (even if empty)
+      // No need to call refresh() again - that would trigger listeners and cause loops
+      final attempts = AttemptRepository.instance.cache;
       return _buildSummaryFrom(attempts);
     } catch (_) {
       // As a fallback, return empty summary.
