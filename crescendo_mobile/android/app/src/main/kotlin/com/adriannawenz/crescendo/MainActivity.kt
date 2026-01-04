@@ -1,4 +1,4 @@
-package com.example.crescendo_mobile
+package com.adriannawenz.crescendo
 
 import io.flutter.embedding.android.FlutterActivity
 
