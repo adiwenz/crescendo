@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Centralized colors and styles for the Home screen.
 /// Update colors and styling here to change the Home screen appearance.
@@ -128,37 +127,38 @@ class HomeScreenStyles {
       );
 
   // Text styles (if needed beyond AppText)
-  static TextStyle get sectionTitle => GoogleFonts.manrope(
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        color: textPrimary,
-      );
+  // fontFamily is not specified - it will be inherited from ThemeData.fontFamily
+  static const TextStyle sectionTitle = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w700,
+    color: textPrimary,
+  );
 
-  static TextStyle get cardTitle => GoogleFonts.manrope(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: textPrimary,
-      );
+  static const TextStyle cardTitle = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w700,
+    color: textPrimary,
+  );
 
-  static TextStyle get cardSubtitle => GoogleFonts.manrope(
-        fontSize: 14,
-        color: textSecondary,
-      );
+  static const TextStyle cardSubtitle = TextStyle(
+    fontSize: 14,
+    color: textSecondary,
+  );
 
-  static TextStyle get categoryTitle => GoogleFonts.manrope(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: textPrimary,
-      );
+  static const TextStyle categoryTitle = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    color: textPrimary,
+  );
 
-  static TextStyle get categorySubtitle => GoogleFonts.manrope(
-        fontSize: 14,
-        color: textSecondary,
-      );
+  static const TextStyle categorySubtitle = TextStyle(
+    fontSize: 14,
+    color: textSecondary,
+  );
 
-  static TextStyle get pillText => GoogleFonts.manrope(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: textPrimary,
-      );
+  static const TextStyle pillText = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    color: textPrimary,
+  );
 }

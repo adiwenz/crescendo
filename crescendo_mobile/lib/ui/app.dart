@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
-import 'screens/landing_home_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/pitch_highway_screen.dart';
 import 'screens/piano_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
 import 'screens/find_range_lowest_screen.dart';
@@ -37,11 +36,36 @@ class _CrescendoAppState extends State<CrescendoApp> {
             final theme = magical ? AppTheme.magical() : AppTheme.light();
             final darkTheme = magical ? AppTheme.magical() : AppTheme.dark();
             final resolvedMode = magical ? ThemeMode.dark : mode;
+            // Get Manrope font family for Cupertino
+            final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
             return MaterialApp(
               title: 'Crescendo Mobile',
               theme: theme,
               darkTheme: darkTheme,
               themeMode: resolvedMode,
+              // Set Cupertino theme to use Manrope
+              builder: (context, child) {
+                return CupertinoTheme(
+                  data: CupertinoThemeData(
+                    textTheme: CupertinoTextThemeData(
+                      textStyle: TextStyle(fontFamily: manropeFontFamily),
+                      navTitleTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      navLargeTitleTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      tabLabelTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
               navigatorObservers: [routeObserver],
               routes: {
                 '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
@@ -70,6 +94,8 @@ class _RootScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
     final tabs = [
       const HomeScreen(),
       const ExploreScreen(),
@@ -80,9 +106,9 @@ class _RootScaffold extends StatelessWidget {
     return Scaffold(
       body: AppBackground(
         child: IndexedStack(
-          index: currentIndex,
-          children: tabs,
-        ),
+        index: currentIndex,
+        children: tabs,
+      ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -109,14 +135,20 @@ class _RootScaffold extends StatelessWidget {
           elevation: 0,
           selectedItemColor: AppThemeColors.light.accentPurple,
           unselectedItemColor: AppThemeColors.light.iconMuted,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
-            BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
-            BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-          ],
+          selectedLabelStyle: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontFamily: manropeFontFamily,
+          ),
+          unselectedLabelStyle: TextStyle(
+            fontFamily: manropeFontFamily,
+          ),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
+          BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
+          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+        ],
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppThemeController {
@@ -236,6 +237,8 @@ class AppTheme {
   static ThemeData _build(AppThemeColors colors, Brightness brightness) {
     final manropeTextTheme = GoogleFonts.manropeTextTheme();
     final base = ThemeData(brightness: brightness);
+    // Get Manrope font family
+    final manropeFontFamily = GoogleFonts.manrope().fontFamily;
     return base.copyWith(
       useMaterial3: true,
       scaffoldBackgroundColor: colors.surface0,
@@ -249,27 +252,88 @@ class AppTheme {
         background: colors.surface0,
         onBackground: colors.textPrimary,
       ),
+      // Complete TextTheme with all styles using Manrope
       textTheme: manropeTextTheme.copyWith(
+        // Set fontFamily for all text styles
+        // Display styles - bold (600-700)
+        displayLarge: manropeTextTheme.displayLarge?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        displayMedium: manropeTextTheme.displayMedium?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        displaySmall: manropeTextTheme.displaySmall?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        // Headline styles - bold (600-700)
+        headlineLarge: manropeTextTheme.headlineLarge?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        headlineMedium: manropeTextTheme.headlineMedium?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        headlineSmall: manropeTextTheme.headlineSmall?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        // Title styles - medium to bold (500-600)
         titleLarge: manropeTextTheme.titleLarge?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
         titleMedium: manropeTextTheme.titleMedium?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
         titleSmall: manropeTextTheme.titleSmall?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textPrimary,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
+        ),
+        // Body styles - regular (400-500)
+        bodyLarge: manropeTextTheme.bodyLarge?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w400,
         ),
         bodyMedium: manropeTextTheme.bodyMedium?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textSecondary,
+          fontWeight: FontWeight.w400,
         ),
         bodySmall: manropeTextTheme.bodySmall?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textSecondary,
+          fontWeight: FontWeight.w400,
+        ),
+        // Label styles - medium (500)
+        labelLarge: manropeTextTheme.labelLarge?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textPrimary,
+          fontWeight: FontWeight.w500,
+        ),
+        labelMedium: manropeTextTheme.labelMedium?.copyWith(
+          fontFamily: manropeFontFamily,
+          color: colors.textSecondary,
+          fontWeight: FontWeight.w500,
         ),
         labelSmall: manropeTextTheme.labelSmall?.copyWith(
+          fontFamily: manropeFontFamily,
           color: colors.textSecondary,
+          fontWeight: FontWeight.w500,
         ),
       ),
       appBarTheme: AppBarTheme(

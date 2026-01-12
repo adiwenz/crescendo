@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppText {
-  static TextStyle get h1 => GoogleFonts.manrope(
+  // Text styles that inherit Manrope fontFamily from ThemeData
+  // fontFamily is not specified here - it will be inherited from ThemeData.fontFamily
+  static const TextStyle h1 = TextStyle(
     fontSize: 24,
     fontWeight: FontWeight.w700,
     color: AppColors.textPrimary,
   );
 
-  static TextStyle get h2 => GoogleFonts.manrope(
+  static const TextStyle h2 = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
   );
 
-  static TextStyle get body => GoogleFonts.manrope(
+  static const TextStyle body = TextStyle(
     fontSize: 14,
     height: 1.4,
     color: AppColors.textSecondary,
   );
 
-  static TextStyle get caption => GoogleFonts.manrope(
+  static const TextStyle caption = TextStyle(
     fontSize: 12,
     color: AppColors.textSecondary,
   );
