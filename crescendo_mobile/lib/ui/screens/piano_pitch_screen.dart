@@ -52,90 +52,106 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Piano Pitch')),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final keyboardWidth =
-              (constraints.maxWidth * 0.32).clamp(90.0, 160.0).toDouble();
-          return Row(
-            children: [
-              SizedBox(
-                width: keyboardWidth,
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  controller: _keyboardController,
-                  child: SingleChildScrollView(
-                    primary: false,
+      body: SafeArea(
+        bottom: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final keyboardWidth =
+                (constraints.maxWidth * 0.32).clamp(90.0, 160.0).toDouble();
+            return Row(
+              children: [
+                SizedBox(
+                  width: keyboardWidth,
+                  child: Scrollbar(
+                    thumbVisibility: true,
                     controller: _keyboardController,
-                    reverse: false,
-                    child: AnimatedBuilder(
-                      animation: _tracker,
-                      builder: (_, __) => PianoKeyboard(
-                        startMidi: _tracker.rangeStartNote,
-                        endMidi: _tracker.rangeEndNote,
-                        highlightedMidi: _tracker.currentMidi,
-                        onKeyTap: _handleKeyTap,
-                        keyHeight: _keyHeight,
+                    child: SingleChildScrollView(
+                      primary: false,
+                      controller: _keyboardController,
+                      reverse: false,
+                      child: AnimatedBuilder(
+                        animation: _tracker,
+                        builder: (_, __) => PianoKeyboard(
+                          startMidi: _tracker.rangeStartNote,
+                          endMidi: _tracker.rangeEndNote,
+                          highlightedMidi: _tracker.currentMidi,
+                          onKeyTap: _handleKeyTap,
+                          keyHeight: _keyHeight,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: AnimatedBuilder(
-                    animation: _tracker,
-                    builder: (_, __) {
-                      final note = _tracker.currentNoteName ?? '—';
-                      final freq = _tracker.currentFreqHz;
-                      final freqLabel =
-                          freq == null ? '—' : '${freq.toStringAsFixed(1)} Hz';
-                      final cents = _tracker.centsOff;
-                      final inTune = cents != null && cents.abs() <= 10;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            note,
-                            style: Theme.of(context)
-                                .textTheme
-                                .displaySmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                        child: Text(
+                          'Piano Pitch',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: AnimatedBuilder(
+                            animation: _tracker,
+                            builder: (_, __) {
+                              final note = _tracker.currentNoteName ?? '—';
+                              final freq = _tracker.currentFreqHz;
+                              final freqLabel =
+                                  freq == null ? '—' : '${freq.toStringAsFixed(1)} Hz';
+                              final cents = _tracker.centsOff;
+                              final inTune = cents != null && cents.abs() <= 10;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    note,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .displaySmall
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    freqLabel,
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  CentsMeter(
+                                    cents: cents,
+                                    confidence: _tracker.confidence ?? 0,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    inTune ? 'In tune' : 'Adjust pitch',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          color: inTune ? Colors.green : Colors.black54,
+                                        ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    'Range: ${_tracker.rangeLabel}',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
+                              );
+                            },
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            freqLabel,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 24),
-                          CentsMeter(
-                            cents: cents,
-                            confidence: _tracker.confidence ?? 0,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            inTune ? 'In tune' : 'Adjust pitch',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: inTune ? Colors.green : Colors.black54,
-                                ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            'Range: ${_tracker.rangeLabel}',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      );
-                    },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
