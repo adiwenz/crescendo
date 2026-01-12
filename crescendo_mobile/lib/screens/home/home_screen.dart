@@ -55,7 +55,8 @@ class HomeScreen extends StatelessWidget {
                   Text('Today\'s Exercises', style: AppText.h2),
                   const SizedBox(height: 12),
                   _ExercisesWithProgressIndicator(
-                    exercises: _categoryRows(context, categories),
+                    categories: categories,
+                    context: context,
                   ),
                 ],
               ),
@@ -67,7 +68,19 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  List<Widget> _categoryRows(BuildContext context, List<Category> categories) {
+}
+
+class _ExercisesWithProgressIndicator extends StatelessWidget {
+  final List<Category> categories;
+  final BuildContext context;
+
+  const _ExercisesWithProgressIndicator({
+    required this.categories,
+    required this.context,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final mapped = {
       'warmup': {'title': 'Warmup', 'subtitle': 'Ease in with gentle starters'},
       'program': {
@@ -78,115 +91,74 @@ class HomeScreen extends StatelessWidget {
       'agility': {'title': 'Agility', 'subtitle': 'Move quickly and cleanly'},
     };
 
-    return categories.where((c) => mapped.containsKey(c.id)).map<Widget>(
-      (c) {
-        final info = mapped[c.id]!;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: HomeCategoryBannerRow(
-            title: info['title']!,
-            subtitle: info['subtitle']!,
-            bannerStyleId: c.bannerStyleId,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => CategoryDetailScreen(category: c)),
-            ),
-          ),
-        );
-      },
-    ).toList();
-  }
-}
-
-class _ExercisesWithProgressIndicator extends StatelessWidget {
-  final List<Widget> exercises;
-
-  const _ExercisesWithProgressIndicator({required this.exercises});
-
-  @override
-  Widget build(BuildContext context) {
-    if (exercises.isEmpty) return const SizedBox.shrink();
+    final categoryList = categories.where((c) => mapped.containsKey(c.id)).toList();
+    if (categoryList.isEmpty) return const SizedBox.shrink();
 
     // TODO: Replace with actual completion data from progress repository
     // Mock completion states for demonstration
     final completionStates = [true, true, true]; // All completed for now
 
-    const double gutterWidth = 48.0; // Fixed-width timeline gutter (40-56dp range)
-    const double cardHeight = 96.0; // Card height
+    const double gutterWidth = 48.0; // Fixed-width timeline gutter
     const double cardSpacing = 16.0; // Bottom padding between cards
-
-    // Subtle muted lavender/gray for the connector line
     final mutedLineColor = HomeScreenStyles.iconInactive.withOpacity(0.3);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        // Left: Timeline gutter with icons and connector line
-        SizedBox(
-          width: gutterWidth,
-          child: Stack(
-            children: [
-              // Subtle vertical connector line behind icons
-              // Line runs through the center of each icon (which is centered on each card)
-              if (exercises.length > 1)
-                Positioned(
-                  left: (gutterWidth / 2) - 0.75, // Center of gutter (minus half line width)
-                  top: cardHeight / 2, // Start at first card center (48dp)
-                  // End at last card center: total height - last card center
-                  // Total height = (cardHeight + cardSpacing) * (exercises.length - 1) + cardHeight
-                  // Last card center = (cardHeight / 2) + (cardHeight + cardSpacing) * (exercises.length - 1)
-                  // bottom = totalHeight - lastCardCenter = cardHeight / 2
-                  bottom: cardHeight / 2,
-                  child: Container(
-                    width: 1.5, // Thin subtle line (1-2dp)
-                    decoration: BoxDecoration(
-                      color: mutedLineColor, // Muted lavender/gray
-                      borderRadius: BorderRadius.circular(0.75),
+        // Vertical connector line behind all rows
+        if (categoryList.length > 1)
+          Positioned(
+            left: (gutterWidth / 2) - 0.75, // Center of gutter
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 1.5,
+              decoration: BoxDecoration(
+                color: mutedLineColor,
+                borderRadius: BorderRadius.circular(0.75),
+              ),
+            ),
+          ),
+        // Column of rows - each row contains icon + card
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(categoryList.length, (index) {
+            final c = categoryList[index];
+            final info = mapped[c.id]!;
+            final isCompleted = index < completionStates.length
+                ? completionStates[index]
+                : false;
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: index < categoryList.length - 1 ? cardSpacing : 0),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Left: Timeline gutter with icon
+                    SizedBox(
+                      width: gutterWidth,
+                      child: Center(
+                        child: TimelineIcon(isCompleted: isCompleted),
+                      ),
                     ),
-                  ),
-                ),
-              // Timeline icons column - each icon centered on its corresponding card
-              // Cards are 96dp tall with 16dp spacing between them (from Padding)
-              // Card positions in Column:
-              //   Card 1: 0-96dp (center at 48dp)
-              //   Card 2: 112-208dp (center at 160dp = 112 + 48)
-              //   Card 3: 224-320dp (center at 272dp = 224 + 48)
-              // Each icon must align with its card's center
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(exercises.length, (index) {
-                  final isCompleted = index < completionStates.length
-                      ? completionStates[index]
-                      : false;
-                  
-                  // For proper alignment: each SizedBox should match card height
-                  // The spacing is handled by the Column naturally
-                  // We add spacing manually to match the card spacing
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        height: cardHeight,
-                        child: Center( // Center icon at card's vertical center (48dp from top of card)
-                          child: TimelineIcon(isCompleted: isCompleted),
+                    // Right: Exercise card
+                    Expanded(
+                      child: HomeCategoryBannerRow(
+                        title: info['title']!,
+                        subtitle: info['subtitle']!,
+                        bannerStyleId: c.bannerStyleId,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => CategoryDetailScreen(category: c)),
                         ),
                       ),
-                      if (index < exercises.length - 1)
-                        SizedBox(height: cardSpacing), // Match the 16dp spacing between cards
-                    ],
-                  );
-                }),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-        // Right: Exercise cards column (expands to fill remaining width)
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: exercises,
-          ),
+            );
+          }),
         ),
       ],
     );
