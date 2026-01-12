@@ -23,50 +23,50 @@ class HomeScreen extends StatelessWidget {
         child: SafeArea(
           bottom: false,
           child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome',
-                    style: AppText.h1.copyWith(fontSize: 28),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Let\'s train your voice',
-                    style: AppText.body.copyWith(fontSize: 15),
-                  ),
-                ],
+            padding: EdgeInsets.zero,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome',
+                      style: AppText.h1.copyWith(fontSize: 28),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Let\'s train your voice',
+                      style: AppText.body.copyWith(fontSize: 15),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Today\'s Progress', style: AppText.h2),
-                  const SizedBox(height: 12),
-                  _TodaysProgressCard(),
-                  const SizedBox(height: 24),
-                  Text('Today\'s Exercises', style: AppText.h2),
-                  const SizedBox(height: 12),
-                  _ExercisesWithProgressIndicator(
-                    categories: categories,
-                    context: context,
-                  ),
-                ],
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Today\'s Progress', style: AppText.h2),
+                    const SizedBox(height: 12),
+                    _TodaysProgressCard(),
+                    const SizedBox(height: 24),
+                    Text('Today\'s Exercises', style: AppText.h2),
+                    const SizedBox(height: 12),
+                    _ExercisesWithProgressIndicator(
+                      categories: categories,
+                      context: context,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
   }
-
 }
 
 class _ExercisesWithProgressIndicator extends StatelessWidget {
@@ -90,7 +90,8 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
       'agility': {'title': 'Agility', 'subtitle': 'Move quickly and cleanly'},
     };
 
-    final categoryList = categories.where((c) => mapped.containsKey(c.id)).toList();
+    final categoryList =
+        categories.where((c) => mapped.containsKey(c.id)).toList();
     if (categoryList.isEmpty) return const SizedBox.shrink();
 
     // TODO: Replace with actual completion data from progress repository
@@ -128,7 +129,8 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                 : false;
 
             return Padding(
-              padding: EdgeInsets.only(bottom: index < categoryList.length - 1 ? cardSpacing : 0),
+              padding: EdgeInsets.only(
+                  bottom: index < categoryList.length - 1 ? cardSpacing : 0),
               child: IntrinsicHeight(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,7 +151,8 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => CategoryDetailScreen(category: c)),
+                              builder: (_) =>
+                                  CategoryDetailScreen(category: c)),
                         ),
                       ),
                     ),
@@ -189,12 +192,14 @@ class TimelineIcon extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isCompleted
-            ? HomeScreenStyles.timelineCheckmarkBackground // Color from HomeScreenStyles
+            ? HomeScreenStyles
+                .timelineCheckmarkBackground // Color from HomeScreenStyles
             : Colors.transparent, // Transparent for incomplete
         border: Border.all(
           color: isCompleted
               ? HomeScreenStyles.timelineCheckmarkBackground
-              : HomeScreenStyles.iconInactive.withOpacity(0.4), // Muted gray/lavender for incomplete
+              : HomeScreenStyles.iconInactive
+                  .withOpacity(0.4), // Muted gray/lavender for incomplete
           width: isCompleted ? 0 : 2,
         ),
       ),
@@ -220,7 +225,8 @@ class _TodaysProgressCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: HomeScreenStyles.cardFill.withOpacity(HomeScreenStyles.cardOpacity),
+        color:
+            HomeScreenStyles.cardFill.withOpacity(HomeScreenStyles.cardOpacity),
         borderRadius: BorderRadius.circular(HomeScreenStyles.cardBorderRadius),
         border: Border.all(
           color: HomeScreenStyles.cardBorder,
@@ -277,7 +283,8 @@ class _TodaysProgressCard extends StatelessWidget {
               value: todaysProgress.clamp(0.0, 1.0),
               minHeight: 10,
               backgroundColor: HomeScreenStyles.progressBarBackground,
-              valueColor: const AlwaysStoppedAnimation<Color>(HomeScreenStyles.progressBarFill),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                  HomeScreenStyles.progressBarFill),
             ),
           ),
         ],

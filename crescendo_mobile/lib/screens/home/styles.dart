@@ -81,7 +81,18 @@ class HomeScreenStyles {
   static const LinearGradient homeScreenGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [accentPurple, accentBlue],
+    // Stronger gradient at top, fading to near-white at bottom for calmer exercise area
+    colors: [
+      accentPurple, // Strong purple at top
+      accentBlue, // Blue in middle
+      Color(
+          0xFFFAFAFF), // Very light lavender-white at bottom (near-white, calmer)
+    ],
+    stops: [
+      0.0,
+      0.45,
+      1.0
+    ], // Purple dominates more space, blue transitions later
   );
 
   static const LinearGradient heroBaseGradient = LinearGradient(
