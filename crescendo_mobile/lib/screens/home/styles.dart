@@ -34,6 +34,12 @@ class HomeScreenStyles {
   static const Color iconActive = accentPurple;
   static const Color iconInactive = Color(0xFF9CA3AF); // Mid-gray
 
+  // Timeline checkmark circle background color
+  // This color should stand out from the gradient background while matching the color scheme
+  // Using a light lavender/blue tint that's visible on the purple-blue gradient
+  static const Color timelineCheckmarkBackground = Color.fromARGB(
+      255, 147, 65, 248); // Light lavender that stands out on gradient
+
   // Progress bar
   static const Color progressBarBackground =
       Color(0x66FFFFFF); // White at ~0.4 opacity

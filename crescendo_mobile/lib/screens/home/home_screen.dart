@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../data/seed_library.dart';
 import '../../design/app_text.dart';
-import '../../design/styles.dart';
 import '../../models/category.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import '../explore/category_detail_screen.dart';
@@ -190,11 +189,11 @@ class TimelineIcon extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isCompleted
-            ? AppStyles.timelineCheckmarkBackground // Color from centralized styles
+            ? HomeScreenStyles.timelineCheckmarkBackground // Color from HomeScreenStyles
             : Colors.transparent, // Transparent for incomplete
         border: Border.all(
           color: isCompleted
-              ? AppStyles.timelineCheckmarkBackground
+              ? HomeScreenStyles.timelineCheckmarkBackground
               : HomeScreenStyles.iconInactive.withOpacity(0.4), // Muted gray/lavender for incomplete
           width: isCompleted ? 0 : 2,
         ),
