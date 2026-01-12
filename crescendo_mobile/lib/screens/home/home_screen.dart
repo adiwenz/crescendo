@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/seed_library.dart';
 import '../../design/app_text.dart';
+import '../../design/styles.dart';
 import '../../models/category.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import '../explore/category_detail_screen.dart';
@@ -109,50 +110,78 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
 
     // TODO: Replace with actual completion data from progress repository
     // Mock completion states for demonstration
-    final completionStates = [true, true, false, false]; // First 2 completed, last 2 incomplete
+    final completionStates = [true, true, true]; // All completed for now
+
+    const double gutterWidth = 48.0; // Fixed-width timeline gutter (40-56dp range)
+    const double cardHeight = 96.0; // Card height
+    const double cardSpacing = 16.0; // Bottom padding between cards
+
+    // Subtle muted lavender/gray for the connector line
+    final mutedLineColor = HomeScreenStyles.iconInactive.withOpacity(0.3);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Progress indicator column (line + circles)
+        // Left: Timeline gutter with icons and connector line
         SizedBox(
-          width: 24, // Fixed width for progress indicator area
+          width: gutterWidth,
           child: Stack(
             children: [
-              // Vertical progress line - connects all circles
+              // Subtle vertical connector line behind icons
+              // Line runs through the center of each icon (which is centered on each card)
               if (exercises.length > 1)
                 Positioned(
-                  left: 7, // Center of 16px circle (8px radius)
-                  top: 8, // Start from center of first circle
-                  bottom: 8, // End at center of last circle
+                  left: (gutterWidth / 2) - 0.75, // Center of gutter (minus half line width)
+                  top: cardHeight / 2, // Start at first card center (48dp)
+                  // End at last card center: total height - last card center
+                  // Total height = (cardHeight + cardSpacing) * (exercises.length - 1) + cardHeight
+                  // Last card center = (cardHeight / 2) + (cardHeight + cardSpacing) * (exercises.length - 1)
+                  // bottom = totalHeight - lastCardCenter = cardHeight / 2
+                  bottom: cardHeight / 2,
                   child: Container(
-                    width: 2,
+                    width: 1.5, // Thin subtle line (1-2dp)
                     decoration: BoxDecoration(
-                      color: HomeScreenStyles.iconInactive.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(1),
+                      color: mutedLineColor, // Muted lavender/gray
+                      borderRadius: BorderRadius.circular(0.75),
                     ),
                   ),
                 ),
-              // Progress circles
+              // Timeline icons column - each icon centered on its corresponding card
+              // Cards are 96dp tall with 16dp spacing between them (from Padding)
+              // Card positions in Column:
+              //   Card 1: 0-96dp (center at 48dp)
+              //   Card 2: 112-208dp (center at 160dp = 112 + 48)
+              //   Card 3: 224-320dp (center at 272dp = 224 + 48)
+              // Each icon must align with its card's center
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(exercises.length, (index) {
                   final isCompleted = index < completionStates.length
                       ? completionStates[index]
                       : false;
-                  return SizedBox(
-                    height: 96 + 16, // Card height (96) + bottom padding (16)
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: _ProgressCircle(isCompleted: isCompleted),
-                    ),
+                  
+                  // For proper alignment: each SizedBox should match card height
+                  // The spacing is handled by the Column naturally
+                  // We add spacing manually to match the card spacing
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: cardHeight,
+                        child: Center( // Center icon at card's vertical center (48dp from top of card)
+                          child: TimelineIcon(isCompleted: isCompleted),
+                        ),
+                      ),
+                      if (index < exercises.length - 1)
+                        SizedBox(height: cardSpacing), // Match the 16dp spacing between cards
+                    ],
                   );
                 }),
               ),
             ],
           ),
         ),
-        // Exercise cards column
+        // Right: Exercise cards column (expands to fill remaining width)
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,34 +193,44 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
   }
 }
 
-class _ProgressCircle extends StatelessWidget {
-  final bool isCompleted;
+enum TimelineIconStatus {
+  completed,
+  incomplete,
+  current,
+}
 
-  const _ProgressCircle({required this.isCompleted});
+class TimelineIcon extends StatelessWidget {
+  final bool isCompleted;
+  static const double _size = 32.0; // Circle size
+
+  const TimelineIcon({
+    super.key,
+    required this.isCompleted,
+  });
 
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      width: 16,
-      height: 16,
+      width: _size,
+      height: _size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isCompleted
-            ? HomeScreenStyles.accentPurple
-            : Colors.transparent,
+            ? AppStyles.timelineCheckmarkBackground // Color from centralized styles
+            : Colors.transparent, // Transparent for incomplete
         border: Border.all(
           color: isCompleted
-              ? HomeScreenStyles.accentPurple
-              : HomeScreenStyles.iconInactive.withOpacity(0.5),
-          width: 2,
+              ? AppStyles.timelineCheckmarkBackground
+              : HomeScreenStyles.iconInactive.withOpacity(0.4), // Muted gray/lavender for incomplete
+          width: isCompleted ? 0 : 2,
         ),
       ),
       child: isCompleted
           ? const Icon(
-              Icons.check,
-              size: 10,
+              Icons.check_rounded,
+              size: 20,
               color: Colors.white,
             )
           : null,
