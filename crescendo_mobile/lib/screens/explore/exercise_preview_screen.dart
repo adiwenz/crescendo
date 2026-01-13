@@ -417,10 +417,16 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
 
 class _Header extends StatelessWidget {
   final VocalExercise ex;
-  const _Header({required this.ex});
+  final ExerciseRepository _repo = ExerciseRepository();
+  
+  _Header({required this.ex});
 
   @override
   Widget build(BuildContext context) {
+    // Get the category to use its sortOrder for consistent colors
+    final category = _repo.getCategory(ex.categoryId);
+    final bannerStyleId = category.sortOrder % 8;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -446,7 +452,7 @@ class _Header extends StatelessWidget {
           child: BannerCard(
             title: ex.name,
             subtitle: ex.description,
-            bannerStyleId: ex.categoryId.hashCode % 5,
+            bannerStyleId: bannerStyleId, // Use category's color
           ),
         ),
       ],

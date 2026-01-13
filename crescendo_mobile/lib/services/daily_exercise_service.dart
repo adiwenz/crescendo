@@ -220,15 +220,18 @@ class DailyExerciseService {
   }
 
   /// Map VocalExercise categoryId to Category bannerStyleId for consistent colors.
-  /// This ensures exercises from the same category have the same color.
+  /// This ensures exercises from the same category have the same color as their category tile.
   ///
-  /// Uses a hash-based approach to map each VocalExercise categoryId to a consistent
-  /// bannerStyleId (0-7), which corresponds to colors in the AbstractBannerPainter palette.
-  /// All colors in the palette are purple/blue variants, staying within the color scheme.
+  /// Uses the category's sortOrder to determine bannerStyleId, matching the color used
+  /// in category tiles on the Explore screen.
   int _getBannerStyleIdForCategory(String vocalExerciseCategoryId) {
-    // Use hash code to ensure same category always gets same color
-    // Modulo 8 to use all colors in the AbstractBannerPainter palette
-    return vocalExerciseCategoryId.hashCode.abs() % 8;
+    try {
+      final category = _exerciseRepo.getCategory(vocalExerciseCategoryId);
+      return category.sortOrder % 8;
+    } catch (e) {
+      // Fallback to hash if category not found
+      return vocalExerciseCategoryId.hashCode.abs() % 8;
+    }
   }
 
   /// Get exercises by their IDs.
