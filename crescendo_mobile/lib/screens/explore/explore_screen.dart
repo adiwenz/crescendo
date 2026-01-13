@@ -108,7 +108,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             // Category sections
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
                 children: [
                   // Start here section
                   _CategorySection(
