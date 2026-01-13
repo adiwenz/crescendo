@@ -330,6 +330,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   }
 
   Future<void> _startExercise() async {
+    // Stop preview immediately when starting exercise
+    await _synth.stop();
+    if (mounted) {
+      setState(() => _previewing = false);
+    }
+    
     if (_exercise?.usesPitchHighway == true) {
       await _levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
