@@ -197,21 +197,22 @@ class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
       );
     }
 
+    // Use the category's sortOrder to determine bannerStyleId for consistent colors
+    final bannerStyleId = widget.category.sortOrder % 8;
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _exercises.length,
       itemBuilder: (context, index) {
         final exercise = _exercises[index];
         final isCompleted = completedIds.contains(exercise.id);
-        // Map categoryId to bannerStyleId for consistent colors
-        final bannerStyleId = exercise.categoryId.hashCode.abs() % 8;
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: ExerciseRowBanner(
             title: exercise.name,
             subtitle: exercise.description,
-            bannerStyleId: bannerStyleId,
+            bannerStyleId: bannerStyleId, // Use category's color
             completed: isCompleted,
             onTap: () async {
               await Navigator.push(
