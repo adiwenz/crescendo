@@ -14,7 +14,9 @@ Future<void> main() async {
       avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
       avAudioSessionCategoryOptions:
           AVAudioSessionCategoryOptions.defaultToSpeaker,
-      avAudioSessionMode: AVAudioSessionMode.voiceChat,
+      avAudioSessionMode: AVAudioSessionMode.measurement, // Better for pitch detection than voiceChat
+      // Note: PreferredIOBufferDuration is set via AVAudioSession.setPreferredIOBufferDuration
+      // The record package should handle this, but we use smaller buffers in RecordingService
     ),
   );
 

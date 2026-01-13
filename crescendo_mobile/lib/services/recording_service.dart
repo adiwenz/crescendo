@@ -42,7 +42,7 @@ class RecordingService {
 
   RecordingService({
     this.sampleRate = 44100,
-    this.bufferSize = 2048,
+    this.bufferSize = 1024, // Smaller buffer for lower latency (~23ms at 44.1kHz)
     String owner = 'exercise', // Default to 'exercise', Piano will use 'piano'
   })  : _owner = owner,
         _pitchDetector =

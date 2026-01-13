@@ -27,7 +27,11 @@ class PitchService {
   Timer? _watchdogTimer;
 
   PitchService({RecordingService? recording})
-      : _recording = recording ?? RecordingService(owner: 'piano');
+      : _recording = recording ?? RecordingService(
+          owner: 'piano',
+          sampleRate: 44100,
+          bufferSize: 1024, // Smaller buffer for lower latency (~23ms at 44.1kHz)
+        );
 
   Stream<PitchFrame> get stream => _controller.stream;
   bool get isRunning => _running;
@@ -60,10 +64,32 @@ class PitchService {
           _lastFrameTime = DateTime.now();
           final hz = frame.hz;
           final hasPitch = hz != null && hz > 0 && hz.isFinite;
-          // TODO: Replace with real confidence from detector when available.
-          final confidence = hasPitch ? 1.0 : 0.0;
+          
+          // Compute confidence based on pitch validity and voiced probability
+          // Use voicedProb if available, otherwise use heuristic
+          double confidence = 0.0;
+          final hzValue = hasPitch ? hz : null;
+          if (hzValue != null) {
+            // If voicedProb is available, use it; otherwise use a heuristic
+            if (frame.voicedProb != null && frame.voicedProb! > 0) {
+              confidence = frame.voicedProb!.clamp(0.0, 1.0);
+            } else {
+              // Heuristic: assume good confidence if pitch is detected and in reasonable range
+              // Typical singing range: 80-1000 Hz
+              if (hzValue >= 80 && hzValue <= 1000) {
+                confidence = 0.85; // Good confidence for typical singing range
+              } else if (hzValue >= 50 && hzValue < 80) {
+                confidence = 0.70; // Lower confidence for very low notes
+              } else if (hzValue > 1000 && hzValue <= 2000) {
+                confidence = 0.75; // Lower confidence for very high notes
+              } else {
+                confidence = 0.50; // Low confidence for out-of-range
+              }
+            }
+          }
+          
           _controller.add(PitchFrame(
-            frequencyHz: hasPitch ? hz : 0,
+            frequencyHz: hzValue ?? 0,
             confidence: confidence,
             ts: DateTime.now(),
           ));
