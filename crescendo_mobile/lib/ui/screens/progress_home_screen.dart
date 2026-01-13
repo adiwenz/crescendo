@@ -117,7 +117,7 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // Line graph: Average score over time
+              // Line graph: Trend
               Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 2,
@@ -127,7 +127,7 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Average Score Over Time',
+                        'Trend',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 12),
@@ -143,38 +143,6 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                                 ),
                               )
                             : ProgressLineChart(values: dailyStats.avgScores),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Bar graph: # exercises per day
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Exercises Per Day',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 120,
-                        child: dailyStats.exerciseCounts.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No data yet',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Colors.grey[600],
-                                      ),
-                                ),
-                              )
-                            : ProgressBarChart(values: dailyStats.exerciseCounts),
                       ),
                     ],
                   ),

@@ -6,8 +6,8 @@ import '../../models/exercise_attempt.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../services/attempt_repository.dart';
-import '../../routing/exercise_route_registry.dart';
 import '../../ui/route_observer.dart';
+import '../../screens/explore/exercise_preview_screen.dart';
 
 class ExerciseProgressDetailScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -66,7 +66,7 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
       ..sort((a, b) {
         final aTime = a.completedAt ?? a.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
         final bTime = b.completedAt ?? b.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return aTime.compareTo(bTime); // Oldest first for chronological display
+        return bTime.compareTo(aTime); // Most recent first
       });
     if (mounted) {
       setState(() {
@@ -150,6 +150,28 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
                   const SizedBox(height: 16),
                   _DifficultyLegend(),
                 ],
+                // Previous Scores list
+                const SizedBox(height: 32),
+                Text(
+                  'Previous Scores',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                _exerciseAttempts.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Center(
+                          child: Text(
+                            'No previous sessions yet.',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                          ),
+                        ),
+                      )
+                    : _PreviousScoresList(attempts: _exerciseAttempts),
                 const SizedBox(height: 32),
                 // Start Exercise button
                 ElevatedButton(
@@ -171,17 +193,12 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
   }
 
   Future<void> _startExercise() async {
-    final opened = ExerciseRouteRegistry.open(
+    Navigator.push(
       context,
-      widget.exercise.id,
+      MaterialPageRoute(
+        builder: (_) => ExercisePreviewScreen(exerciseId: widget.exercise.id),
+      ),
     );
-    if (!opened) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Exercise not available')),
-        );
-      }
-    }
   }
 }
 
@@ -318,6 +335,108 @@ class _LegendItem extends StatelessWidget {
               ),
         ),
       ],
+    );
+  }
+}
+
+class _PreviousScoresList extends StatelessWidget {
+  final List<ExerciseAttempt> attempts;
+
+  const _PreviousScoresList({required this.attempts});
+
+  Color _getColorForAttempt(ExerciseAttempt attempt) {
+    int level = 1;
+    if (attempt.pitchDifficulty != null) {
+      final difficulty = pitchHighwayDifficultyFromName(attempt.pitchDifficulty!);
+      if (difficulty != null) {
+        level = pitchHighwayDifficultyLevel(difficulty);
+      }
+    }
+    if (level <= 2) {
+      return Colors.green.shade400;
+    } else if (level <= 4) {
+      return Colors.blue.shade400;
+    } else {
+      return Colors.purple.shade400;
+    }
+  }
+
+  String _getLevelLabel(ExerciseAttempt attempt) {
+    int level = 1;
+    if (attempt.pitchDifficulty != null) {
+      final difficulty = pitchHighwayDifficultyFromName(attempt.pitchDifficulty!);
+      if (difficulty != null) {
+        level = pitchHighwayDifficultyLevel(difficulty);
+      }
+    }
+    if (level <= 2) {
+      return 'Beginner';
+    } else if (level <= 4) {
+      return 'Intermediate';
+    } else {
+      return 'Advanced';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: attempts.length,
+      separatorBuilder: (context, index) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final attempt = attempts[index];
+        final date = attempt.completedAt ?? attempt.startedAt;
+        final score = attempt.overallScore;
+        final color = _getColorForAttempt(attempt);
+        final levelLabel = _getLevelLabel(attempt);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Row(
+            children: [
+              // Colored dot
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Date
+              Expanded(
+                child: Text(
+                  date != null ? _formatDate(date) : '—',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              // Level label
+              Text(
+                levelLabel,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+              const SizedBox(width: 12),
+              // Score
+              Text(
+                '${score.toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
