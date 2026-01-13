@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../services/exercise_repository.dart';
 import '../../models/exercise_category.dart';
-import '../../models/vocal_exercise.dart';
-import '../../widgets/exercise_row_banner.dart';
-import '../../state/library_store.dart';
-import '../../services/attempt_repository.dart';
-import 'exercise_preview_screen.dart';
+import '../../services/exercise_repository.dart';
+import '../../widgets/category_tile.dart';
+import 'category_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -15,39 +12,70 @@ class ExploreScreen extends StatefulWidget {
   State<ExploreScreen> createState() => _ExploreScreenState();
 }
 
-class _ExploreScreenState extends State<ExploreScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _ExploreScreenState extends State<ExploreScreen> {
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
-  final AttemptRepository _attempts = AttemptRepository.instance;
-  List<ExerciseCategory> _categories = [];
+  bool _showMoreCategories = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _categories = _exerciseRepo.getCategories();
-    _tabController = TabController(
-      length: _categories.length,
-      vsync: this,
-    );
-    _tabController.addListener(_onTabChanged);
-    _attempts.refresh();
+  // Define primary categories (Start here)
+  static const Set<String> _primaryCategoryIds = {
+    'recovery_therapy', // Warmup
+    'breathing_support',
+    'intonation', // Pitch
+    'resonance_placement',
+    'onset_release',
+  };
+
+  // Define secondary categories (Technique)
+  static const Set<String> _secondaryCategoryIds = {
+    'sovt',
+    'range_building',
+    'register_balance',
+    'vowel_shaping',
+    'agility_runs',
+  };
+
+  // Everything else goes in "More/Advanced"
+
+  List<ExerciseCategory> _getPrimaryCategories(List<ExerciseCategory> all) {
+    return all.where((c) => _primaryCategoryIds.contains(c.id)).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
-  @override
-  void dispose() {
-    _tabController.removeListener(_onTabChanged);
-    _tabController.dispose();
-    super.dispose();
+  List<ExerciseCategory> _getSecondaryCategories(List<ExerciseCategory> all) {
+    return all.where((c) => _secondaryCategoryIds.contains(c.id)).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
-  void _onTabChanged() {
-    // Tab change is handled automatically by TabBarView
-    // This listener can be used for additional logic if needed
+  List<ExerciseCategory> _getAdvancedCategories(List<ExerciseCategory> all) {
+    return all
+        .where((c) =>
+            !_primaryCategoryIds.contains(c.id) &&
+            !_secondaryCategoryIds.contains(c.id))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
   @override
   Widget build(BuildContext context) {
+    final categories = _exerciseRepo.getCategories();
+    final allExercises = _exerciseRepo.getExercises();
+
+    // Count exercises per category
+    final exerciseCounts = <String, int>{};
+    for (final exercise in allExercises) {
+      exerciseCounts[exercise.categoryId] = (exerciseCounts[exercise.categoryId] ?? 0) + 1;
+    }
+
+    final primaryCategories = _getPrimaryCategories(categories);
+    final secondaryCategories = _getSecondaryCategories(categories);
+    final advancedCategories = _getAdvancedCategories(categories);
+
+    // Create a map of category to its original index for navigation
+    final categoryIndexMap = <String, int>{};
+    for (int i = 0; i < categories.length; i++) {
+      categoryIndexMap[categories[i].id] = i;
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -58,43 +86,101 @@ class _ExploreScreenState extends State<ExploreScreen>
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'Explore',
-                  style: Theme.of(context).textTheme.headlineMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Explore',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                      textAlign: TextAlign.left,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Find the right exercise',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.left,
+                    ),
+                  ],
                 ),
               ),
             ),
-            // Horizontal category selector (sticky)
-            Container(
-              color: Colors.white,
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                labelColor: Theme.of(context).colorScheme.primary,
-                unselectedLabelColor: Colors.black54,
-                indicatorColor: Theme.of(context).colorScheme.primary,
-                labelStyle: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontWeight: FontWeight.normal,
-                  fontSize: 14,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                tabs: _categories.map((category) {
-                  return Tab(text: category.title);
-                }).toList(),
-              ),
-            ),
-            // Exercise list (swipeable)
+            // Category sections
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: _categories.map((category) {
-                  return _ExerciseListForCategory(category: category);
-                }).toList(),
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  // Start here section
+                  _CategorySection(
+                    title: 'Start here',
+                    categories: primaryCategories,
+                    exerciseCounts: exerciseCounts,
+                    categoryIndexMap: categoryIndexMap,
+                    allCategories: categories,
+                    isPrimary: true,
+                  ),
+                  const SizedBox(height: 24),
+                  // Technique section
+                  _CategorySection(
+                    title: 'Technique',
+                    categories: secondaryCategories,
+                    exerciseCounts: exerciseCounts,
+                    categoryIndexMap: categoryIndexMap,
+                    allCategories: categories,
+                    isPrimary: false,
+                  ),
+                  const SizedBox(height: 24),
+                  // Show more button / More section with animation
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: _showMoreCategories
+                        ? Column(
+                            children: [
+                              _CategorySection(
+                                title: 'More',
+                                categories: advancedCategories,
+                                exerciseCounts: exerciseCounts,
+                                categoryIndexMap: categoryIndexMap,
+                                allCategories: categories,
+                                isPrimary: false,
+                              ),
+                              const SizedBox(height: 16),
+                              Center(
+                                child: TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _showMoreCategories = false;
+                                    });
+                                  },
+                                  child: Text(
+                                    'Show fewer',
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Center(
+                            child: TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _showMoreCategories = true;
+                                });
+                              },
+                              child: Text(
+                                'Show more categories',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                              ),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
           ],
@@ -104,108 +190,80 @@ class _ExploreScreenState extends State<ExploreScreen>
   }
 }
 
-class _ExerciseListForCategory extends StatefulWidget {
-  final ExerciseCategory category;
+class _CategorySection extends StatelessWidget {
+  final String title;
+  final List<ExerciseCategory> categories;
+  final Map<String, int> exerciseCounts;
+  final Map<String, int> categoryIndexMap;
+  final List<ExerciseCategory> allCategories;
+  final bool isPrimary;
 
-  const _ExerciseListForCategory({required this.category});
-
-  @override
-  State<_ExerciseListForCategory> createState() =>
-      _ExerciseListForCategoryState();
-}
-
-class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
-  final ExerciseRepository _exerciseRepo = ExerciseRepository();
-  final AttemptRepository _attempts = AttemptRepository.instance;
-  List<VocalExercise> _exercises = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadExercises();
-  }
-
-  Future<void> _loadExercises() async {
-    final exercises = _exerciseRepo.getExercisesForCategory(widget.category.id);
-    await _attempts.refresh();
-    if (mounted) {
-      setState(() {
-        _exercises = exercises;
-        _loading = false;
-      });
-    }
-  }
+  const _CategorySection({
+    required this.title,
+    required this.categories,
+    required this.exerciseCounts,
+    required this.categoryIndexMap,
+    required this.allCategories,
+    required this.isPrimary,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+    if (categories.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    final completedIds = _attempts.cache
-        .map((a) => a.exerciseId)
-        .toSet()
-      ..addAll(libraryStore.completedExerciseIds);
-
-    if (_exercises.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.inbox_outlined,
-                size: 64,
-                color: Colors.grey[400],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No exercises yet in this category.',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _exercises.length,
-      itemBuilder: (context, index) {
-        final exercise = _exercises[index];
-        final isCompleted = completedIds.contains(exercise.id);
-        // Map categoryId to bannerStyleId for consistent colors
-        final bannerStyleId = exercise.categoryId.hashCode.abs() % 8;
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: ExerciseRowBanner(
-            title: exercise.name,
-            subtitle: exercise.description,
-            bannerStyleId: bannerStyleId,
-            completed: isCompleted,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ExercisePreviewScreen(exerciseId: exercise.id),
-                ),
-              );
-              await _attempts.refresh();
-              await libraryStore.load();
-              if (mounted) {
-                setState(() {});
-              }
-            },
+        // Category grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 0.75,
           ),
-        );
-      },
+          itemCount: categories.length,
+          itemBuilder: (context, index) {
+            final category = categories[index];
+            final exerciseCount = exerciseCounts[category.id] ?? 0;
+            final bannerStyleId = category.sortOrder % 8;
+            final originalIndex = categoryIndexMap[category.id] ?? 0;
+
+            return CategoryTile(
+              title: category.title,
+              description: category.description,
+              bannerStyleId: bannerStyleId,
+              exerciseCount: exerciseCount,
+              isPrimary: isPrimary,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryDetailScreen(
+                      category: category,
+                      initialCategoryIndex: originalIndex,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
     );
   }
 }
