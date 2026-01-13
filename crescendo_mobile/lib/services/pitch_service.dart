@@ -27,7 +27,7 @@ class PitchService {
   Timer? _watchdogTimer;
 
   PitchService({RecordingService? recording})
-      : _recording = recording ?? RecordingService();
+      : _recording = recording ?? RecordingService(owner: 'piano');
 
   Stream<PitchFrame> get stream => _controller.stream;
   bool get isRunning => _running;

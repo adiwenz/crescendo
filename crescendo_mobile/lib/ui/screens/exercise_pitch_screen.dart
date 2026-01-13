@@ -81,10 +81,25 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] dispose - cleaning up resources');
     _ticker.dispose();
     _liveSub?.cancel();
     _referenceSub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error stopping recording: $e');
+    });
     _synth.stop();
     _player.dispose();
     _pitchMidi.dispose();
@@ -155,10 +170,21 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _referenceSub?.cancel();
     await _synth.stop();
     await _liveSub?.cancel();
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] _stop - stopping recording');
     final result = await _recording.stop();
     if (result.audioPath.isNotEmpty) {
       _recordedPath = result.audioPath;
       _capturedFrames.addAll(result.frames);
+    }
+    // Dispose the recording service to fully release resources
+    try {
+      await _recording.dispose();
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Recording disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error disposing recording: $e');
     }
     _stopping = false;
     setState(() {});
@@ -169,6 +195,26 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _ticker.stop();
     _lastTick = null;
     _liveSub?.cancel();
+    // Stop and dispose recording when exercise finishes
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] _finishExercise - stopping recording');
+    _recording.stop().then((result) async {
+      if (result.audioPath.isNotEmpty) {
+        _recordedPath = result.audioPath;
+        _capturedFrames.addAll(result.frames);
+      }
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error stopping recording: $e');
+    });
     final scored = ExerciseRunScoringService().score(
       plan: plan,
       frames: _capturedFrames,

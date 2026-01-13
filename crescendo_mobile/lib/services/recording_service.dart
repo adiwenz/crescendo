@@ -8,8 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:pitch_detector_dart/pitch_detector.dart';
 import 'package:wav/wav.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../models/pitch_frame.dart';
+import 'audio_session_manager.dart';
 
 class RecordingResult {
   final String audioPath;
@@ -19,10 +21,13 @@ class RecordingResult {
 }
 
 /// Thin wrapper around [AudioRecorder] that exposes PCM stream + simple frames.
+/// Coordinates with AudioSessionManager to prevent microphone conflicts.
 class RecordingService {
-  final AudioRecorder _recorder = AudioRecorder();
+  final AudioSessionManager _sessionManager = AudioSessionManager.instance;
+  final String _owner; // 'piano' or 'exercise'
   final int sampleRate;
   final int bufferSize;
+  final AudioRecorder _recorder = AudioRecorder();
 
   final PitchDetector _pitchDetector;
   final _samples = <double>[];
@@ -35,8 +40,12 @@ class RecordingService {
   bool _isRecording = false;
   double _timeCursor = 0;
 
-  RecordingService({this.sampleRate = 44100, this.bufferSize = 2048})
-      : _pitchDetector =
+  RecordingService({
+    this.sampleRate = 44100,
+    this.bufferSize = 2048,
+    String owner = 'exercise', // Default to 'exercise', Piano will use 'piano'
+  })  : _owner = owner,
+        _pitchDetector =
             PitchDetector(audioSampleRate: sampleRate.toDouble(), bufferSize: bufferSize);
 
   Stream<PitchFrame> get liveStream => _liveController.stream;
@@ -45,17 +54,25 @@ class RecordingService {
 
   Future<void> start() async {
     if (_isRecording) {
-      // ignore: avoid_print
-      print('[RecordingService] Already recording, skipping start');
+      debugPrint('[RecordingService] Already recording, skipping start');
       return;
     }
-    if (!await _recorder.hasPermission()) {
-      // ignore: avoid_print
-      print('[RecordingService] Mic permission denied');
-      return;
+
+    // Request access from session manager
+    final accessGranted = await _sessionManager.requestAccess(_owner);
+    if (!accessGranted) {
+      debugPrint('[RecordingService] Failed to get microphone access (owner: $_owner)');
+      // Force release and retry once
+      await _sessionManager.forceReleaseAll();
+      await Future.delayed(const Duration(milliseconds: 300));
+      final retryGranted = await _sessionManager.requestAccess(_owner);
+      if (!retryGranted) {
+        debugPrint('[RecordingService] Retry failed, cannot start recording');
+        return;
+      }
     }
-    // ignore: avoid_print
-    print('[RecordingService] Starting recording...');
+
+    debugPrint('[RecordingService] Starting recording (owner: $_owner)...');
     _samples.clear();
     _pitchBuffer.clear();
     _frames.clear();
@@ -106,19 +123,20 @@ class RecordingService {
 
   Future<RecordingResult> stop() async {
     if (!_isRecording) return RecordingResult('', const []);
-    // ignore: avoid_print
-    print('[RecordingService] Stopping recording...');
+    debugPrint('[RecordingService] Stopping recording (owner: $_owner)...');
     await _sub?.cancel();
     _sub = null;
     try {
       await _recorder.stop();
-      // ignore: avoid_print
-      print('[RecordingService] Recorder stopped');
+      debugPrint('[RecordingService] Recorder stopped');
     } catch (e) {
-      // ignore: avoid_print
-      print('[RecordingService] Error stopping recorder: $e');
+      debugPrint('[RecordingService] Error stopping recorder: $e');
     }
     _isRecording = false;
+    
+    // Release access from session manager
+    await _sessionManager.releaseAccess(_owner);
+    debugPrint('[RecordingService] Released microphone access');
 
     final dir = await getApplicationDocumentsDirectory();
     final path = p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
@@ -133,14 +151,12 @@ class RecordingService {
   }
 
   Future<void> dispose() async {
-    // ignore: avoid_print
-    print('[RecordingService] Disposing...');
+    debugPrint('[RecordingService] Disposing (owner: $_owner)...');
     if (_isRecording) {
       try {
         await stop();
       } catch (e) {
-        // ignore: avoid_print
-        print('[RecordingService] Error stopping during dispose: $e');
+        debugPrint('[RecordingService] Error stopping during dispose: $e');
       }
     }
     await _sub?.cancel();
@@ -148,14 +164,10 @@ class RecordingService {
     await _pcmController?.close();
     _pcmController = null;
     await _liveController.close();
-    try {
-      await _recorder.dispose();
-      // ignore: avoid_print
-      print('[RecordingService] Disposed');
-    } catch (e) {
-      // ignore: avoid_print
-      print('[RecordingService] Error disposing recorder: $e');
-    }
+    
+    // Force release access if still held
+    await _sessionManager.releaseAccess(_owner, force: true);
+    debugPrint('[RecordingService] Disposed and released access');
   }
 
   List<double> _pcm16BytesToDoubles(Uint8List bytes) {

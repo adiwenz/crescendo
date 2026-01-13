@@ -1125,8 +1125,23 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[SustainedPitchHoldPlayer] dispose - cleaning up resources');
     _sub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[SustainedPitchHoldPlayer] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[SustainedPitchHoldPlayer] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[SustainedPitchHoldPlayer] Error stopping recording: $e');
+    });
     _prepTimer?.cancel();
     _synth.stop();
     super.dispose();
@@ -1174,8 +1189,19 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     if (!_listening && !_preparing) return;
     _endPrepCountdown();
     await _sub?.cancel();
-    await _recording.stop();
     _sub = null;
+    // ignore: avoid_print
+    print('[SustainedPitchHoldPlayer] _stop - stopping recording');
+    await _recording.stop();
+    // Dispose the recording service to fully release resources
+    try {
+      await _recording.dispose();
+      // ignore: avoid_print
+      print('[SustainedPitchHoldPlayer] Recording disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[SustainedPitchHoldPlayer] Error disposing recording: $e');
+    }
     _listening = false;
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
     _scorePct = (stability.clamp(0.0, 1.0) * 100.0);
@@ -1303,8 +1329,23 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[PitchMatchListeningPlayer] dispose - cleaning up resources');
     _sub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[PitchMatchListeningPlayer] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[PitchMatchListeningPlayer] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[PitchMatchListeningPlayer] Error stopping recording: $e');
+    });
     _prepTimer?.cancel();
     _synth.stop();
     super.dispose();
@@ -1348,8 +1389,19 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     if (!_listening && !_preparing) return;
     _endPrepCountdown();
     await _sub?.cancel();
-    await _recording.stop();
     _sub = null;
+    // ignore: avoid_print
+    print('[PitchMatchListeningPlayer] _stop - stopping recording');
+    await _recording.stop();
+    // Dispose the recording service to fully release resources
+    try {
+      await _recording.dispose();
+      // ignore: avoid_print
+      print('[PitchMatchListeningPlayer] Recording disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[PitchMatchListeningPlayer] Error disposing recording: $e');
+    }
     _listening = false;
     if (_absErrors.isEmpty) {
       _scorePct = 0.0;
@@ -1681,9 +1733,24 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[DynamicsRampPlayer] dispose - cleaning up resources');
     _ticker?.dispose();
     _sub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[DynamicsRampPlayer] Error stopping recording: $e');
+    });
     _prepTimer?.cancel();
     _synth.stop();
     super.dispose();
@@ -1744,7 +1811,20 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _running = false;
     _scorePct = _computeScore();
     _sub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Recording disposed in _stop');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[DynamicsRampPlayer] Error stopping recording: $e');
+    });
     unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
   }
 
@@ -1754,7 +1834,20 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _lastTick = null;
     _scorePct = _computeScore();
     _sub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Recording disposed in _finish');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[DynamicsRampPlayer] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[DynamicsRampPlayer] Error stopping recording: $e');
+    });
     unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
   }
 

@@ -18,7 +18,10 @@ class ExerciseRepository {
   }
 
   ExerciseCategory getCategory(String categoryId) {
-    return getCategories().firstWhere((c) => c.id == categoryId);
+    return getCategories().firstWhere(
+      (c) => c.id == categoryId,
+      orElse: () => getCategories().first, // Fallback to first category if not found
+    );
   }
 
   VocalExercise getExercise(String exerciseId) {

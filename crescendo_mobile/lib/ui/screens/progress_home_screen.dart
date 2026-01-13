@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../../services/simple_progress_repository.dart';
 import '../../widgets/progress/metric_pill.dart';
 import '../../widgets/progress/progress_bar_row.dart';
-import '../../widgets/progress/recent_activity_row.dart';
-import '../../widgets/progress/sparkline_card.dart';
-import 'progress_category_detail_screen.dart';
 import '../../services/attempt_repository.dart';
+import '../../ui/widgets/progress_charts.dart';
+import '../../models/exercise_attempt.dart';
+import '../../services/exercise_repository.dart';
+import 'category_progress_screen.dart';
 
 class ProgressHomeScreen extends StatefulWidget {
   const ProgressHomeScreen({super.key});
@@ -86,9 +87,12 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
             );
           }
           final summary = snapshot.data!;
+          final dailyStats = _computeDailyStats(_attempts.cache);
+          
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
+              // Today's stats card
               Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 2,
@@ -113,11 +117,71 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              SparklineCard(
-                title: 'Trend (last 7)',
-                values: summary.trendScores.isEmpty ? [0] : summary.trendScores,
+              // Line graph: Average score over time
+              Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Average Score Over Time',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 120,
+                        child: dailyStats.avgScores.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No data yet',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Colors.grey[600],
+                                      ),
+                                ),
+                              )
+                            : ProgressLineChart(values: dailyStats.avgScores),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
+              // Bar graph: # exercises per day
+              Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Exercises Per Day',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 120,
+                        child: dailyStats.exerciseCounts.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No data yet',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Colors.grey[600],
+                                      ),
+                                ),
+                              )
+                            : ProgressBarChart(values: dailyStats.exerciseCounts),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Primary category progress list
               Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 2,
@@ -140,10 +204,25 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
+                              final repo = ExerciseRepository();
+                              final category = repo.getCategories().firstWhere(
+                                (cat) => cat.id == c.categoryId,
+                                orElse: () {
+                                  // If category not found, try to find by title match
+                                  final byTitle = repo.getCategories().where(
+                                    (cat) => cat.title.toLowerCase() == c.title.toLowerCase(),
+                                  ).toList();
+                                  if (byTitle.isNotEmpty) {
+                                    return byTitle.first;
+                                  }
+                                  // Last resort: return first category
+                                  return repo.getCategories().first;
+                                },
+                              );
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => CategoryProgressDetailScreen(categoryId: c.categoryId),
+                                  builder: (_) => CategoryProgressScreen(category: category),
                                 ),
                               );
                             },
@@ -155,56 +234,11 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Recent Activity', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      if (summary.recent.isEmpty)
-                        Text('No activity yet', style: Theme.of(context).textTheme.bodyMedium)
-                      else
-                        ...summary.recent.take(5).map((a) {
-                          final d = a.date;
-                          final date = _formatDate(d);
-                          final scoreLabel = a.score == null ? '--' : a.score.toString();
-                          return RecentActivityRow(
-                            title: a.exerciseTitle,
-                            subtitle: a.categoryTitle,
-                            dateLabel: date,
-                            scoreLabel: scoreLabel,
-                          );
-                        }),
-                    ],
-                  ),
-                ),
-              ),
             ],
           );
         },
       ),
     );
-  }
-
-  String _formatDate(DateTime d) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final dateOnly = DateTime(d.year, d.month, d.day);
-    if (dateOnly == today) return 'Today';
-    if (dateOnly == yesterday) return 'Yesterday';
-    return '${_month(d.month)} ${d.day}';
-  }
-
-  String _month(int m) {
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    if (m < 1 || m > 12) return '';
-    return names[m - 1];
   }
 
   Future<ProgressSummary> _loadSummary() async {
@@ -215,4 +249,54 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
       rethrow;
     }
   }
+
+  _DailyStats _computeDailyStats(List<ExerciseAttempt> attempts) {
+    if (attempts.isEmpty) {
+      return _DailyStats(avgScores: [], exerciseCounts: []);
+    }
+
+    // Group attempts by date
+    final byDate = <DateTime, List<ExerciseAttempt>>{};
+    for (final attempt in attempts) {
+      final date = attempt.completedAt ?? attempt.startedAt;
+      if (date == null) continue;
+      final dateOnly = DateTime(date.year, date.month, date.day);
+      byDate.putIfAbsent(dateOnly, () => []).add(attempt);
+    }
+
+    // Get last 30 days
+    final now = DateTime.now();
+    final dates = <DateTime>[];
+    for (var i = 29; i >= 0; i--) {
+      dates.add(DateTime(now.year, now.month, now.day).subtract(Duration(days: i)));
+    }
+
+    final avgScores = <double>[];
+    final exerciseCounts = <double>[];
+
+    for (final date in dates) {
+      final dayAttempts = byDate[date] ?? [];
+      if (dayAttempts.isEmpty) {
+        avgScores.add(0);
+        exerciseCounts.add(0);
+      } else {
+        // Average score for the day
+        final scores = dayAttempts.map((a) => a.overallScore).toList();
+        final avg = scores.reduce((a, b) => a + b) / scores.length;
+        avgScores.add(avg);
+        // Count of exercises (unique exerciseIds)
+        final uniqueExercises = dayAttempts.map((a) => a.exerciseId).toSet();
+        exerciseCounts.add(uniqueExercises.length.toDouble());
+      }
+    }
+
+    return _DailyStats(avgScores: avgScores, exerciseCounts: exerciseCounts);
+  }
+}
+
+class _DailyStats {
+  final List<double> avgScores;
+  final List<double> exerciseCounts;
+
+  _DailyStats({required this.avgScores, required this.exerciseCounts});
 }

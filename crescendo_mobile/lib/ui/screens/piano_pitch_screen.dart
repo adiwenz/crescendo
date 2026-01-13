@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../../models/reference_note.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/pitch_service.dart';
+import '../../services/audio_session_manager.dart';
 import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
@@ -160,7 +161,11 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     } catch (e) {
       debugPrint('[PianoPitchScreen] Error stopping service: $e');
     }
-    await Future.delayed(const Duration(milliseconds: 200));
+    // Wait a bit longer to ensure exercise recorder is fully released
+    await Future.delayed(const Duration(milliseconds: 300));
+    // Force release any stuck audio session
+    await AudioSessionManager.instance.forceReleaseAll();
+    await Future.delayed(const Duration(milliseconds: 100));
     if (mounted && _isVisible) {
       await _start();
     }
