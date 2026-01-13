@@ -1,19 +1,56 @@
 import 'package:flutter/material.dart';
 
-import '../../data/seed_library.dart';
 import '../../design/app_text.dart';
-import '../../models/category.dart';
+import '../../models/exercise.dart';
+import '../../screens/explore/exercise_preview_screen.dart';
+import '../../services/daily_exercise_service.dart';
+import '../../state/library_store.dart';
 import '../../widgets/home/home_category_banner_row.dart';
-import '../explore/category_detail_screen.dart';
 import 'styles.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final List<Category> categories = seedLibraryCategories();
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
+  List<Exercise>? _dailyExercises;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDailyExercises();
+    // Listen to completion changes
+    libraryStore.addListener(_onCompletionChanged);
+  }
+
+  @override
+  void dispose() {
+    libraryStore.removeListener(_onCompletionChanged);
+    super.dispose();
+  }
+
+  void _onCompletionChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadDailyExercises() async {
+    final exercises = await dailyExerciseService.getTodaysExercises();
+    if (mounted) {
+      setState(() {
+        _dailyExercises = exercises;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(
@@ -55,8 +92,8 @@ class HomeScreen extends StatelessWidget {
                     Text('Today\'s Exercises', style: AppText.h2),
                     const SizedBox(height: 12),
                     _ExercisesWithProgressIndicator(
-                      categories: categories,
-                      context: context,
+                      exercises: _dailyExercises,
+                      isLoading: _isLoading,
                     ),
                   ],
                 ),
@@ -70,33 +107,30 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _ExercisesWithProgressIndicator extends StatelessWidget {
-  final List<Category> categories;
-  final BuildContext context;
+  final List<Exercise>? exercises;
+  final bool isLoading;
 
   const _ExercisesWithProgressIndicator({
-    required this.categories,
-    required this.context,
+    required this.exercises,
+    required this.isLoading,
   });
 
   @override
   Widget build(BuildContext context) {
-    final mapped = {
-      'warmup': {'title': 'Warmup', 'subtitle': 'Ease in with gentle starters'},
-      'program': {
-        'title': 'Exercise from your program',
-        'subtitle': 'Core exercises from your plan'
-      },
-      'pitch': {'title': 'Pitch Accuracy', 'subtitle': 'Dial in your center'},
-      'agility': {'title': 'Agility', 'subtitle': 'Move quickly and cleanly'},
-    };
+    if (isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
-    final categoryList =
-        categories.where((c) => mapped.containsKey(c.id)).toList();
-    if (categoryList.isEmpty) return const SizedBox.shrink();
+    if (exercises == null || exercises!.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    // TODO: Replace with actual completion data from progress repository
-    // Mock completion states for demonstration
-    final completionStates = [true, true, true]; // All completed for now
+    final completedIds = libraryStore.completedExerciseIds;
 
     const double gutterWidth = 48.0; // Fixed-width timeline gutter
     const double cardSpacing = 16.0; // Bottom padding between cards
@@ -112,21 +146,21 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
     // Calculate the exact position of the last circle center
     // For n items: row 0 at 0, row 1 at (cardHeight + cardSpacing), etc.
     // Last row (index n-1) starts at: (n-1) * (cardHeight + cardSpacing)
-    final int lastRowIndex = categoryList.length - 1;
+    final int lastRowIndex = exercises!.length - 1;
     final double lastRowTop = lastRowIndex * (cardHeight + cardSpacing);
     final double lastCircleCenterY = lastRowTop + (cardHeight / 2);
 
     // Line starts at first circle center and extends all the way to last circle center
-    // Extend by half the circle radius to ensure it visually reaches the bottom circle center
+    // Extend to the bottom edge of the last circle to ensure it connects fully
     const double circleRadius = TimelineIcon._size / 2; // 16.0
     final double lineTop = firstCircleCenterY;
-    final double lineHeight = (lastCircleCenterY - firstCircleCenterY) +
-        circleRadius; // Extend to ensure visual reach
+    final double lastCircleBottom = lastCircleCenterY + circleRadius;
+    final double lineHeight = lastCircleBottom - firstCircleCenterY;
 
     return Stack(
       children: [
         // Vertical connector line - positioned between first and last circle centers only
-        if (categoryList.length > 1 && lineHeight > 0)
+        if (exercises!.length > 1 && lineHeight > 0)
           Positioned(
             left: (gutterWidth / 2) - 0.75, // Center of gutter
             top: lineTop, // Start at first circle center
@@ -142,16 +176,13 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
         // Column of rows - each row contains icon + card
         Column(
           mainAxisSize: MainAxisSize.min,
-          children: List.generate(categoryList.length, (index) {
-            final c = categoryList[index];
-            final info = mapped[c.id]!;
-            final isCompleted = index < completionStates.length
-                ? completionStates[index]
-                : false;
+          children: List.generate(exercises!.length, (index) {
+            final exercise = exercises![index];
+            final isCompleted = completedIds.contains(exercise.id);
 
             return Padding(
               padding: EdgeInsets.only(
-                  bottom: index < categoryList.length - 1 ? cardSpacing : 0),
+                  bottom: index < exercises!.length - 1 ? cardSpacing : 0),
               child: IntrinsicHeight(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -166,15 +197,19 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                     // Right: Exercise card
                     Expanded(
                       child: HomeCategoryBannerRow(
-                        title: info['title']!,
-                        subtitle: info['subtitle']!,
-                        bannerStyleId: c.bannerStyleId,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  CategoryDetailScreen(category: c)),
-                        ),
+                        title: exercise.title,
+                        subtitle: '', // Not used, but required by widget
+                        bannerStyleId: exercise.bannerStyleId,
+                        onTap: () {
+                          // Navigate to the exercise preview screen
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ExercisePreviewScreen(
+                                  exerciseId: exercise.id),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],

@@ -23,16 +23,17 @@ class HomeCategoryBannerRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: HomeScreenStyles.categoryBannerDecoration,
+        constraints: const BoxConstraints(minHeight: 96),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(HomeScreenStyles.categoryBannerBorderRadius),
                 bottomLeft: Radius.circular(HomeScreenStyles.categoryBannerBorderRadius),
               ),
-              child: SizedBox(
-                width: 110,
-                height: 96,
+              child: Container(
+                width: 80,
                 child: CustomPaint(
                   painter: AbstractBannerPainter(bannerStyleId, intensity: 1.0),
                 ),
@@ -42,16 +43,14 @@ class HomeCategoryBannerRow extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
                       style: HomeScreenStyles.categoryTitle,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      style: HomeScreenStyles.categorySubtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
