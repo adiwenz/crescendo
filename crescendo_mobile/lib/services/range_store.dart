@@ -24,4 +24,10 @@ class RangeStore {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_lowestKey), prefs.getInt(_highestKey));
   }
+
+  Future<void> clearRange() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_lowestKey);
+    await prefs.remove(_highestKey);
+  }
 }

@@ -30,6 +30,11 @@ class VocalRangeService {
     return '$lowestName – $highestName';
   }
 
+  /// Clear the user's custom range
+  Future<void> clearRange() async {
+    await _rangeStore.clearRange();
+  }
+
   String _midiToName(int midi) {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     final octave = (midi / 12).floor() - 1;
