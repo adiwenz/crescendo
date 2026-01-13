@@ -100,18 +100,39 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
 
     const double gutterWidth = 48.0; // Fixed-width timeline gutter
     const double cardSpacing = 16.0; // Bottom padding between cards
+    const double cardHeight = 96.0; // Card height (from HomeCategoryBannerRow)
     final mutedLineColor = HomeScreenStyles.iconInactive.withOpacity(0.3);
+
+    // Calculate line positions: start at first circle center, end at last circle center
+    // Each row has height = cardHeight, with cardSpacing between rows
+    // Circle centers are at cardHeight/2 from the top of each row
+    final double firstCircleCenterY =
+        cardHeight / 2; // Center of first row (index 0)
+
+    // Calculate the exact position of the last circle center
+    // For n items: row 0 at 0, row 1 at (cardHeight + cardSpacing), etc.
+    // Last row (index n-1) starts at: (n-1) * (cardHeight + cardSpacing)
+    final int lastRowIndex = categoryList.length - 1;
+    final double lastRowTop = lastRowIndex * (cardHeight + cardSpacing);
+    final double lastCircleCenterY = lastRowTop + (cardHeight / 2);
+
+    // Line starts at first circle center and extends all the way to last circle center
+    // Extend by half the circle radius to ensure it visually reaches the bottom circle center
+    const double circleRadius = TimelineIcon._size / 2; // 16.0
+    final double lineTop = firstCircleCenterY;
+    final double lineHeight = (lastCircleCenterY - firstCircleCenterY) +
+        circleRadius; // Extend to ensure visual reach
 
     return Stack(
       children: [
-        // Vertical connector line behind all rows
-        if (categoryList.length > 1)
+        // Vertical connector line - positioned between first and last circle centers only
+        if (categoryList.length > 1 && lineHeight > 0)
           Positioned(
             left: (gutterWidth / 2) - 0.75, // Center of gutter
-            top: 0,
-            bottom: 0,
+            top: lineTop, // Start at first circle center
             child: Container(
               width: 1.5,
+              height: lineHeight, // Height from first to last circle center
               decoration: BoxDecoration(
                 color: mutedLineColor,
                 borderRadius: BorderRadius.circular(0.75),
@@ -194,7 +215,8 @@ class TimelineIcon extends StatelessWidget {
         color: isCompleted
             ? HomeScreenStyles
                 .timelineCheckmarkBackground // Color from HomeScreenStyles
-            : Colors.transparent, // Transparent for incomplete
+            : Colors
+                .white, // White background to cover the line behind incomplete circles
         border: Border.all(
           color: isCompleted
               ? HomeScreenStyles.timelineCheckmarkBackground
