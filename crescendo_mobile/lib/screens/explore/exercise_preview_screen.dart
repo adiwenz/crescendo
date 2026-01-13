@@ -138,8 +138,17 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   @override
   Widget build(BuildContext context) {
     final ex = _exercise;
+    // Get category name for AppBar
+    String? categoryTitle;
+    if (ex != null) {
+      try {
+        categoryTitle = _repo.getCategory(ex.categoryId).title;
+      } catch (e) {
+        // Fallback if category not found
+      }
+    }
     return Scaffold(
-      appBar: AppBar(title: Text(ex?.name ?? 'Exercise')),
+      appBar: AppBar(title: Text(categoryTitle ?? 'Exercise')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -430,21 +439,18 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(ex.name, style: Theme.of(context).textTheme.headlineSmall),
+        // Exercise name as header
+        Text(
+          ex.name,
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            Chip(label: Text(ex.categoryId)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                ex.description,
-                style: Theme.of(context).textTheme.bodyMedium,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-            ),
-          ],
+        // Description
+        Text(
+          ex.description,
+          style: Theme.of(context).textTheme.bodyMedium,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
         ),
         const SizedBox(height: 12),
         SizedBox(
