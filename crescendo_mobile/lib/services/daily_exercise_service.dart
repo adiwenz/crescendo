@@ -294,6 +294,40 @@ class DailyExerciseService {
     await clearDailyExercises();
     return await getTodaysExercises();
   }
+
+  /// Calculate remaining time in minutes for today's exercises.
+  ///
+  /// Returns the sum of estimated minutes for exercises that are not completed.
+  /// Completed exercises contribute 0 minutes.
+  ///
+  /// [completedExerciseIds] - Set of exercise IDs that have been completed.
+  /// Returns the total remaining minutes, or 0 if all exercises are completed.
+  int calculateRemainingMinutes(
+      List<Exercise> exercises, Set<String> completedExerciseIds) {
+    if (exercises.isEmpty) return 0;
+
+    int totalMinutes = 0;
+    for (final exercise in exercises) {
+      // Skip completed exercises
+      if (completedExerciseIds.contains(exercise.id)) {
+        continue;
+      }
+
+      // Get the VocalExercise to access estimatedMinutes
+      try {
+        final vocalExercise = _exerciseRepo.getExercise(exercise.id);
+        totalMinutes += vocalExercise.estimatedMinutes;
+      } catch (e) {
+        // If exercise not found, skip it (don't crash)
+        if (kDebugMode) {
+          debugPrint(
+              '[DailyExerciseService] Exercise ${exercise.id} not found, skipping from time calculation');
+        }
+      }
+    }
+
+    return totalMinutes;
+  }
 }
 
 /// Global instance for easy access.

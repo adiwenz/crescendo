@@ -87,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text('Today\'s Progress', style: AppText.h2),
                     const SizedBox(height: 12),
-                    _TodaysProgressCard(),
+                    _TodaysProgressCard(dailyExercises: _dailyExercises),
                     const SizedBox(height: 24),
                     Text('Today\'s Exercises', style: AppText.h2),
                     const SizedBox(height: 12),
@@ -272,13 +272,37 @@ class TimelineIcon extends StatelessWidget {
 }
 
 class _TodaysProgressCard extends StatelessWidget {
-  const _TodaysProgressCard();
+  final List<Exercise>? dailyExercises;
+
+  const _TodaysProgressCard({this.dailyExercises});
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Replace with actual data from progress repository
-    final todaysProgress = 0.45; // 45% complete
-    final minutesLeft = 12; // 12 minutes left to practice
+    final completedIds = libraryStore.completedExerciseIds;
+
+    // Calculate remaining time
+    final minutesLeft = dailyExercises != null && dailyExercises!.isNotEmpty
+        ? dailyExerciseService.calculateRemainingMinutes(
+            dailyExercises!, completedIds)
+        : 0;
+
+    // Calculate progress percentage
+    final totalExercises = dailyExercises?.length ?? 0;
+    final completedCount = totalExercises > 0
+        ? dailyExercises!.where((e) => completedIds.contains(e.id)).length
+        : 0;
+    final todaysProgress =
+        totalExercises > 0 ? completedCount / totalExercises : 0.0;
+
+    // Format remaining time text
+    String remainingTimeText;
+    if (minutesLeft <= 0) {
+      remainingTimeText = 'All done for today 🎉';
+    } else if (minutesLeft < 1) {
+      remainingTimeText = '<1 min left';
+    } else {
+      remainingTimeText = '$minutesLeft min left to practice';
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -314,7 +338,7 @@ class _TodaysProgressCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '$minutesLeft min left to practice',
+                    remainingTimeText,
                     style: HomeScreenStyles.cardSubtitle,
                   ),
                 ],
