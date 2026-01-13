@@ -44,12 +44,18 @@ class RecordingService {
       _pcmController?.stream ?? const Stream.empty();
 
   Future<void> start() async {
-    if (_isRecording) return;
-    if (!await _recorder.hasPermission()) {
+    if (_isRecording) {
       // ignore: avoid_print
-      print('[recording] mic permission denied');
+      print('[RecordingService] Already recording, skipping start');
       return;
     }
+    if (!await _recorder.hasPermission()) {
+      // ignore: avoid_print
+      print('[RecordingService] Mic permission denied');
+      return;
+    }
+    // ignore: avoid_print
+    print('[RecordingService] Starting recording...');
     _samples.clear();
     _pitchBuffer.clear();
     _frames.clear();
@@ -100,11 +106,18 @@ class RecordingService {
 
   Future<RecordingResult> stop() async {
     if (!_isRecording) return RecordingResult('', const []);
+    // ignore: avoid_print
+    print('[RecordingService] Stopping recording...');
     await _sub?.cancel();
     _sub = null;
     try {
       await _recorder.stop();
-    } catch (_) {}
+      // ignore: avoid_print
+      print('[RecordingService] Recorder stopped');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[RecordingService] Error stopping recorder: $e');
+    }
     _isRecording = false;
 
     final dir = await getApplicationDocumentsDirectory();
@@ -120,10 +133,29 @@ class RecordingService {
   }
 
   Future<void> dispose() async {
+    // ignore: avoid_print
+    print('[RecordingService] Disposing...');
+    if (_isRecording) {
+      try {
+        await stop();
+      } catch (e) {
+        // ignore: avoid_print
+        print('[RecordingService] Error stopping during dispose: $e');
+      }
+    }
     await _sub?.cancel();
+    _sub = null;
     await _pcmController?.close();
+    _pcmController = null;
     await _liveController.close();
-    await _recorder.dispose();
+    try {
+      await _recorder.dispose();
+      // ignore: avoid_print
+      print('[RecordingService] Disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[RecordingService] Error disposing recorder: $e');
+    }
   }
 
   List<double> _pcm16BytesToDoubles(Uint8List bytes) {

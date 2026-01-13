@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../models/reference_note.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/pitch_service.dart';
+import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
 
@@ -16,7 +18,7 @@ class PianoPitchScreen extends StatefulWidget {
   State<PianoPitchScreen> createState() => _PianoPitchScreenState();
 }
 
-class _PianoPitchScreenState extends State<PianoPitchScreen> {
+class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, WidgetsBindingObserver {
   final AudioSynthService _synth = AudioSynthService();
   late final PitchService _service;
   late final PitchTracker _tracker;
@@ -24,23 +26,152 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> {
   final ScrollController _keyboardController = ScrollController();
   static const double _keyHeight = 36;
   bool _initialScrollSet = false;
+  bool _isVisible = false;
 
   @override
   void initState() {
     super.initState();
+    debugPrint('[PianoPitchScreen] initState');
     _service = PitchService();
     _tracker = PitchTracker();
-    _start();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _centerKeyboardInitial());
+    _isVisible = true;
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _centerKeyboardInitial();
+      _start();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+      debugPrint('[PianoPitchScreen] Subscribed to route observer');
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // Called when returning to this screen (e.g., from an exercise)
+    debugPrint('[PianoPitchScreen] didPopNext - returning to Piano screen');
+    _isVisible = true;
+    // Ensure recording is active when returning
+    if (!_service.isRunning) {
+      _restartPitchDetection();
+    } else {
+      // Even if running, ensure the stream subscription is active
+      _ensureStreamSubscription();
+    }
+  }
+
+  @override
+  void didPush() {
+    // Called when this screen is pushed
+    debugPrint('[PianoPitchScreen] didPush - Piano screen pushed');
+    _isVisible = true;
+    // Ensure recording starts when screen is pushed
+    if (!_service.isRunning) {
+      _start();
+    }
+  }
+
+  void _ensureStreamSubscription() {
+    if (_sub == null || _sub!.isPaused) {
+      debugPrint('[PianoPitchScreen] Re-establishing stream subscription');
+      _sub?.cancel();
+      _sub = _service.stream.listen(
+        _tracker.updateFromReading,
+        onError: (error) {
+          debugPrint('[PianoPitchScreen] Stream error: $error');
+          _restartPitchDetection();
+        },
+      );
+    }
+  }
+
+  @override
+  void didPop() {
+    // Called when leaving this screen
+    debugPrint('[PianoPitchScreen] didPop - leaving Piano screen');
+    _isVisible = false;
+    routeObserver.unsubscribe(this);
+  }
+
+  @override
+  void didPushNext() {
+    // Called when navigating away from this screen
+    debugPrint('[PianoPitchScreen] didPushNext - navigating away from Piano');
+    _isVisible = false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isVisible) {
+      debugPrint('[PianoPitchScreen] App resumed, ensuring pitch detection is running');
+      if (!_service.isRunning) {
+        _restartPitchDetection();
+      } else {
+        _ensureStreamSubscription();
+      }
+    } else if (state == AppLifecycleState.paused) {
+      debugPrint('[PianoPitchScreen] App paused - keeping recording active');
+      // Don't stop recording on pause, just keep it running
+    }
   }
 
   Future<void> _start() async {
-    await _service.start();
-    _sub = _service.stream.listen(_tracker.updateFromReading);
+    if (!mounted || !_isVisible) {
+      debugPrint('[PianoPitchScreen] Skipping start - not mounted or not visible');
+      return;
+    }
+    debugPrint('[PianoPitchScreen] Starting pitch detection...');
+    try {
+      await _service.start();
+      _sub?.cancel();
+      _sub = _service.stream.listen(
+        _tracker.updateFromReading,
+        onError: (error) {
+          debugPrint('[PianoPitchScreen] Stream error: $error');
+          _restartPitchDetection();
+        },
+        cancelOnError: false, // Keep listening even on errors
+      );
+      debugPrint('[PianoPitchScreen] Pitch detection started and streaming continuously');
+    } catch (e) {
+      debugPrint('[PianoPitchScreen] Error starting pitch detection: $e');
+      // Retry after a delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _isVisible) {
+          _restartPitchDetection();
+        }
+      });
+    }
+  }
+
+  Future<void> _restartPitchDetection() async {
+    if (!mounted || !_isVisible) return;
+    debugPrint('[PianoPitchScreen] Restarting pitch detection...');
+    await _sub?.cancel();
+    _sub = null;
+    try {
+      await _service.stop();
+    } catch (e) {
+      debugPrint('[PianoPitchScreen] Error stopping service: $e');
+    }
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted && _isVisible) {
+      await _start();
+    }
   }
 
   @override
   void dispose() {
+    debugPrint('[PianoPitchScreen] dispose');
+    _isVisible = false;
+    WidgetsBinding.instance.removeObserver(this);
+    routeObserver.unsubscribe(this);
     _sub?.cancel();
     _service.dispose();
     _synth.stop();

@@ -194,10 +194,28 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[ExercisePlayerScreen] dispose - cleaning up resources');
     _ticker?.dispose();
     _sub?.cancel();
     _audioPosSub?.cancel();
-    _recording?.stop();
+    // Properly stop and dispose the recording service
+    if (_recording != null) {
+      // Stop first, then dispose asynchronously
+      _recording!.stop().then((_) async {
+        try {
+          await _recording?.dispose();
+          // ignore: avoid_print
+          print('[ExercisePlayerScreen] Recording disposed');
+        } catch (e) {
+          // ignore: avoid_print
+          print('[ExercisePlayerScreen] Error disposing recording: $e');
+        }
+      }).catchError((e) {
+        // ignore: avoid_print
+        print('[ExercisePlayerScreen] Error stopping recording: $e');
+      });
+    }
     _prepTimer?.cancel();
     _synth.stop();
     _time.dispose();
@@ -304,7 +322,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _sub = null;
     await _audioPosSub?.cancel();
     _audioPosSub = null;
+    // ignore: avoid_print
+    print('[ExercisePlayerScreen] _stop - stopping recording');
     final recordingResult = _recording == null ? null : await _recording!.stop();
+    // Dispose the recording service to fully release resources
+    if (_recording != null) {
+      await _recording!.dispose();
+    }
     _recording = null;
     await _synth.stop();
     _clock.pause();
