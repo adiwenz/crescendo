@@ -34,7 +34,9 @@ class ProgressService {
     await _repo.saveAttempt(attempt);
     final count = await _repo.countAttemptsForExercise(attempt.exerciseId);
     debugPrint('[Progress] attempts for ${attempt.exerciseId}: $count');
-    await AttemptRepository.instance.refresh();
+    // AttemptRepository.save() already updates the cache and notifies listeners
+    // No need to call refresh() here - it causes infinite loops
+    await AttemptRepository.instance.save(attempt);
     // Mirror into the simpler library store so the rest of the app (Home/Explore/Progress)
     // can reflect completions immediately.
     libraryStore.markCompleted(

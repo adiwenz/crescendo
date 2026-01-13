@@ -76,7 +76,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
       orElse: () => _repo.getExercises().first,
     );
     await _refreshProgress();
-    await _attempts.refresh();
+    // Only ensure loaded, don't refresh - use cache which is already up to date
+    await _attempts.ensureLoaded();
     final latest = _attempts.latestFor(widget.exerciseId);
     if (latest == null) {
       debugPrint('[Preview] latest attempt not found for ${widget.exerciseId}');
@@ -90,7 +91,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   }
 
   Future<void> _refreshLatest() async {
-    await _attempts.refresh();
+    // Use cache - it's already updated by AttemptRepository.save()
+    // No need to refresh from database
     final latest = _attempts.latestFor(widget.exerciseId);
     if (!mounted) return;
     setState(() {
@@ -346,7 +348,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
       return;
     }
     await Future.delayed(const Duration(milliseconds: 300));
-    await _attempts.refresh();
+    // Cache is already updated by AttemptRepository.save()
+    // No need to refresh from database
     final latest = _attempts.latestFor(widget.exerciseId);
     if (mounted) {
       setState(() => _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest));

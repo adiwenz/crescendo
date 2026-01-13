@@ -43,7 +43,8 @@ class _CategoryProgressScreenState extends State<CategoryProgressScreen> {
 
   Future<void> _loadExercises() async {
     final exercises = _exerciseRepo.getExercisesForCategory(widget.category.id);
-    await _attempts.refresh();
+    // Only ensure loaded, don't refresh - use cache which is already up to date
+    await _attempts.ensureLoaded();
     if (mounted) {
       setState(() {
         _exercises = exercises;

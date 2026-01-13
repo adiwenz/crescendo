@@ -49,7 +49,12 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
 
   @override
   void didPopNext() {
-    _loadAttempts();
+    // Refresh when returning to this screen
+    _attempts.refresh().then((_) {
+      if (mounted) {
+        _loadAttempts();
+      }
+    });
   }
 
   void _onAttemptsChanged() {
@@ -59,7 +64,8 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
   }
 
   Future<void> _loadAttempts() async {
-    await _attempts.refresh();
+    // Only ensure loaded, don't refresh - use cache which is already up to date
+    await _attempts.ensureLoaded();
     final allAttempts = _attempts.cache
         .where((a) => a.exerciseId == widget.exercise.id)
         .toList()

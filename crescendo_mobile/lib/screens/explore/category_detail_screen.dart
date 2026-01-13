@@ -152,7 +152,8 @@ class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
 
   Future<void> _loadExercises() async {
     final exercises = _exerciseRepo.getExercisesForCategory(widget.category.id);
-    await _attempts.refresh();
+    // Only ensure loaded, don't refresh - use cache which is already up to date
+    await _attempts.ensureLoaded();
     if (mounted) {
       setState(() {
         _exercises = exercises;
@@ -221,7 +222,8 @@ class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
                   builder: (_) => ExercisePreviewScreen(exerciseId: exercise.id),
                 ),
               );
-              await _attempts.refresh();
+              // Cache is already updated by AttemptRepository.save()
+              // Just refresh the UI state
               await libraryStore.load();
               if (mounted) {
                 setState(() {});

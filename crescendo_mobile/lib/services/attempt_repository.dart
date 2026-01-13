@@ -12,21 +12,30 @@ class AttemptRepository extends ChangeNotifier {
   List<ExerciseAttempt> _cache = const [];
   bool _loaded = false;
   int _revision = 0;
+  bool _isRefreshing = false;
 
   List<ExerciseAttempt> get cache => _cache;
   int get revision => _revision;
 
   Future<List<ExerciseAttempt>> refresh() async {
+    // Prevent concurrent refreshes
+    if (_isRefreshing) {
+      debugPrint('[AttemptRepository] Refresh already in progress, skipping');
+      return _cache;
+    }
+    _isRefreshing = true;
     try {
       final attempts = await _repo.fetchAllAttempts();
       _cache = attempts;
       debugPrint('[AttemptRepository] refreshed: ${_cache.length} attempts (instance=${identityHashCode(this)})');
+      _loaded = true;
+      _revision++;
+      notifyListeners();
     } catch (e, st) {
       debugPrint('[AttemptRepository] refresh failed: $e\n$st');
+    } finally {
+      _isRefreshing = false;
     }
-    _loaded = true;
-    _revision++;
-    notifyListeners();
     return _cache;
   }
 
@@ -55,6 +64,15 @@ class AttemptRepository extends ChangeNotifier {
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
-    await refresh();
+    // Only refresh if not already loaded - this prevents unnecessary database queries
+    try {
+      final attempts = await _repo.fetchAllAttempts();
+      _cache = attempts;
+      _loaded = true;
+      // Don't increment revision or notify listeners here - this is just initial load
+      // Revision and notifications happen on actual data changes (save/refresh)
+    } catch (e, st) {
+      debugPrint('[AttemptRepository] ensureLoaded failed: $e\n$st');
+    }
   }
 }

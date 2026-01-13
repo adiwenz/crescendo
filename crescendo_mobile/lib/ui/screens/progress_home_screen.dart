@@ -7,6 +7,7 @@ import '../../services/attempt_repository.dart';
 import '../../ui/widgets/progress_charts.dart';
 import '../../models/exercise_attempt.dart';
 import '../../services/exercise_repository.dart';
+import '../../ui/route_observer.dart';
 import 'category_progress_screen.dart';
 
 class ProgressHomeScreen extends StatefulWidget {
@@ -16,28 +17,62 @@ class ProgressHomeScreen extends StatefulWidget {
   State<ProgressHomeScreen> createState() => _ProgressHomeScreenState();
 }
 
-class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
+enum _TrendFilter { day, week, month }
+
+class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware {
   final SimpleProgressRepository _repo = SimpleProgressRepository();
   Future<ProgressSummary>? _future;
   late final ProgressSummary _initial;
   final AttemptRepository _attempts = AttemptRepository.instance;
+  int _lastRevision = -1;
+  _TrendFilter _selectedFilter = _TrendFilter.week;
 
   @override
   void initState() {
     super.initState();
+    _lastRevision = _attempts.revision;
     _initial = _repo.buildSummaryFromCache();
     _future = _loadSummary();
     _attempts.addListener(_onAttemptsChanged);
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _attempts.removeListener(_onAttemptsChanged);
     super.dispose();
   }
 
+  @override
+  void didPopNext() {
+    // When returning to this screen, refresh data from database
+    _attempts.refresh().then((_) {
+      if (mounted) {
+        setState(() {
+          _lastRevision = _attempts.revision;
+          _future = _loadSummary();
+        });
+      }
+    });
+  }
+
   void _onAttemptsChanged() {
     if (!mounted) return;
+    // Only rebuild if the revision actually changed (prevents unnecessary rebuilds)
+    if (_attempts.revision == _lastRevision) return;
+    _lastRevision = _attempts.revision;
+    
+    // The cache is already updated by AttemptRepository.save() in memory
+    // No need to refresh from database - just rebuild with current cache
     setState(() {
       _future = _loadSummary();
     });
@@ -87,7 +122,9 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
             );
           }
           final summary = snapshot.data!;
-          final dailyStats = _computeDailyStats(_attempts.cache);
+          // Compute daily stats from the latest attempts cache
+          // The cache should be up-to-date since _onAttemptsChanged refreshes it
+          final dailyStats = _computeDailyStats(_attempts.cache, _selectedFilter);
           
           return ListView(
             padding: const EdgeInsets.all(24),
@@ -126,9 +163,37 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Trend',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Trend',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          // Filter buttons
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _FilterChip(
+                                label: 'Day',
+                                selected: _selectedFilter == _TrendFilter.day,
+                                onTap: () => setState(() => _selectedFilter = _TrendFilter.day),
+                              ),
+                              const SizedBox(width: 8),
+                              _FilterChip(
+                                label: 'Week',
+                                selected: _selectedFilter == _TrendFilter.week,
+                                onTap: () => setState(() => _selectedFilter = _TrendFilter.week),
+                              ),
+                              const SizedBox(width: 8),
+                              _FilterChip(
+                                label: 'Month',
+                                selected: _selectedFilter == _TrendFilter.month,
+                                onTap: () => setState(() => _selectedFilter = _TrendFilter.month),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       SizedBox(
@@ -218,47 +283,69 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> {
     }
   }
 
-  _DailyStats _computeDailyStats(List<ExerciseAttempt> attempts) {
+  _DailyStats _computeDailyStats(List<ExerciseAttempt> attempts, _TrendFilter filter) {
     if (attempts.isEmpty) {
       return _DailyStats(avgScores: [], exerciseCounts: []);
     }
 
-    // Group attempts by date
-    final byDate = <DateTime, List<ExerciseAttempt>>{};
-    for (final attempt in attempts) {
-      final date = attempt.completedAt ?? attempt.startedAt;
-      if (date == null) continue;
-      final dateOnly = DateTime(date.year, date.month, date.day);
-      byDate.putIfAbsent(dateOnly, () => []).add(attempt);
-    }
-
-    // Get last 30 days
+    // Filter attempts by time window
     final now = DateTime.now();
-    final dates = <DateTime>[];
-    for (var i = 29; i >= 0; i--) {
-      dates.add(DateTime(now.year, now.month, now.day).subtract(Duration(days: i)));
+    final cutoff = switch (filter) {
+      _TrendFilter.day => DateTime(now.year, now.month, now.day), // Today since midnight
+      _TrendFilter.week => now.subtract(const Duration(days: 7)),
+      _TrendFilter.month => now.subtract(const Duration(days: 30)),
+    };
+
+    final filteredAttempts = attempts.where((a) {
+      final date = a.completedAt ?? a.startedAt;
+      if (date == null) return false;
+      return date.isAfter(cutoff);
+    }).toList();
+
+    if (filteredAttempts.isEmpty) {
+      return _DailyStats(avgScores: [], exerciseCounts: []);
     }
 
-    final avgScores = <double>[];
-    final exerciseCounts = <double>[];
+    // Sort by time (oldest first)
+    filteredAttempts.sort((a, b) {
+      final aTime = a.completedAt ?? a.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.completedAt ?? b.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return aTime.compareTo(bTime);
+    });
 
-    for (final date in dates) {
-      final dayAttempts = byDate[date] ?? [];
-      if (dayAttempts.isEmpty) {
-        avgScores.add(0);
-        exerciseCounts.add(0);
-      } else {
-        // Average score for the day
-        final scores = dayAttempts.map((a) => a.overallScore).toList();
-        final avg = scores.reduce((a, b) => a + b) / scores.length;
-        avgScores.add(avg);
-        // Count of exercises (unique exerciseIds)
-        final uniqueExercises = dayAttempts.map((a) => a.exerciseId).toSet();
-        exerciseCounts.add(uniqueExercises.length.toDouble());
+    if (filter == _TrendFilter.day) {
+      // Day filter: each exercise attempt is a point
+      final scores = filteredAttempts
+          .map((a) => a.overallScore)
+          .where((s) => s > 0)
+          .toList();
+      return _DailyStats(avgScores: scores, exerciseCounts: []);
+    } else {
+      // Week/Month filter: average score per day (one point per day)
+      // Group attempts by date
+      final byDate = <DateTime, List<ExerciseAttempt>>{};
+      for (final attempt in filteredAttempts) {
+        final date = attempt.completedAt ?? attempt.startedAt;
+        if (date == null) continue;
+        final dateOnly = DateTime(date.year, date.month, date.day);
+        byDate.putIfAbsent(dateOnly, () => []).add(attempt);
       }
-    }
 
-    return _DailyStats(avgScores: avgScores, exerciseCounts: exerciseCounts);
+      // Get all dates in the range, sorted
+      final dates = byDate.keys.toList()..sort();
+
+      final avgScores = <double>[];
+      for (final date in dates) {
+        final dayAttempts = byDate[date]!;
+        final scores = dayAttempts.map((a) => a.overallScore).where((s) => s > 0).toList();
+        if (scores.isNotEmpty) {
+          final avg = scores.reduce((a, b) => a + b) / scores.length;
+          avgScores.add(avg);
+        }
+      }
+
+      return _DailyStats(avgScores: avgScores, exerciseCounts: []);
+    }
   }
 }
 
@@ -267,4 +354,42 @@ class _DailyStats {
   final List<double> exerciseCounts;
 
   _DailyStats({required this.avgScores, required this.exerciseCounts});
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? colors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? colors.primary : colors.outline.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: selected ? Colors.white : colors.onSurface,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              ),
+        ),
+      ),
+    );
+  }
 }
