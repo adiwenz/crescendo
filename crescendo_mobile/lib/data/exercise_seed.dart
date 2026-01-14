@@ -50,13 +50,6 @@ List<ExerciseCategory> seedExerciseCategories() => const [
         iconKey: 'register',
       ),
       ExerciseCategory(
-        id: 'vowel_shaping',
-        title: 'Vowel Shaping & Modification',
-        description: 'Keep tone consistent across vowels and pitch.',
-        sortOrder: 7,
-        iconKey: 'vowel',
-      ),
-      ExerciseCategory(
         id: 'intonation',
         title: 'Intonation & Pitch Accuracy',
         description: 'Improve pitch memory and accuracy.',
@@ -69,34 +62,6 @@ List<ExerciseCategory> seedExerciseCategories() => const [
         description: 'Build speed and coordination for runs.',
         sortOrder: 9,
         iconKey: 'agility',
-      ),
-      ExerciseCategory(
-        id: 'articulation_diction',
-        title: 'Articulation & Diction',
-        description: 'Clarify consonants and rhythmic precision.',
-        sortOrder: 10,
-        iconKey: 'articulation',
-      ),
-      ExerciseCategory(
-        id: 'dynamics_control',
-        title: 'Dynamics & Control',
-        description: 'Develop expressive control of volume.',
-        sortOrder: 11,
-        iconKey: 'dynamics',
-      ),
-      ExerciseCategory(
-        id: 'endurance',
-        title: 'Endurance & Stamina',
-        description: 'Build stamina for longer phrases.',
-        sortOrder: 12,
-        iconKey: 'endurance',
-      ),
-      ExerciseCategory(
-        id: 'recovery_therapy',
-        title: 'Recovery & Therapy',
-        description: 'Gentle recovery and tension release.',
-        sortOrder: 13,
-        iconKey: 'recovery',
       ),
     ];
 
@@ -194,46 +159,6 @@ List<VocalExercise> seedVocalExercises() {
         ),
       ],
     );
-  }
-
-  PitchHighwaySpec longPhraseSpec({
-    required int baseMidi,
-    required double tolerance,
-  }) {
-    return PitchHighwaySpec(
-      segments: _patternSegments(
-        baseMidi: baseMidi,
-        noteMs: 900,
-        offsets: const [0, 2, 4, 5, 7, 7, 5, 4, 2, 0],
-        tolerance: tolerance,
-      ),
-    );
-  }
-
-  PitchHighwaySpec repetitionSpec({
-    required int baseMidi,
-    required double tolerance,
-  }) {
-    final segmentList = <PitchSegment>[];
-    for (var i = 0; i < 3; i++) {
-      final offsetMs = i * 1800;
-      final segments = _patternSegments(
-        baseMidi: baseMidi,
-        noteMs: 200,
-        offsets: const [0, 2, 4, 2, 0],
-        tolerance: tolerance,
-      );
-      for (final s in segments) {
-        segmentList.add(PitchSegment(
-          startMs: s.startMs + offsetMs,
-          endMs: s.endMs + offsetMs,
-          midiNote: s.midiNote,
-          toleranceCents: s.toleranceCents,
-          label: s.label,
-        ));
-      }
-    }
-    return PitchHighwaySpec(segments: segmentList);
   }
 
   int _minutesFromSeconds(int? seconds, {int fallback = 2}) {
@@ -626,42 +551,6 @@ List<VocalExercise> seedVocalExercises() {
       createdAt: createdAt,
     ),
     VocalExercise(
-      id: 'vowel_unification',
-      name: 'Vowel Unification Scales',
-      categoryId: 'vowel_shaping',
-      type: ExerciseType.pitchHighway,
-      description: 'Repeat the same pattern across vowels.',
-      purpose: 'Keep tone consistent between vowels.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['vowel', 'tone', 'consistency'],
-      highwaySpec: scaleSpec(
-        baseMidi: baseC4,
-        noteMs: 420,
-        tolerance: toleranceIntermediate,
-        labels: const ['Ah', 'Ah', 'Ah', 'Ah', 'Ah', 'Ah', 'Ah', 'Ah', 'Ah'],
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'vowel_modification',
-      name: 'Vowel Modification (Ah→Uh→Oo)',
-      categoryId: 'vowel_shaping',
-      type: ExerciseType.pitchHighway,
-      description: 'Modify vowels as pitch rises to avoid strain.',
-      purpose: 'Reduce tension by adjusting vowel shape.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['vowel', 'modification', 'ease'],
-      highwaySpec: scaleSpec(
-        baseMidi: baseC4,
-        noteMs: 500,
-        tolerance: toleranceIntermediate,
-        labels: const ['Ah', 'Ah', 'Uh', 'Uh', 'Oo', 'Oo', 'Oo', 'Uh', 'Ah'],
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
       id: 'sustained_pitch_holds',
       name: 'Sustained Pitch Holds',
       categoryId: 'intonation',
@@ -787,141 +676,6 @@ List<VocalExercise> seedVocalExercises() {
         tolerance: toleranceAdvanced,
         pattern: const [12, 11, 9, 7, 5, 4, 2, 0],
       ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'tongue_twisters',
-      name: 'Tongue Twisters (Sung)',
-      categoryId: 'articulation_diction',
-      type: ExerciseType.articulationRhythm,
-      description: 'Sing tongue twisters on a steady pitch.',
-      purpose: 'Improve diction while staying on pitch.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['diction', 'articulation', 'clarity'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'consonant_isolation',
-      name: 'Consonant Isolation ("T-K-D")',
-      categoryId: 'articulation_diction',
-      type: ExerciseType.articulationRhythm,
-      description: 'Repeat consonants in rhythm with clear attacks.',
-      purpose: 'Coordinate tongue and breath.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['diction', 'coordination', 'rhythm'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'vowel_only_singing',
-      name: 'Vowel-Only Singing',
-      categoryId: 'articulation_diction',
-      type: ExerciseType.pitchHighway,
-      description: 'Remove consonants and focus on pure vowels.',
-      purpose: 'Encourage consistent, resonant tone.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['vowel', 'tone', 'clarity'],
-      highwaySpec: scaleSpec(
-        baseMidi: baseC4,
-        noteMs: 450,
-        tolerance: toleranceBeginner,
-        labels: const ['Ah', 'Ah', 'Eh', 'Eh', 'Ee', 'Ee', 'Oh', 'Oh', 'Oo'],
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'messa_di_voce',
-      name: 'Messa di Voce',
-      categoryId: 'dynamics_control',
-      type: ExerciseType.dynamicsRamp,
-      description: 'Crescendo then decrescendo on one sustained note.',
-      purpose: 'Build dynamic control and stability.',
-      durationSeconds: 30,
-      reps: 5,
-      difficulty: ExerciseDifficulty.advanced,
-      tags: const ['dynamics', 'control', 'stability'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'dynamic_scales',
-      name: 'Dynamic Scales (pp→ff)',
-      categoryId: 'dynamics_control',
-      type: ExerciseType.dynamicsRamp,
-      description: 'Increase loudness across a scale, then return.',
-      purpose: 'Expand expressive range.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['dynamics', 'expression', 'control'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'long_phrase_practice',
-      name: 'Long Phrase Practice',
-      categoryId: 'endurance',
-      type: ExerciseType.pitchHighway,
-      description: 'Sustain longer phrases without losing support.',
-      purpose: 'Improve breath efficiency for long lines.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['endurance', 'support', 'breath'],
-      highwaySpec: longPhraseSpec(
-        baseMidi: baseC4,
-        tolerance: toleranceIntermediate,
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'repetition_sets',
-      name: 'Repetition Sets',
-      categoryId: 'endurance',
-      type: ExerciseType.pitchHighway,
-      description: 'Repeat patterns to build vocal stamina.',
-      purpose: 'Develop endurance and consistency.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['endurance', 'stamina', 'consistency'],
-      highwaySpec: repetitionSpec(
-        baseMidi: baseC4,
-        tolerance: toleranceIntermediate,
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'straw_in_water_bubbles',
-      name: 'Straw in Water Bubbles',
-      categoryId: 'recovery_therapy',
-      type: ExerciseType.cooldownRecovery,
-      description: 'Phonate gently into water through a straw.',
-      purpose: 'Reduce strain and soothe the voice.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['recovery', 'sovt', 'relax'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'gentle_hums_slides',
-      name: 'Gentle Hums & Slides',
-      categoryId: 'recovery_therapy',
-      type: ExerciseType.cooldownRecovery,
-      description: 'Soft humming and light slides in a comfortable range.',
-      purpose: 'Support recovery after heavy singing.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['recovery', 'resonance', 'ease'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'silent_stretching',
-      name: 'Silent Stretching (jaw/tongue/neck)',
-      categoryId: 'recovery_therapy',
-      type: ExerciseType.cooldownRecovery,
-      description: 'Gentle stretches to release tension.',
-      purpose: 'Prevent strain and reset alignment.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['recovery', 'release', 'prevention'],
       createdAt: createdAt,
     ),
   ];

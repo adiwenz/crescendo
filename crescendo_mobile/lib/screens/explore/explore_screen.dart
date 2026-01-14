@@ -145,22 +145,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 allCategories: categories,
                                 isPrimary: false,
                               ),
-                              const SizedBox(height: 16),
-                              Center(
-                                child: TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _showMoreCategories = false;
-                                    });
-                                  },
-                                  child: Text(
-                                    'Show fewer',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                          color: Theme.of(context).colorScheme.primary,
-                                        ),
-                                  ),
-                                ),
-                              ),
                             ],
                           )
                         : Center(
