@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 7, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 8, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -41,6 +41,8 @@ class AppDatabase {
         pitchDifficulty TEXT,
         recordingPath TEXT,
         contourJson TEXT,
+        targetNotesJson TEXT,
+        segmentsJson TEXT,
         version INTEGER
       )
     ''');
@@ -84,6 +86,10 @@ class AppDatabase {
       await _addColumnIfMissing(db, 'exercise_attempts', 'contourJson', 'TEXT');
       await _addColumnIfMissing(db, 'exercise_attempts', 'startedAt', 'INTEGER');
       await _addColumnIfMissing(db, 'exercise_attempts', 'completedAt', 'INTEGER');
+    }
+    if (oldVersion < 8) {
+      await _addColumnIfMissing(db, 'exercise_attempts', 'targetNotesJson', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'segmentsJson', 'TEXT');
     }
     if (oldVersion < 6) {
       await db.execute('''

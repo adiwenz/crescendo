@@ -8,8 +8,12 @@ import '../../models/pitch_frame.dart';
 import '../../models/replay_models.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/attempt_repository.dart';
+import '../../services/transposed_exercise_builder.dart';
+import '../../services/vocal_range_service.dart';
+import '../../models/pitch_highway_difficulty.dart';
 import '../widgets/pitch_snapshot_chart.dart';
 import 'pitch_highway_review_screen.dart';
+import 'exercise_review_summary_screen.dart';
 
 class ExerciseReviewScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -27,6 +31,7 @@ class ExerciseReviewScreen extends StatefulWidget {
 
 class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
   final AttemptRepository _attempts = AttemptRepository.instance;
+  final VocalRangeService _vocalRangeService = VocalRangeService();
   List<PitchSample> _samples = const [];
   List<TargetNote> _targets = const [];
   int _durationMs = 6000;
@@ -61,12 +66,13 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
     });
   }
 
-  void _loadReplayData(ExerciseAttempt attempt) {
+  Future<void> _loadReplayData(ExerciseAttempt attempt) async {
     _samples = _parseContour(attempt.contourJson);
     _durationMs = _samples.isEmpty
         ? 6000
         : _samples.map((s) => s.timeMs).reduce((a, b) => a > b ? a : b);
-    _targets = _buildTargetNotes(widget.exercise);
+    _targets = await _buildTargetNotes(attempt);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -114,7 +120,32 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_samples.isNotEmpty)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExerciseReviewSummaryScreen(
+                          exercise: widget.exercise,
+                          attempt: _currentAttempt,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.analytics),
+                  label: const Text('View Detailed Review'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (_samples.isNotEmpty && _targets.isNotEmpty)
                 PitchSnapshotView(
                   targetNotes: _targets,
                   pitchSamples: _samples,
@@ -154,15 +185,47 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
     }
   }
 
-  List<TargetNote> _buildTargetNotes(VocalExercise exercise) {
-    final spec = exercise.highwaySpec;
-    if (spec == null || spec.segments.isEmpty) return const [];
-    return spec.segments.map((s) {
+  Future<List<TargetNote>> _buildTargetNotes(ExerciseAttempt attempt) async {
+    // First try to parse from saved target notes
+    if (attempt.targetNotesJson != null && attempt.targetNotesJson!.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(attempt.targetNotesJson!);
+        if (decoded is List) {
+          return decoded.map<TargetNote>((item) {
+            final map = item as Map<String, dynamic>;
+            return TargetNote(
+              startMs: (map['startMs'] as num).toInt(),
+              endMs: (map['endMs'] as num).toInt(),
+              midi: (map['midi'] as num).toDouble(),
+              label: map['label'] as String?,
+            );
+          }).toList();
+        }
+      } catch (_) {
+        // Fall through to building from exercise
+      }
+    }
+    
+    // Fallback: build full transposed sequence from exercise
+    final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    final difficulty = attempt.pitchDifficulty != null
+        ? pitchHighwayDifficultyFromName(attempt.pitchDifficulty!)
+        : PitchHighwayDifficulty.medium;
+    
+    final notes = TransposedExerciseBuilder.buildTransposedSequence(
+      exercise: widget.exercise,
+      lowestMidi: lowestMidi,
+      highestMidi: highestMidi,
+      leadInSec: 2.0,
+      difficulty: difficulty,
+    );
+    
+    return notes.map((n) {
       return TargetNote(
-        startMs: s.startMs,
-        endMs: s.endMs,
-        midi: s.midiNote.toDouble(),
-        label: s.label,
+        startMs: (n.startSec * 1000).round(),
+        endMs: (n.endSec * 1000).round(),
+        midi: n.midi.toDouble(),
+        label: n.lyric,
       );
     }).toList();
   }

@@ -12,6 +12,8 @@ class ExerciseAttempt {
   final Map<String, double> subScores;
   final String? recordingPath;
   final String? contourJson;
+  final String? targetNotesJson;
+  final String? segmentsJson;
   final String? notes;
   final String? pitchDifficulty;
   final int version;
@@ -26,6 +28,8 @@ class ExerciseAttempt {
     this.subScores = const {},
     this.recordingPath,
     this.contourJson,
+    this.targetNotesJson,
+    this.segmentsJson,
     this.notes,
     this.pitchDifficulty,
     this.version = 1,
@@ -42,6 +46,8 @@ class ExerciseAttempt {
         'subScoresJson': subScores.isEmpty ? null : jsonEncode(subScores),
         'recordingPath': recordingPath,
         'contourJson': contourJson,
+        'targetNotesJson': targetNotesJson,
+        'segmentsJson': segmentsJson,
         'notes': notes,
         'pitchDifficulty': pitchDifficulty,
         'version': version,
@@ -59,6 +65,8 @@ class ExerciseAttempt {
       subScores: const {},
       recordingPath: map['recordingPath'] as String?,
       contourJson: map['contourJson'] as String?,
+      targetNotesJson: map['targetNotesJson'] as String?,
+      segmentsJson: map['segmentsJson'] as String?,
       notes: map['notes'] as String?,
       pitchDifficulty: map['pitchDifficulty'] as String?,
       version: (map['version'] as num?)?.toInt() ?? 1,
@@ -132,6 +140,8 @@ class ExerciseAttempt {
       subScores: parseScores(m['subScores'] ?? m['subScoresJson']),
       recordingPath: (m['recordingPath'] ?? m['recording'])?.toString(),
       contourJson: (m['contourJson'] ?? m['contour'])?.toString(),
+      targetNotesJson: m['targetNotesJson']?.toString(),
+      segmentsJson: m['segmentsJson']?.toString(),
       notes: parseNotes(m['notes']),
       pitchDifficulty: (m['pitchDifficulty'] ?? m['pitchDifficultyText'])?.toString(),
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,

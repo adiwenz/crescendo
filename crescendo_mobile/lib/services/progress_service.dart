@@ -84,6 +84,8 @@ class ProgressService {
     String? pitchDifficulty,
     String? recordingPath,
     String? contourJson,
+    String? targetNotesJson,
+    String? segmentsJson,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -97,6 +99,8 @@ class ProgressService {
       subScores: subScores ?? const {},
       recordingPath: recordingPath,
       contourJson: contourJson,
+      targetNotesJson: targetNotesJson,
+      segmentsJson: segmentsJson,
       notes: notes,
       pitchDifficulty: pitchDifficulty,
     );

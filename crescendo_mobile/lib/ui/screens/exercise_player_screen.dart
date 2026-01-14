@@ -23,6 +23,9 @@ import '../../services/robust_note_scoring_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
+import '../../services/attempt_repository.dart';
+import '../../models/exercise_attempt.dart';
+import 'exercise_review_summary_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/debug_overlay.dart';
@@ -431,6 +434,83 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
   }
 
+  String? _buildTargetNotesJson() {
+    final notes = _buildReferenceNotes();
+    if (notes.isEmpty) return null;
+    try {
+      final targetNotes = notes.map((n) {
+        return {
+          'startMs': (n.startSec * 1000).round(),
+          'endMs': (n.endSec * 1000).round(),
+          'midi': n.midi.toDouble(),
+          'label': n.lyric,
+        };
+      }).toList();
+      return jsonEncode(targetNotes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _buildSegmentsJson() {
+    final notes = _buildReferenceNotes();
+    if (notes.isEmpty) return null;
+    try {
+      final segments = <Map<String, dynamic>>[];
+      
+      // Get the base root MIDI from the original exercise spec
+      final spec = _scaledSpec;
+      if (spec == null || spec.segments.isEmpty) return null;
+      final baseRootMidi = spec.segments.first.startMidi ?? spec.segments.first.midiNote;
+      
+      var segmentIndex = 0;
+      var currentSegmentStartMs = (notes.first.startSec * 1000).round();
+      var currentTranspose = 0;
+      
+      // Detect segments by finding gaps > 0.5 seconds (gap between repetitions)
+      // The gap indicates a new repetition/segment
+      for (var i = 1; i < notes.length; i++) {
+        final prevNote = notes[i - 1];
+        final currNote = notes[i];
+        final gap = currNote.startSec - prevNote.endSec;
+        
+        // New segment if gap > 0.5s (gap between repetitions)
+        if (gap > 0.5) {
+          // Save previous segment
+          final segmentTranspose = prevNote.midi.round() - baseRootMidi;
+          segments.add({
+            'segmentIndex': segmentIndex,
+            'startMs': currentSegmentStartMs,
+            'endMs': (prevNote.endSec * 1000).round(),
+            'transposeSemitone': segmentTranspose,
+          });
+          
+          // Start new segment
+          segmentIndex++;
+          currentSegmentStartMs = (currNote.startSec * 1000).round();
+          currentTranspose = currNote.midi.round() - baseRootMidi;
+        }
+      }
+      
+      // Add final segment
+      if (notes.isNotEmpty) {
+        final lastNote = notes.last;
+        final segmentTranspose = lastNote.midi.round() - baseRootMidi;
+        segments.add({
+          'segmentIndex': segmentIndex,
+          'startMs': currentSegmentStartMs,
+          'endMs': (lastNote.endSec * 1000).round(),
+          'transposeSemitone': segmentTranspose,
+        });
+      }
+      
+      return jsonEncode(segments);
+    } catch (e) {
+      debugPrint('Error building segments JSON: $e');
+      return null;
+    }
+  }
+
   void _simulatePitch(double t) {
     // TODO: Replace simulation with real pitch stream if mic is unavailable.
     if (!_captureEnabled) return;
@@ -592,6 +672,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       pitchDifficulty: widget.pitchDifficulty.name,
       recordingPath: _lastRecordingPath,
       contourJson: _lastContourJson,
+      targetNotesJson: _buildTargetNotesJson(),
+      segmentsJson: _buildSegmentsJson(),
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
@@ -613,9 +695,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       );
     }
     if (!mounted) return;
-    if (Navigator.of(context).canPop()) {
+    
+    // Get the saved attempt to navigate to review
+    final savedAttempt = await _getSavedAttempt();
+    if (savedAttempt != null && mounted) {
+      // Navigate to review summary instead of just popping
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExerciseReviewSummaryScreen(
+            exercise: widget.exercise,
+            attempt: savedAttempt,
+          ),
+        ),
+      );
+    } else if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
     }
+  }
+
+  Future<ExerciseAttempt?> _getSavedAttempt() async {
+    // Ensure repository is loaded
+    await AttemptRepository.instance.ensureLoaded();
+    // Get the most recent attempt for this exercise (should be the one we just saved)
+    return AttemptRepository.instance.latestFor(widget.exercise.id);
   }
 
   String _formatTime(double t) {

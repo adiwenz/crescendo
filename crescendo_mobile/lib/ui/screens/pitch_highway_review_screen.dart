@@ -24,11 +24,13 @@ import '../widgets/pitch_highway_painter.dart';
 class PitchHighwayReviewScreen extends StatefulWidget {
   final VocalExercise exercise;
   final LastTake lastTake;
+  final double startTimeSec;
 
   const PitchHighwayReviewScreen({
     super.key,
     required this.exercise,
     required this.lastTake,
+    this.startTimeSec = 0.0,
   });
 
   @override
@@ -64,6 +66,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(-_audioLatencyMs);
+    _time.value = widget.startTimeSec;
     _loadTransposedNotes(difficulty);
   }
 
@@ -105,7 +108,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   Future<void> _start() async {
     if (_playing) return;
     if (_time.value >= _durationSec) {
-      _time.value = 0;
+      _time.value = widget.startTimeSec;
+    }
+    if (_time.value < widget.startTimeSec) {
+      _time.value = widget.startTimeSec;
     }
     _playing = true;
     _audioPositionSec = null;
