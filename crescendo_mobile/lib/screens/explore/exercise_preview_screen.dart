@@ -8,7 +8,7 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
-import '../../ui/screens/exercise_review_screen.dart';
+import '../../ui/screens/exercise_review_summary_screen.dart';
 import '../../models/reference_note.dart';
 import 'dart:math' as math;
 import '../../ui/route_observer.dart';
@@ -364,24 +364,22 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
 
   void _reviewLast() {
     final ex = _exercise;
+    // Query most recent session by exerciseId from database (resilient to re-entry)
     final latest = _attempts.latestFor(widget.exerciseId);
-    final attempt = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
-    if (attempt == null || ex == null) {
+    if (latest == null || ex == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No previous attempt yet')),
+        const SnackBar(content: Text('No take recorded yet.')),
       );
       return;
     }
-    if (attempt.recordingPath == null || attempt.recordingPath!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No previous recording available')),
-      );
-      return;
-    }
+    // Navigate directly to Detailed Review (ExerciseReviewSummaryScreen)
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ExerciseReviewScreen(exercise: ex, attempt: attempt.raw),
+        builder: (_) => ExerciseReviewSummaryScreen(
+          exercise: ex,
+          attempt: latest,
+        ),
       ),
     );
   }

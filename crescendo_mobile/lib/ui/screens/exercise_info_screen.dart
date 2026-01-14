@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/progress_repository.dart';
-import '../../models/last_take.dart';
+import '../../models/exercise_attempt.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
@@ -10,7 +10,6 @@ import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_spec.dart';
 import '../../models/pitch_segment.dart';
 import '../../services/exercise_repository.dart';
-import '../../services/last_take_store.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/range_exercise_generator.dart';
 import '../../services/vocal_range_service.dart';
@@ -19,7 +18,8 @@ import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_player_screen.dart';
 import 'exercise_navigation.dart';
-import 'pitch_highway_review_screen.dart';
+import 'exercise_review_summary_screen.dart';
+import '../../services/attempt_repository.dart';
 
 class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
@@ -33,7 +33,7 @@ class ExerciseInfoScreen extends StatefulWidget {
 class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _repo = ExerciseRepository();
   final _progress = ProgressRepository();
-  final _lastTakeStore = LastTakeStore();
+  final _attempts = AttemptRepository.instance;
   final AudioSynthService _synth = AudioSynthService();
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
@@ -45,14 +45,13 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   Map<int, int> _bestScoresByLevel = const <int, int>{};
   bool _progressLoaded = false;
   double? _lastScore;
-  LastTake? _lastTake;
-  bool _lastTakeLoaded = false;
+  ExerciseAttempt? _latestAttempt;
 
   @override
   void initState() {
     super.initState();
     _loadLastScore();
-    _loadLastTake();
+    _loadLatestAttempt();
     _loadProgress();
   }
 
@@ -77,12 +76,14 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     setState(() => _lastScore = attempts.first.overallScore);
   }
 
-  Future<void> _loadLastTake() async {
-    final take = await _lastTakeStore.getLastTake(widget.exerciseId);
+  Future<void> _loadLatestAttempt() async {
+    // Ensure attempts are loaded from database
+    await _attempts.ensureLoaded();
     if (!mounted) return;
+    // Query most recent session by exerciseId (resilient to re-entry)
+    final latest = _attempts.latestFor(widget.exerciseId);
     setState(() {
-      _lastTake = take;
-      _lastTakeLoaded = true;
+      _latestAttempt = latest;
     });
   }
 
@@ -136,7 +137,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     final isPitchHighway = exercise.type == ExerciseType.pitchHighway;
     final canPreviewAudio = isPitchHighway &&
         exercise.highwaySpec?.segments.isNotEmpty == true;
-    final canReview = isPitchHighway && _lastTake != null;
+    final canReview = isPitchHighway && _latestAttempt != null;
     final selectionLocked = isPitchHighway && _selectedLevel > _highestUnlockedLevel;
     return Scaffold(
       appBar: AppBar(
@@ -281,7 +282,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
                     await _synth.stop();
                     await _startExercise(exercise);
                     await _loadLastScore();
-                    await _loadLastTake();
+                    await _loadLatestAttempt();
                     await _loadProgress(showToast: true);
                   },
             icon: const Icon(Icons.play_arrow),
@@ -292,12 +293,13 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             ElevatedButton.icon(
               onPressed: canReview
                   ? () {
+                      // Navigate directly to Detailed Review (ExerciseReviewSummaryScreen)
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PitchHighwayReviewScreen(
+                          builder: (_) => ExerciseReviewSummaryScreen(
                             exercise: exercise,
-                            lastTake: _lastTake!,
+                            attempt: _latestAttempt!,
                           ),
                         ),
                       );
@@ -306,11 +308,11 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               icon: const Icon(Icons.replay),
               label: const Text('Review last take'),
             ),
-            if (_lastTakeLoaded && !canReview)
+            if (!canReview)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'No last take recorded yet.',
+                  'No take recorded yet.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

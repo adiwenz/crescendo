@@ -60,6 +60,14 @@ class TransposedExerciseBuilder {
     var transpositionSemitones = 0;
     var currentTimeSec = leadInSec;
 
+    // Validation logging (temporary)
+    // ignore: avoid_print
+    print('[TransposedExerciseBuilder] Range: lowestMidi=$lowestMidi, highestMidi=$highestMidi');
+    // ignore: avoid_print
+    print('[TransposedExerciseBuilder] Pattern: baseRootMidi=$baseRootMidi, patternMin=$patternMin, patternMax=$patternMax');
+    // ignore: avoid_print
+    print('[TransposedExerciseBuilder] First root MIDI: $firstRootMidi');
+
     while (true) {
       final rootMidi = firstRootMidi + transpositionSemitones;
       final segmentLow = rootMidi + patternMin;
@@ -74,11 +82,14 @@ class TransposedExerciseBuilder {
         continue;
       }
 
+      // Calculate the actual transposition needed: from baseRootMidi to rootMidi
+      final actualTransposition = rootMidi - baseRootMidi;
+
       // Build notes for this transposition
       final repetitionNotes = _buildNotesForTransposition(
         segments: scaledSegments,
         baseRootMidi: baseRootMidi,
-        transpositionSemitones: transpositionSemitones,
+        actualTranspositionSemitones: actualTransposition,
         startTimeSec: currentTimeSec,
       );
       
@@ -94,12 +105,30 @@ class TransposedExerciseBuilder {
       if (transpositionSemitones > 100) break;
     }
 
+    // Validation assertions
+    if (allNotes.isNotEmpty) {
+      final firstTargetMidi = allNotes.first.midi.round();
+      final lastTargetMidi = allNotes.last.midi.round();
+      // ignore: avoid_print
+      print('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi, lastTargetMidi=$lastTargetMidi');
+      
+      // Assert: first note should be at or near lowestMidi (accounting for pattern offsets)
+      final expectedFirstMidi = lowestMidi + patternMin;
+      assert(
+        (firstTargetMidi - expectedFirstMidi).abs() <= 1,
+        'First target MIDI ($firstTargetMidi) should be near expected ($expectedFirstMidi) based on lowestMidi ($lowestMidi)',
+      );
+    }
+
     return allNotes;
   }
 
   /// Gets the base root MIDI note from the segments (the first note's MIDI value)
+  /// Throws if segments are empty - range must be validated before calling this
   static int _getBaseRootMidi(List<PitchSegment> segments) {
-    if (segments.isEmpty) return 60; // Default to C4
+    if (segments.isEmpty) {
+      throw ArgumentError('Cannot get base root MIDI from empty segments');
+    }
     final first = segments.first;
     return first.startMidi ?? first.midiNote;
   }
@@ -120,10 +149,14 @@ class TransposedExerciseBuilder {
   }
 
   /// Builds reference notes for a single transposition of the exercise
+  /// 
+  /// [actualTranspositionSemitones] is the number of semitones to transpose from the base root
+  /// to the target root for this repetition (e.g., if base is C4=60 and target is B2=47, 
+  /// transposition is -13 semitones)
   static List<ReferenceNote> _buildNotesForTransposition({
     required List<PitchSegment> segments,
     required int baseRootMidi,
-    required int transpositionSemitones,
+    required int actualTranspositionSemitones,
     required double startTimeSec,
   }) {
     final notes = <ReferenceNote>[];
@@ -136,8 +169,8 @@ class TransposedExerciseBuilder {
       final durationSec = segEndSec - segStartSec;
       
       if (seg.isGlide) {
-        final startMidi = (seg.startMidi ?? seg.midiNote) + transpositionSemitones;
-        final endMidi = (seg.endMidi ?? seg.midiNote) + transpositionSemitones;
+        final startMidi = (seg.startMidi ?? seg.midiNote) + actualTranspositionSemitones;
+        final endMidi = (seg.endMidi ?? seg.midiNote) + actualTranspositionSemitones;
         final steps = math.max(4, (seg.endMs - seg.startMs) ~/ 200);
         
         for (var i = 0; i < steps; i++) {
@@ -154,7 +187,7 @@ class TransposedExerciseBuilder {
           ));
         }
       } else {
-        final midi = seg.midiNote + transpositionSemitones;
+        final midi = seg.midiNote + actualTranspositionSemitones;
         notes.add(ReferenceNote(
           startSec: segStartSec,
           endSec: segEndSec,

@@ -168,6 +168,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final double _pitchInputLatencyMs = 25;
   List<ReferenceNote> _transposedNotes = const [];
   bool _notesLoaded = false;
+  String? _rangeError;
 
   double get _durationSec {
     if (_transposedNotes.isEmpty) {
@@ -194,7 +195,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   Future<void> _loadTransposedNotes() async {
+    // Ensure range is loaded BEFORE generating exercise notes
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    
+    // Validate range - do not proceed with defaults
+    if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
+      // ignore: avoid_print
+      print('[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
+      if (mounted) {
+        setState(() {
+          _notesLoaded = false;
+          _rangeError = 'Please set your vocal range in your profile to personalize exercises.';
+        });
+      }
+      return;
+    }
+    
+    // Validation logging
+    // ignore: avoid_print
+    print('[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
+    
     final notes = TransposedExerciseBuilder.buildTransposedSequence(
       exercise: widget.exercise,
       lowestMidi: lowestMidi,
@@ -202,10 +222,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       leadInSec: _leadInSec,
       difficulty: widget.pitchDifficulty,
     );
+    
     if (mounted) {
       setState(() {
         _transposedNotes = notes;
         _notesLoaded = true;
+        _rangeError = null;
         // Update MIDI range based on all notes
         if (notes.isNotEmpty) {
           final midiValues = notes.map((n) => n.midi).toList();
@@ -833,6 +855,35 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       child: Text(
                         'Score ${_scorePct!.toStringAsFixed(0)}%',
                         style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                if (_rangeError != null)
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      margin: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.shade300),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade700, size: 48),
+                          const SizedBox(height: 12),
+                          Text(
+                            _rangeError!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
