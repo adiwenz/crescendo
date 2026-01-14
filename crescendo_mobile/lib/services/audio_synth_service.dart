@@ -14,9 +14,17 @@ class AudioSynthService {
   static const double tailSeconds = 1.0;
   final int sampleRate;
   final AudioPlayer _player;
+  final AudioPlayer? _secondaryPlayer; // For mixing reference notes with recorded audio
 
-  AudioSynthService({this.sampleRate = 44100}) : _player = AudioPlayer() {
+  AudioSynthService({this.sampleRate = 44100, bool enableMixing = false})
+      : _player = AudioPlayer(),
+        _secondaryPlayer = enableMixing ? AudioPlayer() : null {
     _player.setReleaseMode(ReleaseMode.stop);
+    final secondary = _secondaryPlayer;
+    if (secondary != null) {
+      secondary.setReleaseMode(ReleaseMode.stop);
+      _applyAudioContextToPlayer(secondary);
+    }
     _applyAudioContext();
   }
 
@@ -84,21 +92,53 @@ class AudioSynthService {
     }
   }
 
+  /// Play a secondary audio file simultaneously with the primary player.
+  /// Used for mixing reference notes with recorded audio in review mode.
+  Future<void> playSecondaryFile(String path) async {
+    final player = _secondaryPlayer;
+    if (player == null) return;
+    final file = File(path);
+    if (!await file.exists()) return;
+    final size = await file.length();
+    if (size <= 0) return;
+    await player.stop();
+    await player.setVolume(1.0);
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      await player.setSourceBytes(bytes, mimeType: 'audio/wav');
+      await player.resume();
+    } on PlatformException {
+      await player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+    } on AudioPlayerException {
+      await player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+    }
+  }
+
   Stream<void> get onComplete => _player.onPlayerComplete;
   Stream<Duration> get onPositionChanged => _player.onPositionChanged;
   Stream<PlayerState> get onPlayerStateChanged => _player.onPlayerStateChanged;
 
   Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
-  Future<void> stop() => _player.stop();
+  Future<void> stop() async {
+    await _player.stop();
+    await _secondaryPlayer?.stop();
+  }
 
   Future<void> dispose() async {
     await _player.stop();
     await _player.dispose();
+    await _secondaryPlayer?.stop();
+    await _secondaryPlayer?.dispose();
   }
 
   Future<void> _applyAudioContext() async {
-    await _player.setAudioContext(
+    await _applyAudioContextToPlayer(_player);
+  }
+
+  Future<void> _applyAudioContextToPlayer(AudioPlayer player) async {
+    await player.setAudioContext(
       AudioContext(
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.playback,

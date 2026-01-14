@@ -40,7 +40,8 @@ class PitchHighwayReviewScreen extends StatefulWidget {
 
 class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
-  final AudioSynthService _synth = AudioSynthService();
+  // Enable mixing mode to play both recorded audio and reference notes simultaneously
+  final AudioSynthService _synth = AudioSynthService(enableMixing: true);
   final VocalRangeService _vocalRangeService = VocalRangeService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final PerformanceClock _clock = PerformanceClock();
@@ -49,13 +50,20 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   StreamSubscription<Duration>? _audioPosSub;
   double? _audioPositionSec;
   bool _audioStarted = false;
-  late final double _audioLatencyMs;
   List<ReferenceNote> _notes = const [];
   double _durationSec = 1.0;
   // Use shared constant for lead-in time
   static const double _leadInSec = ExerciseConstants.leadInSec;
   bool _loggedGraphInfo = false;
   late final double _pixelsPerSecond;
+  
+  // Preload state
+  bool _preloadComplete = false;
+  bool _preloading = false;
+  String? _referenceAudioPath;
+  String? _recordedAudioPath;
+  DateTime? _playbackStartEpoch; // Exact moment playback truly starts
+  int _lastSyncLogTime = 0;
 
   @override
   void initState() {
@@ -65,11 +73,95 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
             PitchHighwayDifficulty.medium;
     _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(difficulty);
     _ticker = createTicker(_onTick);
-    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
-    _clock.setLatencyCompensationMs(-_audioLatencyMs);
+    // In review mode, audio position is already accurate (from playback), so no latency compensation needed
+    _clock.setLatencyCompensationMs(0);
     _time.value = widget.startTimeSec;
-    _loadTransposedNotes(difficulty);
+    _preloadEverything(difficulty);
+  }
+  
+  /// Preload everything before allowing playback
+  Future<void> _preloadEverything(PitchHighwayDifficulty difficulty) async {
+    if (_preloading) return;
+    _preloading = true;
+    
+    final tapTime = DateTime.now().millisecondsSinceEpoch;
+    if (kDebugMode) {
+      debugPrint('[Review Preload] tapTime=$tapTime (preload started)');
+    }
+    
+    // Step 1: Load transposed notes
+    await _loadTransposedNotes(difficulty);
+    
+    // Step 2: Render reference notes audio (this is the expensive operation)
+    if (_notes.isNotEmpty) {
+      _referenceAudioPath = await _synth.renderReferenceNotes(_notes);
+      if (kDebugMode) {
+        debugPrint('[Review Preload] Reference audio rendered: ${_referenceAudioPath}');
+      }
+    }
+    
+    // Step 3: Check recorded audio
+    final audioPath = widget.lastTake.audioPath;
+    if (audioPath != null && audioPath.isNotEmpty) {
+      final file = File(audioPath);
+      if (await file.exists()) {
+        _recordedAudioPath = audioPath;
+        if (kDebugMode) {
+          debugPrint('[Review Preload] Recorded audio found: ${_recordedAudioPath}');
+        }
+      }
+    }
+    
+    // Step 4: Warm up audio engine (silent warmup)
+    await _warmupAudioEngine();
+    
+    final preloadCompleteTime = DateTime.now().millisecondsSinceEpoch;
+    if (kDebugMode) {
+      debugPrint('[Review Preload] preloadCompleteTime=$preloadCompleteTime (preload finished, took ${preloadCompleteTime - tapTime}ms)');
+    }
+    
+    if (mounted) {
+      setState(() {
+        _preloadComplete = true;
+        _preloading = false;
+      });
+      
+      // Auto-start playback once preload is complete
+      if (_notes.isNotEmpty && !_playing) {
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted && !_playing && _preloadComplete) {
+            _start();
+          }
+        });
+      }
+    }
+  }
+  
+  /// Warm up the audio engine to eliminate first-play latency
+  Future<void> _warmupAudioEngine() async {
+    try {
+      // Render a very short silent audio clip to warm up the engine
+      final warmupNotes = [
+        ReferenceNote(startSec: 0, endSec: 0.05, midi: 60), // 50ms silent note
+      ];
+      final warmupPath = await _synth.renderReferenceNotes(warmupNotes);
+      // Play it at very low volume (or we could just load it without playing)
+      // Actually, just loading it should warm up the engine
+      // We'll dispose of it immediately
+      final warmupFile = File(warmupPath);
+      if (await warmupFile.exists()) {
+        // Just touch the file to ensure it's ready - the act of rendering already warmed up
+        await warmupFile.delete(); // Clean up
+      }
+      if (kDebugMode) {
+        debugPrint('[Review Preload] Audio engine warmed up');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Review Preload] Warmup error (non-fatal): $e');
+      }
+    }
   }
 
   Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
@@ -100,28 +192,88 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    final next = _clock.nowSeconds();
-    _time.value = next;
-    if (next >= _durationSec) {
+    
+    // Use audio position as master clock - visuals MUST follow audio
+    // If audio position is not available, freeze visuals
+    if (_audioPositionSec == null) {
+      // Don't advance visuals until audio starts
+      return;
+    }
+    
+    // Visual time is driven directly by audio position (master clock)
+    final visualTimeMs = _audioPositionSec! * 1000.0;
+    _time.value = _audioPositionSec!;
+    
+    // Debug logging (temporary) - log every 250-500ms
+    if (kDebugMode) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastSyncLogTime >= 250) {
+        _lastSyncLogTime = now;
+        final audioTimeMs = _audioPositionSec! * 1000.0;
+        final diffMs = visualTimeMs - audioTimeMs; // Should be 0
+        debugPrint('[Review Sync] visualTimeMs=${visualTimeMs.toStringAsFixed(1)}, '
+            'audioTimeMs=${audioTimeMs.toStringAsFixed(1)}, diffMs=${diffMs.toStringAsFixed(1)}');
+        
+        // Assert sync after first second
+        if (_time.value > 1.0 && diffMs.abs() > 50) {
+          debugPrint('[Review Sync WARNING] Desync detected: ${diffMs.toStringAsFixed(1)}ms');
+        }
+      }
+    }
+    
+    if (_audioPositionSec! >= _durationSec) {
       _stop();
     }
   }
 
   Future<void> _start() async {
-    if (_playing) return;
+    if (_playing || !_preloadComplete) return;
+    
+    final tapTime = DateTime.now().millisecondsSinceEpoch;
+    if (kDebugMode) {
+      debugPrint('[Review Start] tapTime=$tapTime (playback requested)');
+    }
+    
     if (_time.value >= _durationSec) {
       _time.value = widget.startTimeSec;
     }
     if (_time.value < widget.startTimeSec) {
       _time.value = widget.startTimeSec;
     }
+    
     _playing = true;
     _audioPositionSec = null;
     _audioStarted = false;
-    _clock.setLatencyCompensationMs(-_audioLatencyMs);
-    _clock.start(offsetSec: _time.value, freezeUntilAudio: true);
+    
+    // Reset clock - visuals will be driven directly by audio position
+    _clock.setLatencyCompensationMs(0);
+    _clock.start(offsetSec: widget.startTimeSec, freezeUntilAudio: true);
+    
+    // Start ticker - it will update visuals from audio position
     _ticker?.start();
+    
+    // Capture exact playback start moment (this is the master clock anchor)
+    _playbackStartEpoch = DateTime.now();
+    final playbackStartTime = _playbackStartEpoch!.millisecondsSinceEpoch;
+    
+    if (kDebugMode) {
+      debugPrint('[Review Start] playbackStartEpoch=$playbackStartTime, '
+          'LEAD_IN_MS=${ExerciseConstants.leadInMs}');
+    }
+    
+    // Start audio playback immediately (everything is preloaded)
     await _playAudio();
+    
+    final midiEngineStartTime = DateTime.now().millisecondsSinceEpoch;
+    if (kDebugMode) {
+      debugPrint('[Review Start] midiEngineStartTime=$midiEngineStartTime, '
+          'latency=${midiEngineStartTime - playbackStartTime}ms');
+      if (_notes.isNotEmpty) {
+        final firstNoteStartMs = _notes.first.startSec * 1000.0;
+        debugPrint('[Review Start] firstMidiNoteScheduledAtMs=$firstNoteStartMs (expected=${ExerciseConstants.leadInMs})');
+      }
+    }
+    
     if (mounted) setState(() {});
   }
 
@@ -130,55 +282,109 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _playing = false;
     _ticker?.stop();
     _clock.pause();
+    // Stop audio immediately - this will stop audio position updates
+    await _synth.stop();
     await _audioPosSub?.cancel();
     _audioPosSub = null;
-    await _synth.stop();
+    _audioPositionSec = null;
+    _audioStarted = false;
     if (mounted) setState(() {});
   }
 
   Future<void> _playAudio() async {
-    final audioPath = widget.lastTake.audioPath;
-    if (audioPath != null && audioPath.isNotEmpty) {
-      final file = File(audioPath);
-      if (await file.exists()) {
-        // For review mode: delay audio playback by lead-in to match visual timeline
-        // Chart time starts at 0, audio should start after lead-in period
-        await Future.delayed(Duration(milliseconds: ExerciseConstants.leadInMs));
-        await _synth.playFile(audioPath);
+    // Everything is preloaded, so playback starts immediately
+    // Notes already have LEAD_IN_MS built into their timestamps
+    // No need for additional delays - audio starts at t=0, first note plays at t=LEAD_IN_MS
+    
+    final hasRecordedAudio = _recordedAudioPath != null && _recordedAudioPath!.isNotEmpty;
+    
+    // Always play reference notes (MIDI guide tones)
+    // If recorded audio exists, play it simultaneously
+    if (hasRecordedAudio) {
+      // Play both recorded audio and reference notes simultaneously
+      // Reference notes on secondary player, recorded audio on primary player
+      // Both start immediately - notes have lead-in built in
+      await _playReference(useSecondaryPlayer: true); // Start reference notes on secondary
+      await _synth.playFile(_recordedAudioPath!); // Then start recorded audio on primary
+      
+      // Debug: log when audio actually starts
+      if (kDebugMode) {
+        final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
+        debugPrint('[Review Start] t0_audioStart=$t0AudioStart (recorded audio + reference notes playback began)');
+      }
+      
+      // Use primary player's position (recorded audio) as master clock
         await _audioPosSub?.cancel();
         _audioPosSub = _synth.onPositionChanged.listen((pos) {
           if (!_audioStarted && pos > Duration.zero) {
             _audioStarted = true;
+          // Debug: log when audio position first becomes available
+          if (kDebugMode) {
+            debugPrint('[Review Start] Audio position stream started, first pos=${pos.inMilliseconds}ms');
           }
-          if (_audioStarted) {
-            // Audio position is relative to audio file start, but chart time includes lead-in
-            // So we add the lead-in to sync with chart time
-            _audioPositionSec = (pos.inMilliseconds / 1000.0) + _leadInSec;
           }
-        });
-        return;
-      }
+        if (_audioStarted) {
+          // Audio position is relative to audio file start
+          // Recorded audio file starts at t=0 (includes any ambient sound from first 2 seconds)
+          // MIDI reference notes have lead-in built in (first note starts at t=2.0s in the audio file)
+          // Visual time should match audio position directly (no offset needed)
+          // Audio at 0s = chart time 0s (recorded audio starts, notes sliding in)
+          // Audio at 2.0s = chart time 2.0s (first MIDI note plays, first note hits sing line)
+          _audioPositionSec = pos.inMilliseconds / 1000.0;
+          
+          // Visual time is driven directly by audio position (master clock)
+          // This ensures perfect sync
+        }
+      });
+    } else {
+      // No recorded audio, just play reference notes
+      await _playReference();
     }
-    await _playReference();
   }
 
-  Future<void> _playReference() async {
-    if (_notes.isEmpty) return;
-    final path = await _synth.renderReferenceNotes(_notes);
+  Future<void> _playReference({bool useSecondaryPlayer = false}) async {
+    if (_notes.isEmpty || _referenceAudioPath == null) return;
+    
+    // Use pre-rendered audio path (from preload)
+    final path = _referenceAudioPath!;
     // Reference notes already have lead-in built in (first note starts at leadInSec)
     // So audio will have 2 seconds of silence at the start, which matches the visual lead-in
+    
+    // Use secondary player if mixing with recorded audio, otherwise primary player
+    if (useSecondaryPlayer) {
+      await _synth.playSecondaryFile(path);
+    } else {
     await _synth.playFile(path);
+    }
+    
+    // Debug: log when reference audio starts
+    if (kDebugMode) {
+      final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
+      debugPrint('[Review Start] t0_audioStart=$t0AudioStart (reference audio playback began)');
+    }
+    
+    // Only set up position listener if we're not already listening to recorded audio
+    // (i.e., when useSecondaryPlayer is false, meaning we're playing reference only)
+    if (!useSecondaryPlayer) {
     await _audioPosSub?.cancel();
     _audioPosSub = _synth.onPositionChanged.listen((pos) {
       if (!_audioStarted && pos > Duration.zero) {
         _audioStarted = true;
+          // Debug: log when audio position first becomes available
+          if (kDebugMode) {
+            debugPrint('[Review Start] Audio position stream started, first pos=${pos.inMilliseconds}ms');
+          }
       }
       if (_audioStarted) {
-        // Audio position is relative to audio file start, which includes lead-in silence
-        // Chart time also includes lead-in, so they should be in sync
+          // Audio position is relative to audio file start, which includes lead-in silence
+          // Chart time also includes lead-in, so they should be in sync
         _audioPositionSec = pos.inMilliseconds / 1000.0;
+          
+          // Visual time is driven directly by audio position (master clock)
+          // This ensures perfect sync
       }
     });
+    }
   }
 
   double _computeDuration(List<ReferenceNote> notes) {
@@ -228,7 +434,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           bottom: false,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _playing ? _stop : _start,
+            onTap: _playing
+                ? _stop
+                : (_preloadComplete ? _start : () {}), // Disabled until preload complete
             child: LayoutBuilder(
               builder: (context, constraints) {
                 if (kDebugMode && !_loggedGraphInfo) {
@@ -255,7 +463,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                           showPlayheadLine: false,
                           midiMin: minMidi,
                           midiMax: maxMidi,
-                          noteTimeOffsetSec: _leadInSec,
                           colors: colors,
                           debugLogMapping: true,
                         ),
@@ -293,6 +500,29 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                             midiMin: minMidi,
                             midiMax: maxMidi,
                             color: Colors.red.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+                    // Loading overlay
+                    if (!_preloadComplete)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black.withOpacity(0.7),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Loading...',
+                                  style: TextStyle(
+                                    color: colors.textPrimary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

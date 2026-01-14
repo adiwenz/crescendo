@@ -193,6 +193,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
+    // Initialize recording service early so it's ready when exercise starts
+    // This ensures the pitch ball appears immediately
+    if (_useMic) {
+      _recording = RecordingService(bufferSize: 512);
+      // Start recording asynchronously - don't await, let it initialize in background
+      _recording?.start().then((_) {
+        // Recording is ready, but don't start listening until _start() is called
+      }).catchError((e) {
+        // ignore: avoid_print
+        print('[ExercisePlayerScreen] Error initializing recording early: $e');
+      });
+    }
     _loadTransposedNotes();
   }
 
@@ -235,8 +247,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           final midiValues = notes.map((n) => n.midi).toList();
           _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
           _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
+          
+          // Initialize pitch ball at first target note so it appears immediately
+          // This ensures the pitch ball is visible from the start, even before recording starts
+          final firstNoteMidi = notes.first.midi.toDouble();
+          _liveMidi.value = firstNoteMidi;
+          _visualState.update(
+            timeSec: 0.0,
+            pitchHz: 440.0 * math.pow(2.0, (firstNoteMidi - 69) / 12.0),
+            pitchMidi: firstNoteMidi,
+            voiced: false, // Not voiced until user sings
+          );
         }
       });
+      
+      // Auto-start the exercise once notes are loaded
+      // The 2-second lead-in is built into the notes themselves
+      if (notes.isNotEmpty && !_playing && !_preparing) {
+        // Use a small delay to ensure the UI is ready
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted && !_playing && !_preparing) {
+            _start();
+          }
+        });
+      }
     }
   }
 
@@ -341,8 +375,21 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
     _ticker?.start();
     if (_useMic) {
-      _recording = RecordingService(bufferSize: 512);
-      await _recording?.start();
+      // Recording service should already be initialized in initState
+      // If it's not started yet, start it now
+      if (_recording == null) {
+        _recording = RecordingService(bufferSize: 512);
+        await _recording?.start();
+      } else {
+        // Ensure it's started (it may have been started early)
+        try {
+          await _recording?.start();
+        } catch (e) {
+          // Already started, that's fine
+        }
+      }
+      // Cancel any existing subscription
+      await _sub?.cancel();
       _sub = _recording?.liveStream.listen((frame) {
         if (!_captureEnabled) return;
         final midi = frame.midi ??
