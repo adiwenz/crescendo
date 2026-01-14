@@ -13,7 +13,7 @@ import '../../services/exercise_repository.dart';
 import '../../services/last_take_store.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/range_exercise_generator.dart';
-import '../../services/range_store.dart';
+import '../../services/vocal_range_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
@@ -37,7 +37,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final AudioSynthService _synth = AudioSynthService();
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
-  final _rangeStore = RangeStore();
+  final _vocalRangeService = VocalRangeService();
   final _rangeGenerator = RangeExerciseGenerator();
   int _highestUnlockedLevel = ExerciseLevelProgress.minLevel;
   int _selectedLevel = ExerciseLevelProgress.minLevel;
@@ -338,28 +338,24 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         level: _selectedLevel,
       );
       final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-      final range = await _rangeStore.getRange();
-      final lowest = range.$1;
-      final highest = range.$2;
-      if (lowest != null && highest != null) {
-        final instances = _rangeGenerator.generate(
-          exercise: exercise,
-          lowestMidi: lowest,
-          highestMidi: highest,
-        );
-        if (instances.isNotEmpty) {
-          final combined = _buildConcatenatedExercise(exercise, instances);
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ExercisePlayerScreen(
-                exercise: combined,
-                pitchDifficulty: selectedDifficulty,
-              ),
+      final range = await _vocalRangeService.getRange();
+      final instances = _rangeGenerator.generate(
+        exercise: exercise,
+        lowestMidi: range.$1,
+        highestMidi: range.$2,
+      );
+      if (instances.isNotEmpty) {
+        final combined = _buildConcatenatedExercise(exercise, instances);
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ExercisePlayerScreen(
+              exercise: combined,
+              pitchDifficulty: selectedDifficulty,
             ),
-          );
-          return;
-        }
+          ),
+        );
+        return;
       }
     }
     await Navigator.push(

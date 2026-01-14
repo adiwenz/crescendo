@@ -21,6 +21,8 @@ import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/robust_note_scoring_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
+import '../../services/transposed_exercise_builder.dart';
+import '../../services/vocal_range_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/debug_overlay.dart';
@@ -129,6 +131,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final PitchState _pitchState = PitchState();
   final PitchVisualState _visualState = PitchVisualState();
   final PitchTailBuffer _tailBuffer = PitchTailBuffer();
+  final VocalRangeService _vocalRangeService = VocalRangeService();
   static const _showDebugOverlay =
       bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
@@ -145,7 +148,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   int _prepRunId = 0;
   bool _captureEnabled = false;
   bool _useMic = true;
-  int _transpose = 0;
   RecordingService? _recording;
   StreamSubscription<PitchFrame>? _sub;
   StreamSubscription<Duration>? _audioPosSub;
@@ -161,11 +163,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double _manualOffsetMs = 0;
   late final double _audioLatencyMs;
   final double _pitchInputLatencyMs = 25;
+  List<ReferenceNote> _transposedNotes = const [];
+  bool _notesLoaded = false;
 
   double get _durationSec {
+    if (_transposedNotes.isEmpty) {
+      // Fallback to old calculation if notes aren't loaded yet
     final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
     if (base <= 0) return 0.0;
     return base + _leadInSec + AudioSynthService.tailSeconds;
+    }
+    // Duration is based on the last note's end time
+    final maxEnd = _transposedNotes.map((n) => n.endSec).fold(0.0, math.max);
+    return maxEnd + AudioSynthService.tailSeconds;
   }
 
   @override
@@ -177,6 +187,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
+    _loadTransposedNotes();
+  }
+
+  Future<void> _loadTransposedNotes() async {
+    final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    final notes = TransposedExerciseBuilder.buildTransposedSequence(
+      exercise: widget.exercise,
+      lowestMidi: lowestMidi,
+      highestMidi: highestMidi,
+      leadInSec: _leadInSec,
+      difficulty: widget.pitchDifficulty,
+    );
+    if (mounted) {
+      setState(() {
+        _transposedNotes = notes;
+        _notesLoaded = true;
+        // Update MIDI range based on all notes
+        if (notes.isNotEmpty) {
+          final midiValues = notes.map((n) => n.midi).toList();
+          _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
+          _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
+        }
+      });
+    }
   }
 
   PitchHighwaySpec? _buildScaledSpec() {
@@ -433,6 +467,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   double? _targetMidiAtTime(double t) {
+    // Use transposed notes if available, otherwise fall back to old method
+    if (_transposedNotes.isNotEmpty) {
+      for (final note in _transposedNotes) {
+        if (t >= note.startSec && t <= note.endSec) {
+          return note.midi.toDouble();
+        }
+      }
+      return null;
+    }
+    // Fallback to old method
     final spec = _scaledSpec;
     if (spec == null) return null;
     final adjusted = t - _leadInSec;
@@ -444,14 +488,24 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         final start = seg.startMidi ?? seg.midiNote;
         final end = seg.endMidi ?? seg.midiNote;
         final ratio = (ms - seg.startMs) / math.max(1, seg.endMs - seg.startMs);
-        return (start + (end - start) * ratio) + _transpose;
+        return (start + (end - start) * ratio).toDouble();
       }
-      return (seg.midiNote + _transpose).toDouble();
+      return seg.midiNote.toDouble();
     }
     return null;
   }
 
   String? _labelAtTime(double t) {
+    // Use transposed notes if available
+    if (_transposedNotes.isNotEmpty) {
+      for (final note in _transposedNotes) {
+        if (t >= note.startSec && t <= note.endSec) {
+          return note.lyric;
+        }
+      }
+      return null;
+    }
+    // Fallback to old method
     final spec = _scaledSpec;
     if (spec == null) return null;
     final adjusted = t - _leadInSec;
@@ -464,6 +518,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   List<ReferenceNote> _buildReferenceNotes() {
+    // Return the transposed sequence if available
+    if (_transposedNotes.isNotEmpty) {
+      return _transposedNotes;
+    }
+    // Fallback to old method if notes aren't loaded yet
     final spec = _scaledSpec;
     if (spec == null) return const [];
     final notes = <ReferenceNote>[];
@@ -481,7 +540,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           notes.add(ReferenceNote(
             startSec: stepStart / 1000.0 + _leadInSec,
             endSec: stepEnd / 1000.0 + _leadInSec,
-            midi: midi + _transpose,
+            midi: midi,
             lyric: seg.label,
           ));
         }
@@ -489,7 +548,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
           endSec: seg.endMs / 1000.0 + _leadInSec,
-          midi: seg.midiNote + _transpose,
+          midi: seg.midiNote,
           lyric: seg.label,
         ));
       }
@@ -570,11 +629,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
+    // Update MIDI range if we have notes
+    if (notes.isNotEmpty) {
     final midiValues = notes.map((n) => n.midi).toList();
-    final minMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.min) - 4) : 48;
-    final maxMidi = midiValues.isNotEmpty ? (midiValues.reduce(math.max) + 4) : 72;
+      final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
+      final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
     _midiMin = minMidi;
     _midiMax = maxMidi;
+    }
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
     return WillPopScope(
@@ -601,8 +663,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           liveMidi: _liveMidi,
                           pitchTailTimeOffsetSec: 0,
                           drawBackground: false,
-                          midiMin: minMidi,
-                          midiMax: maxMidi,
+                          midiMin: _midiMin,
+                          midiMax: _midiMax,
                           colors: colors,
                         ),
                       );

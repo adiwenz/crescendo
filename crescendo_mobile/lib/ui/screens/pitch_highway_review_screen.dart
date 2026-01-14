@@ -10,8 +10,9 @@ import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
-import '../../models/pitch_segment.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/transposed_exercise_builder.dart';
+import '../../services/vocal_range_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
@@ -37,6 +38,7 @@ class PitchHighwayReviewScreen extends StatefulWidget {
 class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService();
+  final VocalRangeService _vocalRangeService = VocalRangeService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final PerformanceClock _clock = PerformanceClock();
   Ticker? _ticker;
@@ -57,13 +59,29 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     final difficulty =
         pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ??
             PitchHighwayDifficulty.medium;
-    _notes = _buildReferenceNotes(widget.exercise, difficulty);
-    _durationSec = _computeDuration(_notes);
     _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(difficulty);
     _ticker = createTicker(_onTick);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(-_audioLatencyMs);
+    _loadTransposedNotes(difficulty);
+  }
+
+  Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
+    final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    final notes = TransposedExerciseBuilder.buildTransposedSequence(
+      exercise: widget.exercise,
+      lowestMidi: lowestMidi,
+      highestMidi: highestMidi,
+      leadInSec: _leadInSec,
+      difficulty: difficulty,
+    );
+    if (mounted) {
+      setState(() {
+        _notes = notes;
+        _durationSec = _computeDuration(notes);
+      });
+    }
   }
 
   @override
@@ -153,48 +171,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         AudioSynthService.tailSeconds;
   }
 
-  List<ReferenceNote> _buildReferenceNotes(
-    VocalExercise exercise,
-    PitchHighwayDifficulty difficulty,
-  ) {
-    final spec = exercise.highwaySpec;
-    if (spec == null) return const [];
-    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
-    final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
-    return _segmentsToNotes(segments);
-  }
-
-  List<ReferenceNote> _segmentsToNotes(List<PitchSegment> segments) {
-    final notes = <ReferenceNote>[];
-    for (final seg in segments) {
-      if (seg.isGlide) {
-        final startMidi = seg.startMidi ?? seg.midiNote;
-        final endMidi = seg.endMidi ?? seg.midiNote;
-        final durationMs = seg.endMs - seg.startMs;
-        final steps = math.max(4, (durationMs / 200).round());
-        for (var i = 0; i < steps; i++) {
-          final ratio = i / steps;
-          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
-          final stepStart = seg.startMs + (durationMs * ratio).round();
-          final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
-          notes.add(ReferenceNote(
-            startSec: stepStart / 1000.0 + _leadInSec,
-            endSec: stepEnd / 1000.0 + _leadInSec,
-            midi: midi,
-            lyric: seg.label,
-          ));
-        }
-      } else {
-        notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0 + _leadInSec,
-          endSec: seg.endMs / 1000.0 + _leadInSec,
-          midi: seg.midiNote,
-          lyric: seg.label,
-        ));
-      }
-    }
-    return notes;
-  }
 
   @override
   Widget build(BuildContext context) {
