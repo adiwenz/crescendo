@@ -37,6 +37,7 @@ import '../../utils/pitch_ball_controller.dart';
 import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
+import '../../utils/exercise_constants.dart';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -138,7 +139,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   static const _showDebugOverlay =
       bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
-  final double _leadInSec = 2.0;
+  // Use shared constant for lead-in time
+  static const double _leadInSec = ExerciseConstants.leadInSec;
   Ticker? _ticker;
   bool _playing = false;
   bool _preparing = false;
@@ -678,7 +680,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double _computeScore() {
     final notes = _buildReferenceNotes();
     if (notes.isEmpty || _captured.isEmpty) return 0.0;
-    final result = RobustNoteScoringService().score(notes: notes, frames: _captured);
+    // Filter out frames captured during lead-in period (do not score during lead-in)
+    final scoredFrames = _captured.where((f) => ExerciseConstants.shouldScoreAtTime(f.time)).toList();
+    if (scoredFrames.isEmpty) return 0.0;
+    final result = RobustNoteScoringService().score(notes: notes, frames: scoredFrames);
     return result.overallScorePct;
   }
 
@@ -787,6 +792,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           pixelsPerSecond: _pixelsPerSecond,
                           liveMidi: _liveMidi,
                           pitchTailTimeOffsetSec: 0,
+                          noteTimeOffsetSec: _leadInSec,
                           drawBackground: false,
                           midiMin: _midiMin,
                           midiMax: _midiMax,

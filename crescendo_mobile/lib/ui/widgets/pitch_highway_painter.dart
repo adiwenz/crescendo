@@ -28,6 +28,7 @@ class PitchHighwayPainter extends CustomPainter {
   final AppThemeColors colors;
   final ValueListenable<double?>? liveMidi;
   final double pitchTailTimeOffsetSec;
+  final double noteTimeOffsetSec;
   final List<TailPoint>? tailPoints;
   final bool debugLogMapping;
 
@@ -45,6 +46,7 @@ class PitchHighwayPainter extends CustomPainter {
     this.midiMax = 72,
     this.liveMidi,
     this.pitchTailTimeOffsetSec = 0,
+    this.noteTimeOffsetSec = 0,
     this.tailPoints,
     this.debugLogMapping = false,
     AppThemeColors? colors,
@@ -53,6 +55,9 @@ class PitchHighwayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Use time.value directly - notes already have absolute times including lead-in
+    // At time.value=0, notes with startSec=2.0 will be positioned 2 seconds to the right
+    // As time.value increases, notes slide left toward the playhead
     final currentTime = time.value;
     if (drawBackground ?? true) {
       final bg = Paint()

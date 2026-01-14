@@ -5,6 +5,7 @@ import '../models/pitch_segment.dart';
 import '../models/reference_note.dart';
 import '../models/vocal_exercise.dart';
 import '../utils/pitch_highway_tempo.dart';
+import '../utils/exercise_constants.dart';
 
 /// Builds a complete transposed exercise sequence that starts at the user's lowest note
 /// and steps up by semitones until reaching the highest note.
@@ -18,9 +19,11 @@ class TransposedExerciseBuilder {
     required VocalExercise exercise,
     required int lowestMidi,
     required int highestMidi,
-    required double leadInSec,
+    double? leadInSec,
     PitchHighwayDifficulty? difficulty,
   }) {
+    // Use shared constant if leadInSec not provided
+    final effectiveLeadInSec = leadInSec ?? ExerciseConstants.leadInSec;
     final spec = exercise.highwaySpec;
     if (spec == null || spec.segments.isEmpty) return const [];
 
@@ -58,7 +61,7 @@ class TransposedExerciseBuilder {
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
     var transpositionSemitones = 0;
-    var currentTimeSec = leadInSec;
+    var currentTimeSec = effectiveLeadInSec;
 
     // Validation logging (temporary)
     // ignore: avoid_print

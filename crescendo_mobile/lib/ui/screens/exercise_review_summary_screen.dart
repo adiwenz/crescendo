@@ -9,6 +9,7 @@ import '../../models/vocal_exercise.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
+import '../../utils/exercise_constants.dart';
 import '../../utils/pitch_math.dart';
 import 'pitch_highway_review_screen.dart';
 import '../../models/last_take.dart';
@@ -135,7 +136,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
       exercise: widget.exercise,
       lowestMidi: lowestMidi,
       highestMidi: highestMidi,
-      leadInSec: 2.0,
+      leadInSec: ExerciseConstants.leadInSec,
       difficulty: difficulty,
     );
     

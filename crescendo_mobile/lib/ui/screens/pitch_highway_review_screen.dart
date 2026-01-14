@@ -16,6 +16,7 @@ import '../../services/vocal_range_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
+import '../../utils/exercise_constants.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -51,7 +52,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   late final double _audioLatencyMs;
   List<ReferenceNote> _notes = const [];
   double _durationSec = 1.0;
-  final double _leadInSec = 2.0;
+  // Use shared constant for lead-in time
+  static const double _leadInSec = ExerciseConstants.leadInSec;
   bool _loggedGraphInfo = false;
   late final double _pixelsPerSecond;
 
@@ -139,6 +141,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (audioPath != null && audioPath.isNotEmpty) {
       final file = File(audioPath);
       if (await file.exists()) {
+        // For review mode: delay audio playback by lead-in to match visual timeline
+        // Chart time starts at 0, audio should start after lead-in period
+        await Future.delayed(Duration(milliseconds: ExerciseConstants.leadInMs));
         await _synth.playFile(audioPath);
         await _audioPosSub?.cancel();
         _audioPosSub = _synth.onPositionChanged.listen((pos) {
@@ -146,7 +151,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
             _audioStarted = true;
           }
           if (_audioStarted) {
-            _audioPositionSec = pos.inMilliseconds / 1000.0;
+            // Audio position is relative to audio file start, but chart time includes lead-in
+            // So we add the lead-in to sync with chart time
+            _audioPositionSec = (pos.inMilliseconds / 1000.0) + _leadInSec;
           }
         });
         return;
@@ -158,6 +165,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   Future<void> _playReference() async {
     if (_notes.isEmpty) return;
     final path = await _synth.renderReferenceNotes(_notes);
+    // Reference notes already have lead-in built in (first note starts at leadInSec)
+    // So audio will have 2 seconds of silence at the start, which matches the visual lead-in
     await _synth.playFile(path);
     await _audioPosSub?.cancel();
     _audioPosSub = _synth.onPositionChanged.listen((pos) {
@@ -165,6 +174,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         _audioStarted = true;
       }
       if (_audioStarted) {
+        // Audio position is relative to audio file start, which includes lead-in silence
+        // Chart time also includes lead-in, so they should be in sync
         _audioPositionSec = pos.inMilliseconds / 1000.0;
       }
     });
@@ -244,6 +255,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                           showPlayheadLine: false,
                           midiMin: minMidi,
                           midiMax: maxMidi,
+                          noteTimeOffsetSec: _leadInSec,
                           colors: colors,
                           debugLogMapping: true,
                         ),
