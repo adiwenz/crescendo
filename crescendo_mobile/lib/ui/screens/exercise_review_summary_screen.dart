@@ -305,26 +305,6 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
                 child: Text('No pitch data available'),
               ),
             
-            const SizedBox(height: 24),
-            
-            // Detail Graph (scrollable)
-            const Text(
-              'Detail',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            if (_samples.isNotEmpty)
-              _DetailGraph(
-                samples: _samples,
-                targets: _targets,
-                durationMs: _durationMs,
-              )
-            else
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('No pitch data available'),
-              ),
-            
             const SizedBox(height: 32),
             
             // Actions
