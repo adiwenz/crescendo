@@ -52,7 +52,11 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         await _buildTargetNotesFromExercise();
     
     // Parse segments
-    _segments = _parseSegments(widget.attempt.segmentsJson);
+    final allSegments = _parseSegments(widget.attempt.segmentsJson);
+    
+    // Filter segments to only include those that have recorded pitch data
+    // A segment is considered "recorded" if there are pitch samples within its time range
+    _segments = _filterRecordedSegments(allSegments, _samples);
     
     // Calculate duration
     if (_samples.isNotEmpty) {
@@ -64,6 +68,37 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
     }
     
     setState(() => _loading = false);
+  }
+  
+  /// Filter segments to only include those that have recorded pitch data
+  List<ExerciseSegment> _filterRecordedSegments(
+    List<ExerciseSegment> allSegments,
+    List<PitchSample> samples,
+  ) {
+    if (samples.isEmpty) return const [];
+    
+    // Find the actual recorded duration from pitch samples
+    final recordedEndMs = samples.map((s) => s.timeMs).reduce(math.max);
+    
+    // Filter segments to only those that:
+    // 1. Start before the recorded end time
+    // 2. Have at least some pitch samples within their time range
+    return allSegments.where((segment) {
+      // Segment must start before recorded end (with some tolerance)
+      if (segment.startMs > recordedEndMs + 500) return false;
+      
+      // Check if there are pitch samples within this segment's time range
+      // Use a tolerance to account for timing differences
+      const toleranceMs = 200;
+      final segmentStart = segment.startMs - toleranceMs;
+      final segmentEnd = segment.endMs + toleranceMs;
+      
+      final hasRecordedData = samples.any((sample) {
+        return sample.timeMs >= segmentStart && sample.timeMs <= segmentEnd;
+      });
+      
+      return hasRecordedData;
+    }).toList();
   }
 
   List<PitchSample> _parseContour(String? raw) {

@@ -48,6 +48,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   Ticker? _ticker;
   bool _playing = false;
   StreamSubscription<Duration>? _audioPosSub;
+  StreamSubscription<void>? _audioCompleteSub;
   double? _audioPositionSec;
   bool _audioStarted = false;
   List<ReferenceNote> _notes = const [];
@@ -185,6 +186,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   void dispose() {
     _ticker?.dispose();
     _audioPosSub?.cancel();
+    _audioCompleteSub?.cancel();
     _synth.stop();
     _time.dispose();
     super.dispose();
@@ -286,9 +288,24 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     await _synth.stop();
     await _audioPosSub?.cancel();
     _audioPosSub = null;
+    await _audioCompleteSub?.cancel();
+    _audioCompleteSub = null;
     _audioPositionSec = null;
     _audioStarted = false;
     if (mounted) setState(() {});
+  }
+  
+  /// Called when primary recording playback completes
+  Future<void> _onPlaybackComplete() async {
+    if (kDebugMode) {
+      debugPrint('[Review] Primary recording playback completed');
+    }
+    // Stop both MIDI and recorded audio
+    await _stop();
+    // Navigate back to previous screen
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _playAudio() async {
@@ -335,6 +352,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           // Visual time is driven directly by audio position (master clock)
           // This ensures perfect sync
         }
+      });
+      
+      // Listen for primary recording completion
+      await _audioCompleteSub?.cancel();
+      _audioCompleteSub = _synth.onComplete.listen((_) {
+        _onPlaybackComplete();
       });
     } else {
       // No recorded audio, just play reference notes
@@ -383,6 +406,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           // Visual time is driven directly by audio position (master clock)
           // This ensures perfect sync
       }
+    });
+    
+    // Listen for reference notes completion (when no recorded audio)
+    await _audioCompleteSub?.cancel();
+    _audioCompleteSub = _synth.onComplete.listen((_) {
+      _onPlaybackComplete();
     });
     }
   }
