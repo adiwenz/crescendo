@@ -11,6 +11,7 @@ import '../../models/pitch_highway_spec.dart';
 import '../../models/pitch_segment.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/sine_sweep_service.dart';
 import '../../services/range_exercise_generator.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
@@ -35,6 +36,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _progress = ProgressRepository();
   final _attempts = AttemptRepository.instance;
   final AudioSynthService _synth = AudioSynthService();
+  final SineSweepService _sweepService = SineSweepService();
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
   final _vocalRangeService = VocalRangeService();
@@ -463,6 +465,76 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   }
 
   Future<void> _playPreview(VocalExercise exercise) async {
+    final spec = exercise.highwaySpec;
+    if (spec == null || spec.segments.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No preview available for this exercise.')),
+      );
+      return;
+    }
+    
+    // Check if we have glide segments (for exercises like Octave Slides or Sirens)
+    final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
+    final scaledSegments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
+    final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+    
+    if (glideSegments.isNotEmpty) {
+      // Check if this is Sirens (multiple consecutive glides: up then down)
+      if (glideSegments.length >= 2) {
+        // Sirens: C4->C5 then C5->C4
+        final firstGlide = glideSegments[0];
+        final secondGlide = glideSegments[1];
+        final firstDurationMs = firstGlide.endMs - firstGlide.startMs;
+        final secondDurationMs = secondGlide.endMs - secondGlide.startMs;
+        
+        const previewStartMidi = 60.0; // C4
+        const previewEndMidi = 72.0; // C5
+        
+        await _synth.stop();
+        final path = await _sweepService.generateMultipleSweepsWav(
+          sweeps: [
+            (
+              midiStart: previewStartMidi,
+              midiEnd: previewEndMidi,
+              durationSeconds: firstDurationMs / 1000.0,
+            ),
+            (
+              midiStart: previewEndMidi,
+              midiEnd: previewStartMidi,
+              durationSeconds: secondDurationMs / 1000.0,
+            ),
+          ],
+          amplitude: 0.2,
+          fadeSeconds: 0.01,
+        );
+        await _synth.playFile(path);
+        return;
+      } else {
+        // Single glide (e.g., Octave Slides: C4 to C5)
+        final firstGlide = glideSegments.first;
+        final durationMs = firstGlide.endMs - firstGlide.startMs;
+        final durationSeconds = durationMs / 1000.0;
+        
+        // For preview, use C4->C5 (octave slides should be C4->C5)
+        const previewStartMidi = 60.0; // C4
+        const previewEndMidi = 72.0; // C5
+        
+        await _synth.stop();
+        final path = await _sweepService.generateSweepWav(
+          midiStart: previewStartMidi,
+          midiEnd: previewEndMidi,
+          durationSeconds: durationSeconds,
+          amplitude: 0.2,
+          fadeSeconds: 0.01,
+        );
+        await _synth.playFile(path);
+        return;
+      }
+    }
+    
+    // Regular note-based preview
     final notes = _buildReferenceNotes(
       exercise,
       pitchHighwayDifficultyFromLevel(_selectedLevel),

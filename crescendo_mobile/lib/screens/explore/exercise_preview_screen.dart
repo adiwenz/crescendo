@@ -10,6 +10,7 @@ import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
 import '../../ui/screens/exercise_review_summary_screen.dart';
 import '../../models/reference_note.dart';
+import '../../services/sine_sweep_service.dart';
 import 'dart:math' as math;
 import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
@@ -25,12 +26,14 @@ class ExercisePreviewScreen extends StatefulWidget {
   State<ExercisePreviewScreen> createState() => _ExercisePreviewScreenState();
 }
 
-class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with RouteAware {
+class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
+    with RouteAware {
   final ExerciseRepository _repo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
   final AudioSynthService _synth = AudioSynthService();
+  final SineSweepService _sweepService = SineSweepService();
   VocalExercise? _exercise;
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
@@ -72,9 +75,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
 
   Future<void> _load() async {
     final ex = _repo.getExercises().firstWhere(
-      (e) => e.id == widget.exerciseId,
-      orElse: () => _repo.getExercises().first,
-    );
+          (e) => e.id == widget.exerciseId,
+          orElse: () => _repo.getExercises().first,
+        );
     await _refreshProgress();
     // Only ensure loaded, don't refresh - use cache which is already up to date
     await _attempts.ensureLoaded();
@@ -101,7 +104,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
   }
 
   Future<void> _refreshProgress({bool showToast = false}) async {
-    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId);
+    final progress =
+        await _levelProgress.getExerciseProgress(widget.exerciseId);
     if (!mounted) return;
     final previousHighest = _highestUnlockedLevel;
     final nextHighest = progress.highestUnlockedLevel;
@@ -159,41 +163,57 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                 if (ex != null) _Header(ex: ex),
                 const SizedBox(height: 16),
                 Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Purpose', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                        const Text('Purpose',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
-                        Text(ex?.purpose ?? ex?.description ?? 'Build control and accuracy.'),
+                        Text(ex?.purpose ??
+                            ex?.description ??
+                            'Build control and accuracy.'),
                         const SizedBox(height: 16),
-                        const Text('How it works', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                        const Text('How it works',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
-                        Text(ex?.description ?? 'Follow along and match the guide.'),
+                        Text(ex?.description ??
+                            'Follow along and match the guide.'),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                        const Text('Preview',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
-                        Text(ex?.description ?? 'A quick preview of the exercise.'),
+                        Text(ex?.description ??
+                            'A quick preview of the exercise.'),
                         const SizedBox(height: 12),
                         Row(
                           children: [
                             ElevatedButton.icon(
-                              onPressed: _previewing || ex == null ? null : () => _playPreview(ex),
-                              icon: Icon(_previewing ? Icons.pause : Icons.play_arrow),
-                              label: Text(_previewing ? 'Playing…' : 'Play preview'),
+                              onPressed: _previewing || ex == null
+                                  ? null
+                                  : () => _playPreview(ex),
+                              icon: Icon(
+                                  _previewing ? Icons.pause : Icons.play_arrow),
+                              label: Text(
+                                  _previewing ? 'Playing…' : 'Play preview'),
                             ),
                           ],
                         ),
@@ -204,13 +224,16 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                 if (ex?.usesPitchHighway == true) ...[
                   const SizedBox(height: 16),
                   Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Difficulty', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          const Text('Difficulty',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -221,12 +244,15 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                               final selected = _selectedLevel == level;
                               final highlighted = _highlightedLevel == level;
                               final best = _bestScoresByLevel[level];
-                              final difficulty = pitchHighwayDifficultyFromLevel(level);
+                              final difficulty =
+                                  pitchHighwayDifficultyFromLevel(level);
                               return AnimatedContainer(
                                 duration: const Duration(milliseconds: 250),
                                 padding: const EdgeInsets.all(2),
                                 decoration: BoxDecoration(
-                                  color: highlighted ? Colors.amber.withOpacity(0.2) : Colors.transparent,
+                                  color: highlighted
+                                      ? Colors.amber.withOpacity(0.2)
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Column(
@@ -239,15 +265,19 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                                           Text('Level $level'),
                                           if (!unlocked) ...[
                                             const SizedBox(width: 6),
-                                            Icon(Icons.lock, size: 14, color: Colors.grey[600]),
+                                            Icon(Icons.lock,
+                                                size: 14,
+                                                color: Colors.grey[600]),
                                           ],
                                         ],
                                       ),
                                       selected: selected,
                                       onSelected: unlocked
                                           ? (_) async {
-                                              setState(() => _selectedLevel = level);
-                                              await _levelProgress.setLastSelectedLevel(
+                                              setState(
+                                                  () => _selectedLevel = level);
+                                              await _levelProgress
+                                                  .setLastSelectedLevel(
                                                 exerciseId: widget.exerciseId,
                                                 level: level,
                                               );
@@ -256,7 +286,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      pitchHighwayDifficultySpeedLabel(difficulty),
+                                      pitchHighwayDifficultySpeedLabel(
+                                          difficulty),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -275,7 +306,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                               );
                             }),
                           ),
-                          if (_highestUnlockedLevel < ExerciseLevelProgress.maxLevel)
+                          if (_highestUnlockedLevel <
+                              ExerciseLevelProgress.maxLevel)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
@@ -318,9 +350,11 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
                 const SizedBox(height: 16),
                 if (_latest != null)
                   Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     child: ListTile(
-                      title: Text('Last score: ${_latest!.score.toStringAsFixed(0)}'),
+                      title: Text(
+                          'Last score: ${_latest!.score.toStringAsFixed(0)}'),
                       subtitle: Text('Completed ${_latest!.dateLabel}'),
                     ),
                   ),
@@ -335,7 +369,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
     if (mounted) {
       setState(() => _previewing = false);
     }
-    
+
     if (_exercise?.usesPitchHighway == true) {
       await _levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
@@ -358,7 +392,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
     // No need to refresh from database
     final latest = _attempts.latestFor(widget.exerciseId);
     if (mounted) {
-      setState(() => _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest));
+      setState(() => _latest =
+          latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest));
     }
   }
 
@@ -390,7 +425,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
       // If we have a highway spec, render a short preview. Otherwise show message.
       if (ex.highwaySpec == null || ex.highwaySpec!.segments.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No preview available for this exercise')),
+          const SnackBar(
+              content: Text('No preview available for this exercise')),
         );
         return;
       }
@@ -404,22 +440,86 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
         ex.highwaySpec!.segments,
         multiplier,
       );
-      final segments = scaledSegments.take(8).toList();
-      final notes = segments
-          .take(8)
-          .map((s) => ReferenceNote(
-                startSec: s.startMs / 1000.0,
-                endSec: s.endMs / 1000.0,
-                midi: s.midiNote,
-              ))
-          .toList();
-      final totalDurationMs =
-          segments.isEmpty ? 0 : segments.map((s) => s.endMs).reduce(math.max) - segments.first.startMs;
-      final path = await _synth.renderReferenceNotes(notes);
-      await _synth.playFile(path);
-      // Ensure the button stays in the "playing" state for the full preview duration.
-      if (totalDurationMs > 0) {
-        await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+
+      // Check if we have glide segments (for exercises like Octave Slides or Sirens)
+      final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+      if (glideSegments.isNotEmpty) {
+        // Check if this is Sirens (multiple consecutive glides: up then down)
+        if (glideSegments.length >= 2) {
+          // Sirens: C4->C5 then C5->C4
+          final firstGlide = glideSegments[0];
+          final secondGlide = glideSegments[1];
+          final firstDurationMs = firstGlide.endMs - firstGlide.startMs;
+          final secondDurationMs = secondGlide.endMs - secondGlide.startMs;
+
+          const previewStartMidi = 60.0; // C4
+          const previewEndMidi = 72.0; // C5
+
+          final path = await _sweepService.generateMultipleSweepsWav(
+            sweeps: [
+              (
+                midiStart: previewStartMidi,
+                midiEnd: previewEndMidi,
+                durationSeconds: firstDurationMs / 1000.0,
+              ),
+              (
+                midiStart: previewEndMidi,
+                midiEnd: previewStartMidi,
+                durationSeconds: secondDurationMs / 1000.0,
+              ),
+            ],
+            amplitude: 0.2,
+            fadeSeconds: 0.01,
+          );
+          await _synth.playFile(path);
+          final totalDurationMs = firstDurationMs + secondDurationMs;
+          if (totalDurationMs > 0) {
+            await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+          }
+        } else {
+          // Single glide (e.g., Octave Slides: C4 to C5)
+          final firstGlide = glideSegments.first;
+          final durationMs = firstGlide.endMs - firstGlide.startMs;
+          final durationSeconds = durationMs / 1000.0;
+
+          // For preview, use C4->C5 (octave slides should be C4->C5)
+          const previewStartMidi = 60.0; // C4
+          const previewEndMidi = 72.0; // C5
+
+          final path = await _sweepService.generateSweepWav(
+            midiStart: previewStartMidi,
+            midiEnd: previewEndMidi,
+            durationSeconds: durationSeconds,
+            amplitude: 0.2,
+            fadeSeconds: 0.01,
+          );
+          await _synth.playFile(path);
+          // Ensure the button stays in the "playing" state for the full preview duration.
+          if (durationMs > 0) {
+            await Future.delayed(Duration(milliseconds: durationMs + 300));
+          }
+        }
+      } else {
+        // Regular note-based preview
+        final segments = scaledSegments.take(8).toList();
+        final notes = segments
+            .take(8)
+            .map((s) => ReferenceNote(
+                  startSec: s.startMs / 1000.0,
+                  endSec: s.endMs / 1000.0,
+                  midi: s.midiNote,
+                ))
+            .toList();
+        final totalDurationMs = segments.isEmpty
+            ? 0
+            : segments.map((s) => s.endMs).reduce(math.max) -
+                segments.first.startMs;
+        final path = await _synth.renderReferenceNotes(notes);
+        await _synth.playFile(path);
+        // Ensure the button stays in the "playing" state for the full preview duration.
+        if (totalDurationMs > 0) {
+          await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -434,7 +534,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> with Rout
 class _Header extends StatelessWidget {
   final VocalExercise ex;
   final ExerciseRepository _repo = ExerciseRepository();
-  
+
   _Header({required this.ex});
 
   @override
@@ -442,7 +542,7 @@ class _Header extends StatelessWidget {
     // Get the category to use its sortOrder for consistent colors
     final category = _repo.getCategory(ex.categoryId);
     final bannerStyleId = category.sortOrder % 8;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -489,7 +589,8 @@ class ExerciseAttemptInfo {
   factory ExerciseAttemptInfo.fromAttempt(ExerciseAttempt attempt) {
     return ExerciseAttemptInfo(
       score: attempt.overallScore,
-      completedAt: attempt.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      completedAt:
+          attempt.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
       recordingPath: attempt.recordingPath,
       raw: attempt,
     );
@@ -506,7 +607,20 @@ class ExerciseAttemptInfo {
   }
 
   String _month(int m) {
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const names = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     if (m < 1 || m > 12) return '';
     return names[m - 1];
   }
