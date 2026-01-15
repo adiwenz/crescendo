@@ -5,6 +5,7 @@ import '../../models/exercise.dart';
 import '../../screens/explore/exercise_preview_screen.dart';
 import '../../services/daily_exercise_service.dart';
 import '../../state/library_store.dart';
+import '../../ui/widgets/sweep.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import 'styles.dart';
 
@@ -85,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Center(child: SineSweepButton()),
                     Text('Today\'s Progress', style: AppText.h2),
                     const SizedBox(height: 12),
                     _TodaysProgressCard(dailyExercises: _dailyExercises),
