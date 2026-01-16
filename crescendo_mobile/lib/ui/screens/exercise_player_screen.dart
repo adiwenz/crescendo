@@ -534,45 +534,103 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       if (spec == null || spec.segments.isEmpty) return null;
       final baseRootMidi = spec.segments.first.startMidi ?? spec.segments.first.midiNote;
       
-      var segmentIndex = 0;
-      var currentSegmentStartMs = (notes.first.startSec * 1000).round();
-      var currentTranspose = 0;
+      // Special handling for octave slides: combine bottom note + silence + top note into one segment
+      final isOctaveSlides = widget.exercise.id == 'octave_slides';
       
-      // Detect segments by finding gaps > 0.5 seconds (gap between repetitions)
-      // The gap indicates a new repetition/segment
-      for (var i = 1; i < notes.length; i++) {
-        final prevNote = notes[i - 1];
-        final currNote = notes[i];
-        final gap = currNote.startSec - prevNote.endSec;
+      if (isOctaveSlides) {
+        // For octave slides, detect pairs of notes that are ~12 semitones apart
+        // Pattern: bottom note, ~1s gap, top note (12 semitones higher), then repeat
+        var segmentIndex = 0;
+        var i = 0;
         
-        // New segment if gap > 0.5s (gap between repetitions)
-        if (gap > 0.5) {
-          // Save previous segment
-          final segmentTranspose = prevNote.midi.round() - baseRootMidi;
+        while (i < notes.length) {
+          final bottomNote = notes[i];
+          final bottomMidi = bottomNote.midi.round();
+          
+          // Look ahead for the top note (should be ~12 semitones higher and start after ~1s gap)
+          int? topNoteIndex;
+          for (var j = i + 1; j < notes.length; j++) {
+            final candidate = notes[j];
+            final gap = candidate.startSec - bottomNote.endSec;
+            final midiDiff = candidate.midi.round() - bottomMidi;
+            
+            // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
+            if (gap >= 0.8 && gap <= 1.2 && midiDiff >= 11 && midiDiff <= 13) {
+              topNoteIndex = j;
+              break;
+            }
+            
+            // If we've gone too far (gap > 1.5s or different transposition), stop looking
+            if (gap > 1.5 || midiDiff < 0) {
+              break;
+            }
+          }
+          
+          if (topNoteIndex != null) {
+            // Found a pair: combine bottom note + gap + top note into one segment
+            final topNote = notes[topNoteIndex];
+            final transpose = bottomMidi - baseRootMidi;
+            
+            segments.add({
+              'segmentIndex': segmentIndex,
+              'startMs': (bottomNote.startSec * 1000).round(),
+              'endMs': (topNote.endSec * 1000).round(),
+              'transposeSemitone': transpose,
+            });
+            
+            segmentIndex++;
+            i = topNoteIndex + 1; // Move past the top note
+          } else {
+            // No matching top note found, treat as a regular segment
+            final transpose = bottomMidi - baseRootMidi;
+            segments.add({
+              'segmentIndex': segmentIndex,
+              'startMs': (bottomNote.startSec * 1000).round(),
+              'endMs': (bottomNote.endSec * 1000).round(),
+              'transposeSemitone': transpose,
+            });
+            segmentIndex++;
+            i++;
+          }
+        }
+      } else {
+        // Regular segment detection: find gaps > 0.5 seconds (gap between repetitions)
+        var segmentIndex = 0;
+        var currentSegmentStartMs = (notes.first.startSec * 1000).round();
+        
+        for (var i = 1; i < notes.length; i++) {
+          final prevNote = notes[i - 1];
+          final currNote = notes[i];
+          final gap = currNote.startSec - prevNote.endSec;
+          
+          // New segment if gap > 0.5s (gap between repetitions)
+          if (gap > 0.5) {
+            // Save previous segment
+            final segmentTranspose = prevNote.midi.round() - baseRootMidi;
+            segments.add({
+              'segmentIndex': segmentIndex,
+              'startMs': currentSegmentStartMs,
+              'endMs': (prevNote.endSec * 1000).round(),
+              'transposeSemitone': segmentTranspose,
+            });
+            
+            // Start new segment
+            segmentIndex++;
+            currentSegmentStartMs = (currNote.startSec * 1000).round();
+          }
+        }
+        
+        // Add final segment
+        if (notes.isNotEmpty) {
+          final lastNote = notes.last;
+          final segmentTranspose = lastNote.midi.round() - baseRootMidi;
           segments.add({
             'segmentIndex': segmentIndex,
             'startMs': currentSegmentStartMs,
-            'endMs': (prevNote.endSec * 1000).round(),
+            'endMs': (lastNote.endSec * 1000).round(),
             'transposeSemitone': segmentTranspose,
           });
-          
-          // Start new segment
-          segmentIndex++;
-          currentSegmentStartMs = (currNote.startSec * 1000).round();
-          currentTranspose = currNote.midi.round() - baseRootMidi;
         }
-      }
-      
-      // Add final segment
-      if (notes.isNotEmpty) {
-        final lastNote = notes.last;
-        final segmentTranspose = lastNote.midi.round() - baseRootMidi;
-        segments.add({
-          'segmentIndex': segmentIndex,
-          'startMs': currentSegmentStartMs,
-          'endMs': (lastNote.endSec * 1000).round(),
-          'transposeSemitone': segmentTranspose,
-        });
       }
       
       return jsonEncode(segments);

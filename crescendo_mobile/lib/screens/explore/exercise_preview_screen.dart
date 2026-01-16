@@ -441,9 +441,48 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
         multiplier,
       );
 
-      // Check if we have glide segments (for exercises like Octave Slides or Sirens)
-      final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-      if (glideSegments.isNotEmpty) {
+      // Special handling for Octave Slides: mix discrete notes with continuous sine sweep
+      if (ex.id == 'octave_slides' && scaledSegments.length >= 2) {
+        // Octave slides pattern: bottom note, 1s silence, top note
+        final bottomSegment = scaledSegments[0];
+        final topSegment = scaledSegments[1];
+
+        const previewBottomMidi = 60.0; // C4
+        const previewTopMidi = 72.0; // C5
+
+        // Build discrete notes: bottom note, then top note (with silence gap)
+        final bottomNote = ReferenceNote(
+          startSec: bottomSegment.startMs / 1000.0,
+          endSec: bottomSegment.endMs / 1000.0,
+          midi: previewBottomMidi.round(),
+        );
+        final topNote = ReferenceNote(
+          startSec: topSegment.startMs / 1000.0,
+          endSec: topSegment.endMs / 1000.0,
+          midi: previewTopMidi.round(),
+        );
+
+        // Total duration includes both notes and the silence gap
+        final totalDurationMs = topSegment.endMs;
+        final totalDurationSeconds = totalDurationMs / 1000.0;
+
+        // Generate mixed audio: discrete notes + continuous sine sweep
+        final path = await _sweepService.generateMixedOctaveSlideWav(
+          discreteNotes: [bottomNote, topNote],
+          sweepStartMidi: previewBottomMidi,
+          sweepEndMidi: previewTopMidi,
+          totalDurationSeconds: totalDurationSeconds,
+          sweepAmplitude: 0.15, // Slightly quieter than discrete notes
+          fadeSeconds: 0.01,
+        );
+        await _synth.playFile(path);
+        if (totalDurationMs > 0) {
+          await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+        }
+      }
+      // Check if we have glide segments (for exercises like Sirens)
+      else if (scaledSegments.any((s) => s.isGlide)) {
+        final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
         // Check if this is Sirens (multiple consecutive glides: up then down)
         if (glideSegments.length >= 2) {
           // Sirens: C4->C5 then C5->C4
@@ -477,12 +516,11 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
             await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
           }
         } else {
-          // Single glide (e.g., Octave Slides: C4 to C5)
+          // Single glide
           final firstGlide = glideSegments.first;
           final durationMs = firstGlide.endMs - firstGlide.startMs;
           final durationSeconds = durationMs / 1000.0;
 
-          // For preview, use C4->C5 (octave slides should be C4->C5)
           const previewStartMidi = 60.0; // C4
           const previewEndMidi = 72.0; // C5
 
@@ -494,7 +532,6 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
             fadeSeconds: 0.01,
           );
           await _synth.playFile(path);
-          // Ensure the button stays in the "playing" state for the full preview duration.
           if (durationMs > 0) {
             await Future.delayed(Duration(milliseconds: durationMs + 300));
           }

@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/reference_note.dart';
+
 /// Service for generating smooth sine wave sweeps (glides) between MIDI notes.
 /// Uses continuous phase accumulation to prevent clicks and pops.
 class SineSweepService {
@@ -191,6 +193,97 @@ class SineSweepService {
     final file = File(path);
     await file.writeAsBytes(wavBytes, flush: true);
     return file.path;
+  }
+
+  /// Mix two Float32List samples together (adds them sample-by-sample).
+  /// If one is shorter, it's padded with zeros.
+  /// Result is clamped to prevent clipping.
+  Float32List mixSamples(Float32List a, Float32List b) {
+    final maxLength = a.length > b.length ? a.length : b.length;
+    final result = Float32List(maxLength);
+    
+    for (int i = 0; i < maxLength; i++) {
+      final sampleA = i < a.length ? a[i] : 0.0;
+      final sampleB = i < b.length ? b[i] : 0.0;
+      result[i] = (sampleA + sampleB).clamp(-1.0, 1.0);
+    }
+    
+    return result;
+  }
+
+  /// Generate a WAV file by mixing discrete notes with a continuous sine sweep.
+  /// Used for octave slides preview: plays discrete notes (bottom, silence, top) 
+  /// layered with a continuous ascending sine wave.
+  Future<String> generateMixedOctaveSlideWav({
+    required List<ReferenceNote> discreteNotes,
+    required double sweepStartMidi,
+    required double sweepEndMidi,
+    required double totalDurationSeconds,
+    double sweepAmplitude = 0.15, // Slightly quieter than discrete notes
+    double fadeSeconds = 0.01,
+  }) async {
+    // Generate discrete notes audio using piano synthesis
+    final discreteSamples = _generateDiscreteNotesAudio(discreteNotes);
+    
+    // Generate continuous sine sweep
+    final sweepSamples = generateSineSweep(
+      midiStart: sweepStartMidi,
+      midiEnd: sweepEndMidi,
+      durationSeconds: totalDurationSeconds,
+      amplitude: sweepAmplitude,
+      fadeSeconds: fadeSeconds,
+    );
+    
+    // Mix them together
+    final mixedSamples = mixSamples(discreteSamples, sweepSamples);
+    
+    // Encode to WAV
+    final wavBytes = encodeWav16Mono(mixedSamples);
+    final dir = await getTemporaryDirectory();
+    final path = p.join(
+        dir.path,
+        'octave_slide_mixed_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final file = File(path);
+    await file.writeAsBytes(wavBytes, flush: true);
+    return file.path;
+  }
+
+  /// Generate audio samples for discrete notes (piano-like synthesis).
+  /// Similar to AudioSynthService._pianoSample but returns Float32List.
+  Float32List _generateDiscreteNotesAudio(List<ReferenceNote> notes) {
+    if (notes.isEmpty) {
+      return Float32List(0);
+    }
+    
+    // Find total duration
+    final totalDurationSec = notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
+    final totalFrames = (totalDurationSec * sampleRate).round();
+    final samples = Float32List(totalFrames);
+    
+    for (final note in notes) {
+      final startFrame = (note.startSec * sampleRate).round();
+      final endFrame = (note.endSec * sampleRate).round();
+      final hz = _midiToHz(note.midi.toDouble());
+      
+      for (var f = startFrame; f < endFrame && f < totalFrames; f++) {
+        final noteTime = (f - startFrame) / sampleRate;
+        samples[f] = _pianoSample(hz, noteTime);
+      }
+    }
+    
+    return samples;
+  }
+
+  double _pianoSample(double hz, double noteTime) {
+    // Simple additive "piano-ish" timbre: fast attack with exponential decay.
+    final attack = (noteTime / 0.02).clamp(0.0, 1.0);
+    final decay = exp(-3.0 * noteTime);
+    final env = attack * decay;
+    final fundamental = sin(2 * pi * hz * noteTime);
+    final harmonic2 = 0.6 * sin(2 * pi * hz * 2 * noteTime);
+    final harmonic3 = 0.3 * sin(2 * pi * hz * 3 * noteTime);
+    final harmonic4 = 0.15 * sin(2 * pi * hz * 4 * noteTime);
+    return 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
   }
 
   /// Generate a WAV file for a sine sweep and return the file path

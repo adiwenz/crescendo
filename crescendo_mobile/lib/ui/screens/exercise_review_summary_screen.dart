@@ -379,8 +379,64 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
   }
 
   String _getSegmentLabel(ExerciseSegment segment) {
+    // Special handling for Octave Slides exercise
+    // Octave slides have pattern: bottom note, 1s silence, top note (octave up)
+    // But segments might be split at the silence gap, so we need to look for adjacent segments
+    if (widget.exercise.id == 'octave_slides') {
+      // Find target notes within this segment's time range
+      final toleranceMs = 100;
+      final segmentTargets = _targets.where((target) {
+        final targetMid = (target.startMs + target.endMs) ~/ 2;
+        return targetMid >= (segment.startMs - toleranceMs) && 
+               targetMid <= (segment.endMs + toleranceMs);
+      }).toList();
+      
+      // For octave slides, also check the next segment (if it exists) to find the top note
+      // Segments are likely split: first segment = bottom note, second segment = top note
+      final segmentIndex = _segments.indexOf(segment);
+      if (segmentIndex >= 0 && segmentIndex < _segments.length - 1) {
+        final nextSegment = _segments[segmentIndex + 1];
+        // Check if next segment is close in time (within 3 seconds) and has same transposition
+        // This indicates it's part of the same octave slide pattern
+        final timeGap = nextSegment.startMs - segment.endMs;
+        if (timeGap < 3000 && nextSegment.transposeSemitone == segment.transposeSemitone) {
+          final nextSegmentTargets = _targets.where((target) {
+            final targetMid = (target.startMs + target.endMs) ~/ 2;
+            return targetMid >= (nextSegment.startMs - toleranceMs) && 
+                   targetMid <= (nextSegment.endMs + toleranceMs);
+          }).toList();
+          
+          if (segmentTargets.isNotEmpty && nextSegmentTargets.isNotEmpty) {
+            // Combine both segments to find bottom and top notes
+            final allTargets = [...segmentTargets, ...nextSegmentTargets];
+            allTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+            final firstNote = allTargets.first;
+            final lastNote = allTargets.last;
+            
+            // Verify they're an octave apart (or close to it)
+            final midiDiff = (lastNote.midi - firstNote.midi).abs();
+            if (midiDiff >= 10 && midiDiff <= 14) { // Octave is 12 semitones, allow some tolerance
+              final startNote = PitchMath.midiToName(firstNote.midi.round());
+              final endNote = PitchMath.midiToName(lastNote.midi.round());
+              return '$startNote → $endNote';
+            }
+          }
+        }
+      }
+      
+      // Fallback: if we can't find the pattern, use the segment's own notes
+      if (segmentTargets.isNotEmpty) {
+        segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+        final firstNote = segmentTargets.first;
+        final lastNote = segmentTargets.last;
+        final startNote = PitchMath.midiToName(firstNote.midi.round());
+        final endNote = PitchMath.midiToName(lastNote.midi.round());
+        return '$startNote → $endNote';
+      }
+    }
+    
+    // Standard handling for other exercises
     // Find target notes within this segment's time range
-    // Use a small tolerance to account for timing differences
     final toleranceMs = 100;
     final segmentTargets = _targets.where((target) {
       final targetMid = (target.startMs + target.endMs) ~/ 2;
