@@ -38,6 +38,11 @@ import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/exercise_constants.dart';
+import '../widgets/cents_meter.dart';
+import '../../utils/pitch_math.dart';
+import '../../services/sine_preview_audio_generator.dart';
+import '../../services/exercise_metadata.dart';
+import 'dart:async';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -737,22 +742,28 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final notes = <ReferenceNote>[];
     for (final seg in spec.segments) {
       if (seg.isGlide) {
+        // For glides, only create endpoint notes (start and end)
         final startMidi = seg.startMidi ?? seg.midiNote;
         final endMidi = seg.endMidi ?? seg.midiNote;
-        final durationMs = seg.endMs - seg.startMs;
-        final steps = math.max(4, (durationMs / 200).round());
-        for (var i = 0; i < steps; i++) {
-          final ratio = i / steps;
-          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
-          final stepStart = seg.startMs + (durationMs * ratio).round();
-          final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
-          notes.add(ReferenceNote(
-            startSec: stepStart / 1000.0 + _leadInSec,
-            endSec: stepEnd / 1000.0 + _leadInSec,
-            midi: midi,
-            lyric: seg.label,
-          ));
-        }
+        
+        // Start endpoint note
+        notes.add(ReferenceNote(
+          startSec: seg.startMs / 1000.0 + _leadInSec,
+          endSec: seg.startMs / 1000.0 + _leadInSec + 0.01,
+          midi: startMidi,
+          lyric: seg.label,
+          isGlideStart: true,
+          glideEndMidi: endMidi,
+        ));
+        
+        // End endpoint note
+        notes.add(ReferenceNote(
+          startSec: seg.endMs / 1000.0 + _leadInSec - 0.01,
+          endSec: seg.endMs / 1000.0 + _leadInSec,
+          midi: endMidi,
+          lyric: seg.label,
+          isGlideEnd: true,
+        ));
       } else {
         notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
@@ -1441,11 +1452,12 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   Timer? _prepTimer;
   int _prepRunId = 0;
   int _targetMidi = 60;
-  double _centsError = 0;
+  double? _centsError; // Nullable to match CentsMeter
   double _onPitchSec = 0;
   double _listeningSec = 0;
   double _lastTime = 0;
   final _holdGoalSec = 3.0;
+  double? _confidence = 0.0;
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
@@ -1493,7 +1505,13 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _startedAt = DateTime.now();
     _sub = _recording.liveStream.listen((frame) {
       final hz = frame.hz;
-      if (hz == null || hz <= 0) return;
+      if (hz == null || hz <= 0) {
+        setState(() {
+          _centsError = null;
+          _confidence = 0.0;
+        });
+        return;
+      }
       final cents = 1200 * (math.log(hz / _targetHz) / math.ln2);
       final dt = _lastTime == 0 ? 0 : math.max(0, frame.time - _lastTime);
       _lastTime = frame.time;
@@ -1506,7 +1524,10 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       } else if (dt > 0.2) {
         _onPitchSec = 0;
       }
-      setState(() => _centsError = cents);
+      setState(() {
+        _centsError = cents;
+        _confidence = frame.voicedProb ?? 0.0;
+      });
     });
     _scorePct = null;
     setState(() => _listening = true);
@@ -1586,6 +1607,9 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   Widget build(BuildContext context) {
     final progress = (_onPitchSec / _holdGoalSec).clamp(0.0, 1.0);
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
+    final targetNoteName = PitchMath.midiToName(_targetMidi);
+    final inTune = _centsError != null && _centsError!.abs() <= 10;
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1594,19 +1618,32 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
           Text(widget.exercise.description),
           const SizedBox(height: 12),
           if (_preparing) Text('Starting in $_prepRemaining...'),
-          Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Target: $targetNoteName',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
           Slider(
             value: _targetMidi.toDouble(),
             min: 48,
             max: 72,
             divisions: 24,
-            label: _targetMidi.toString(),
+            label: targetNoteName,
             onChanged: (v) => setState(() => _targetMidi = v.round()),
           ),
-          const SizedBox(height: 8),
-          Text('${_centsError.toStringAsFixed(1)} cents',
-              style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: 24),
+          CentsMeter(
+            cents: _centsError,
+            confidence: _confidence ?? 0.0,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            inTune ? 'In tune' : (_centsError == null ? 'No pitch detected' : 'Adjust pitch'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: inTune ? Colors.green : Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 24),
           LinearProgressIndicator(value: progress),
           const SizedBox(height: 8),
           Text('Stability: ${(stability * 100).toStringAsFixed(0)}%',
@@ -1653,6 +1690,12 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   final List<double> _absErrors = [];
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  
+  // Interval Training: list of intervals in semitones
+  static const List<int> _intervals = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]; // m2, M2, m3, M3, P4, P5, m6, M6, m7, M7, P8
+  static const List<String> _intervalNames = ['m2', 'M2', 'm3', 'M3', 'P4', 'P5', 'm6', 'M6', 'm7', 'M7', 'P8'];
+  int _currentIntervalIndex = 0;
+  int _rootMidi = 60; // C4
 
   @override
   void dispose() {
@@ -1681,11 +1724,36 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   double get _targetHz => 440.0 * math.pow(2.0, (_targetMidi - 69) / 12.0);
 
   Future<void> _playTone() async {
-    final notes = [
-      ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
-    ];
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
+    if (widget.exercise.id == 'interval_training') {
+      // For Interval Training: play root, then interval
+      final intervalSemitones = _intervals[_currentIntervalIndex];
+      final intervalMidi = _rootMidi + intervalSemitones;
+      final notes = [
+        ReferenceNote(startSec: 0, endSec: 1.0, midi: _rootMidi),
+        ReferenceNote(startSec: 1.2, endSec: 2.2, midi: intervalMidi),
+      ];
+      final path = await _synth.renderReferenceNotes(notes);
+      await _synth.playFile(path);
+      // Update target to the interval note
+      setState(() => _targetMidi = intervalMidi);
+    } else {
+      // For other exercises (call-and-response): single tone
+      final notes = [
+        ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
+      ];
+      final path = await _synth.renderReferenceNotes(notes);
+      await _synth.playFile(path);
+    }
+  }
+  
+  void _nextInterval() {
+    if (widget.exercise.id == 'interval_training') {
+      setState(() {
+        _currentIntervalIndex = (_currentIntervalIndex + 1) % _intervals.length;
+        final intervalSemitones = _intervals[_currentIntervalIndex];
+        _targetMidi = _rootMidi + intervalSemitones;
+      });
+    }
   }
 
   Future<void> _start() async {
@@ -1782,6 +1850,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final isIntervalTraining = widget.exercise.id == 'interval_training';
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1790,17 +1859,24 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
           Text(widget.exercise.description),
           const SizedBox(height: 12),
           if (_preparing) Text('Starting in $_prepRemaining...'),
-          Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
-          Slider(
-            value: _targetMidi.toDouble(),
-            min: 48,
-            max: 72,
-            divisions: 24,
-            label: _targetMidi.toString(),
-            onChanged: (v) => setState(() => _targetMidi = v.round()),
-          ),
+          if (isIntervalTraining) ...[
+            Text('Interval: ${_intervalNames[_currentIntervalIndex]}', 
+                style: Theme.of(context).textTheme.titleMedium),
+            Text('Root: C4 (MIDI $_rootMidi) → Target: MIDI $_targetMidi', 
+                style: Theme.of(context).textTheme.bodyMedium),
+          ] else ...[
+            Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
+            Slider(
+              value: _targetMidi.toDouble(),
+              min: 48,
+              max: 72,
+              divisions: 24,
+              label: _targetMidi.toString(),
+              onChanged: (v) => setState(() => _targetMidi = v.round()),
+            ),
+          ],
           const SizedBox(height: 8),
-          Text('${_centsError.toStringAsFixed(1)} cents',
+          Text('${(_centsError ?? 0).toStringAsFixed(1)} cents',
               style: Theme.of(context).textTheme.headlineMedium),
           if (_scorePct != null) ...[
             const SizedBox(height: 8),
@@ -1822,11 +1898,19 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
                 child: ElevatedButton.icon(
                   onPressed: _playTone,
                   icon: const Icon(Icons.volume_up),
-                  label: const Text('Replay tone'),
+                  label: const Text('Replay'),
                 ),
               ),
             ],
           ),
+          if (isIntervalTraining && !_listening) ...[
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: _nextInterval,
+              icon: const Icon(Icons.skip_next),
+              label: const Text('Next Interval'),
+            ),
+          ],
         ],
       ),
     );

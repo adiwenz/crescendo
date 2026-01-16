@@ -56,7 +56,8 @@ class TransposedExerciseBuilder {
         ? 0
         : scaledSegments.map((s) => s.endMs).reduce(math.max);
     final patternDurationSec = patternDurationMs / 1000.0;
-    const gapBetweenRepetitionsSec = 0.75;
+    // Sirens need 2s rest between cycles, others use 0.75s
+    final gapBetweenRepetitionsSec = exercise.id == 'sirens' ? 2.0 : 0.75;
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
@@ -169,26 +170,30 @@ class TransposedExerciseBuilder {
       // Convert to seconds and offset by startTimeSec
       final segStartSec = startTimeSec + (seg.startMs / 1000.0);
       final segEndSec = startTimeSec + (seg.endMs / 1000.0);
-      final durationSec = segEndSec - segStartSec;
       
       if (seg.isGlide) {
+        // For glides, only create endpoint notes (start and end)
         final startMidi = (seg.startMidi ?? seg.midiNote) + actualTranspositionSemitones;
         final endMidi = (seg.endMidi ?? seg.midiNote) + actualTranspositionSemitones;
-        final steps = math.max(4, (seg.endMs - seg.startMs) ~/ 200);
         
-        for (var i = 0; i < steps; i++) {
-          final ratio = i / steps;
-          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
-          final stepStart = segStartSec + (durationSec * ratio);
-          final stepEnd = segStartSec + (durationSec * ((i + 1) / steps));
-          
-          notes.add(ReferenceNote(
-            startSec: stepStart,
-            endSec: stepEnd,
-            midi: midi,
-            lyric: seg.label,
-          ));
-        }
+        // Start endpoint note (very short duration, just to mark the position)
+        notes.add(ReferenceNote(
+          startSec: segStartSec,
+          endSec: segStartSec + 0.01, // Very short to mark position
+          midi: startMidi,
+          lyric: seg.label,
+          isGlideStart: true,
+          glideEndMidi: endMidi,
+        ));
+        
+        // End endpoint note
+        notes.add(ReferenceNote(
+          startSec: segEndSec - 0.01,
+          endSec: segEndSec,
+          midi: endMidi,
+          lyric: seg.label,
+          isGlideEnd: true,
+        ));
       } else {
         final midi = seg.midiNote + actualTranspositionSemitones;
         notes.add(ReferenceNote(

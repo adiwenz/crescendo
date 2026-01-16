@@ -10,8 +10,9 @@ import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
 import '../../ui/screens/exercise_review_summary_screen.dart';
 import '../../models/reference_note.dart';
-import '../../services/sine_sweep_service.dart';
-import 'dart:math' as math;
+import '../../services/sine_preview_audio_generator.dart';
+import '../../services/exercise_metadata.dart';
+import 'dart:async';
 import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -33,7 +34,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
   final AudioSynthService _synth = AudioSynthService();
-  final SineSweepService _sweepService = SineSweepService();
+  final SinePreviewAudioGenerator _previewGenerator =
+      SinePreviewAudioGenerator();
+  StreamSubscription<void>? _previewCompleteSub;
   VocalExercise? _exercise;
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
@@ -63,6 +66,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    _previewCompleteSub?.cancel();
     _synth.stop();
     super.dispose();
   }
@@ -188,39 +192,41 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Card(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Preview',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        Text(ex?.description ??
-                            'A quick preview of the exercise.'),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _previewing || ex == null
-                                  ? null
-                                  : () => _playPreview(ex),
-                              icon: Icon(
-                                  _previewing ? Icons.pause : Icons.play_arrow),
-                              label: Text(
-                                  _previewing ? 'Playing…' : 'Play preview'),
-                            ),
-                          ],
-                        ),
-                      ],
+                if (ex != null &&
+                    ExerciseMetadata.forExercise(ex).previewSupported) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Preview',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Text(ex.description),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed:
+                                    _previewing ? null : () => _playPreview(ex),
+                                icon: Icon(_previewing
+                                    ? Icons.pause
+                                    : Icons.play_arrow),
+                                label: Text(
+                                    _previewing ? 'Playing…' : 'Play preview'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
                 if (ex?.usesPitchHighway == true) ...[
                   const SizedBox(height: 16),
                   Card(
@@ -420,177 +426,237 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   }
 
   Future<void> _playPreview(VocalExercise ex) async {
+    if (_previewing) return; // Prevent multiple simultaneous previews
+
     setState(() => _previewing = true);
+    debugPrint('[Preview] start - exercise=${ex.id}');
+
     try {
-      // If we have a highway spec, render a short preview. Otherwise show message.
-      if (ex.highwaySpec == null || ex.highwaySpec!.segments.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('No preview available for this exercise')),
-        );
+      final metadata = ExerciseMetadata.forExercise(ex);
+
+      // Check if preview is supported
+      if (!metadata.previewSupported) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No preview available for this exercise')),
+          );
+        }
         return;
       }
+
+      // Stop any existing playback
+      await _synth.stop();
+      _previewCompleteSub?.cancel();
+
+      String? previewPath;
       final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
       final multiplier = PitchHighwayTempo.multiplierFor(
         difficulty,
-        ex.highwaySpec!.segments,
+        ex.highwaySpec?.segments ?? [],
       );
-      // Use synth to render a short preview from the first few segments.
       final scaledSegments = PitchHighwayTempo.scaleSegments(
-        ex.highwaySpec!.segments,
+        ex.highwaySpec?.segments ?? [],
         multiplier,
       );
 
-      // Special handling for Yawn-Sigh: descending sine wave
-      if (ex.id == 'yawn_sigh') {
-        // Yawn-sigh is a descending glide from high to low
-        final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-        if (glideSegments.isNotEmpty) {
-          final firstGlide = glideSegments.first;
-          final durationMs = firstGlide.endMs - firstGlide.startMs;
-          final durationSeconds = durationMs / 1000.0;
-
-          // Descending: start high (C5), end low (C4)
-          const previewStartMidi = 72.0; // C5
-          const previewEndMidi = 60.0; // C4
-
-          final path = await _sweepService.generateSweepWav(
-            midiStart: previewStartMidi,
-            midiEnd: previewEndMidi,
-            durationSeconds: durationSeconds,
-            amplitude: 0.2,
-            fadeSeconds: 0.01,
-          );
-          await _synth.playFile(path);
-          if (durationMs > 0) {
-            await Future.delayed(Duration(milliseconds: durationMs + 300));
+      // Use sine preview generator for glides
+      if (metadata.previewAudioStyle == PreviewAudioStyle.sineSweep) {
+        if (ex.id == 'ng_slides') {
+          // NG Slides: single ascending glide
+          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+          if (glideSegments.isNotEmpty) {
+            final glide = glideSegments.first;
+            final durationMs = glide.endMs - glide.startMs;
+            const previewStartMidi = 60.0; // C4
+            const previewEndMidi = 72.0; // C5
+            previewPath = await _previewGenerator.generateSweepWav(
+              startMidi: previewStartMidi,
+              endMidi: previewEndMidi,
+              durationMs: durationMs,
+              leadInMs: 2000,
+              fadeMs: 10,
+            );
+            debugPrint(
+                '[Preview] segment 1/1 - NG Slides glide ${durationMs}ms');
           }
-          return;
-        }
-      }
-      // Special handling for Octave Slides: mix discrete notes with continuous sine sweep
-      else if (ex.id == 'octave_slides' && scaledSegments.length >= 2) {
-        // Octave slides pattern: bottom note, 1s silence, top note
-        final bottomSegment = scaledSegments[0];
-        final topSegment = scaledSegments[1];
+        } else if (ex.id == 'sirens') {
+          // Sirens: bottom->top->bottom with 2s rest between cycles
+          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+          if (glideSegments.length >= 2) {
+            final firstGlide = glideSegments[0];
+            final secondGlide = glideSegments[1];
+            final firstDurationMs = firstGlide.endMs - firstGlide.startMs;
+            final secondDurationMs = secondGlide.endMs - secondGlide.startMs;
+            const previewStartMidi = 60.0; // C4
+            const previewEndMidi = 72.0; // C5
 
-        const previewBottomMidi = 60.0; // C4
-        const previewTopMidi = 72.0; // C5
-
-        // Build discrete notes: bottom note, then top note (with silence gap)
-        final bottomNote = ReferenceNote(
-          startSec: bottomSegment.startMs / 1000.0,
-          endSec: bottomSegment.endMs / 1000.0,
-          midi: previewBottomMidi.round(),
-        );
-        final topNote = ReferenceNote(
-          startSec: topSegment.startMs / 1000.0,
-          endSec: topSegment.endMs / 1000.0,
-          midi: previewTopMidi.round(),
-        );
-
-        // Total duration includes both notes and the silence gap
-        final totalDurationMs = topSegment.endMs;
-        final totalDurationSeconds = totalDurationMs / 1000.0;
-
-        // Generate mixed audio: discrete notes + continuous sine sweep
-        final path = await _sweepService.generateMixedOctaveSlideWav(
-          discreteNotes: [bottomNote, topNote],
-          sweepStartMidi: previewBottomMidi,
-          sweepEndMidi: previewTopMidi,
-          totalDurationSeconds: totalDurationSeconds,
-          sweepAmplitude: 0.15, // Slightly quieter than discrete notes
-          fadeSeconds: 0.01,
-        );
-        await _synth.playFile(path);
-        if (totalDurationMs > 0) {
-          await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
-        }
-      }
-      // Check if we have glide segments (for exercises like Sirens)
-      else if (scaledSegments.any((s) => s.isGlide)) {
-        final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-        // Check if this is Sirens (multiple consecutive glides: up then down)
-        if (glideSegments.length >= 2) {
-          // Sirens: C4->C5 then C5->C4
-          final firstGlide = glideSegments[0];
-          final secondGlide = glideSegments[1];
-          final firstDurationMs = firstGlide.endMs - firstGlide.startMs;
-          final secondDurationMs = secondGlide.endMs - secondGlide.startMs;
-
-          const previewStartMidi = 60.0; // C4
-          const previewEndMidi = 72.0; // C5
-
-          final path = await _sweepService.generateMultipleSweepsWav(
-            sweeps: [
-              (
-                midiStart: previewStartMidi,
-                midiEnd: previewEndMidi,
-                durationSeconds: firstDurationMs / 1000.0,
-              ),
-              (
-                midiStart: previewEndMidi,
-                midiEnd: previewStartMidi,
-                durationSeconds: secondDurationMs / 1000.0,
-              ),
-            ],
-            amplitude: 0.2,
-            fadeSeconds: 0.01,
-          );
-          await _synth.playFile(path);
-          final totalDurationMs = firstDurationMs + secondDurationMs;
-          if (totalDurationMs > 0) {
-            await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
+            // Generate composite: sweep up, sweep down, 2s silence (for one cycle)
+            previewPath = await _previewGenerator.generateCompositeWav(
+              segments: [
+                CompositeSegment.sweep(
+                  startMidi: previewStartMidi,
+                  endMidi: previewEndMidi,
+                  durationSeconds: firstDurationMs / 1000.0,
+                ),
+                CompositeSegment.sweep(
+                  startMidi: previewEndMidi,
+                  endMidi: previewStartMidi,
+                  durationSeconds: secondDurationMs / 1000.0,
+                ),
+                CompositeSegment.silence(durationSeconds: 2.0), // 2s rest
+              ],
+              leadInMs: 2000,
+            );
+            debugPrint(
+                '[Preview] segment 1/3 - Sirens up ${firstDurationMs}ms, down ${secondDurationMs}ms, rest 2000ms');
+          }
+        } else if (ex.id == 'yawn_sigh') {
+          // Yawn-sigh: descending glide (but this should be timer now, so this shouldn't run)
+          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+          if (glideSegments.isNotEmpty) {
+            final glide = glideSegments.first;
+            final durationMs = glide.endMs - glide.startMs;
+            const previewStartMidi = 72.0; // C5
+            const previewEndMidi = 60.0; // C4
+            previewPath = await _previewGenerator.generateSweepWav(
+              startMidi: previewStartMidi,
+              endMidi: previewEndMidi,
+              durationMs: durationMs,
+              leadInMs: 2000,
+              fadeMs: 10,
+            );
           }
         } else {
-          // Single glide
-          final firstGlide = glideSegments.first;
-          final durationMs = firstGlide.endMs - firstGlide.startMs;
-          final durationSeconds = durationMs / 1000.0;
-
-          const previewStartMidi = 60.0; // C4
-          const previewEndMidi = 72.0; // C5
-
-          final path = await _sweepService.generateSweepWav(
-            midiStart: previewStartMidi,
-            midiEnd: previewEndMidi,
-            durationSeconds: durationSeconds,
-            amplitude: 0.2,
-            fadeSeconds: 0.01,
-          );
-          await _synth.playFile(path);
-          if (durationMs > 0) {
-            await Future.delayed(Duration(milliseconds: durationMs + 300));
+          // Generic glide: single sweep
+          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+          if (glideSegments.isNotEmpty) {
+            final glide = glideSegments.first;
+            final startMidi = (glide.startMidi ?? glide.midiNote).toDouble();
+            final endMidi = (glide.endMidi ?? glide.midiNote).toDouble();
+            final durationMs = glide.endMs - glide.startMs;
+            previewPath = await _previewGenerator.generateSweepWav(
+              startMidi: startMidi,
+              endMidi: endMidi,
+              durationMs: durationMs,
+              leadInMs: 2000,
+              fadeMs: 10,
+            );
           }
         }
+      } else if (metadata.previewAudioStyle == PreviewAudioStyle.sineTone) {
+        // For exercises that need sine tones (e.g., Fast 3-note, Interval Training, Sustained Pitch Holds)
+        if (ex.id == 'interval_training') {
+          // Generate preview with a sample interval (perfect 5th = 7 semitones)
+          const rootMidi = 60.0; // C4
+          const intervalSemitones = 7; // Perfect 5th
+          const intervalMidi = rootMidi + intervalSemitones;
+          previewPath = await _previewGenerator.generateCompositeWav(
+            segments: [
+              CompositeSegment.tone(midi: rootMidi, durationSeconds: 1.0),
+              CompositeSegment.silence(durationSeconds: 0.2),
+              CompositeSegment.tone(midi: intervalMidi, durationSeconds: 1.0),
+            ],
+            leadInMs: 2000,
+          );
+          debugPrint('[Preview] Generated interval training preview: C4 -> G4');
+        } else if (ex.id == 'sustained_pitch_holds') {
+          // Generate a single steady tone for the hold duration (3 seconds)
+          const targetMidi = 60.0; // C4
+          const holdDurationMs = 3000; // 3 seconds
+          previewPath = await _previewGenerator.generateToneWav(
+            noteMidi: targetMidi,
+            durationMs: holdDurationMs,
+            leadInMs: 2000,
+            fadeMs: 50, // Longer fade for smooth ending
+          );
+          debugPrint(
+              '[Preview] segment 1/1 - Sustained Pitch Hold ${holdDurationMs}ms');
+        } else if (ex.id == 'fast_three_note_patterns') {
+          // Generate tones for each note in the pattern
+          final segments = scaledSegments.take(9).toList(); // Take full pattern
+          final compositeSegments = <CompositeSegment>[];
+          for (var i = 0; i < segments.length; i++) {
+            final seg = segments[i];
+            final durationMs = seg.endMs - seg.startMs;
+            compositeSegments.add(CompositeSegment.tone(
+              midi: seg.midiNote.toDouble(),
+              durationSeconds: durationMs / 1000.0,
+            ));
+            debugPrint(
+                '[Preview] segment ${i + 1}/${segments.length} - note ${seg.midiNote}');
+          }
+          previewPath = await _previewGenerator.generateCompositeWav(
+            segments: compositeSegments,
+            leadInMs: 2000,
+          );
+        } else {
+          // Fallback: use regular note rendering
+          final segments = scaledSegments.take(8).toList();
+          final notes = segments
+              .map((s) => ReferenceNote(
+                    startSec: s.startMs / 1000.0,
+                    endSec: s.endMs / 1000.0,
+                    midi: s.midiNote,
+                  ))
+              .toList();
+          previewPath = await _synth.renderReferenceNotes(notes);
+        }
       } else {
-        // Regular note-based preview
-        final segments = scaledSegments.take(8).toList();
+        // Regular note-based preview (discrete notes, not glides)
+        final segments = scaledSegments; // Play ALL segments, not just first 8
         final notes = segments
-            .take(8)
             .map((s) => ReferenceNote(
                   startSec: s.startMs / 1000.0,
                   endSec: s.endMs / 1000.0,
                   midi: s.midiNote,
                 ))
             .toList();
-        final totalDurationMs = segments.isEmpty
-            ? 0
-            : segments.map((s) => s.endMs).reduce(math.max) -
-                segments.first.startMs;
-        final path = await _synth.renderReferenceNotes(notes);
-        await _synth.playFile(path);
-        // Ensure the button stays in the "playing" state for the full preview duration.
-        if (totalDurationMs > 0) {
-          await Future.delayed(Duration(milliseconds: totalDurationMs + 300));
-        }
+        debugPrint(
+            '[Preview] segment 1/${segments.length} - regular notes, total=${segments.length}');
+        previewPath = await _synth.renderReferenceNotes(notes);
       }
+
+      if (previewPath == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to generate preview')),
+          );
+        }
+        return;
+      }
+
+      // Play the preview and wait for completion
+      await _synth.playFile(previewPath);
+
+      // Wait for playback to complete
+      final completer = Completer<void>();
+      _previewCompleteSub = _synth.onComplete.listen((_) {
+        debugPrint('[Preview] complete');
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      });
+
+      // Also set a timeout as fallback (audio duration + 500ms buffer)
+      final timeout = Duration(milliseconds: 10000); // 10s max
+      await completer.future.timeout(timeout, onTimeout: () {
+        debugPrint('[Preview] timeout - forcing completion');
+      });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Preview failed: $e')),
-      );
+      debugPrint('[Preview] error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Preview failed: $e')),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _previewing = false);
+      _previewCompleteSub?.cancel();
+      _previewCompleteSub = null;
+      if (mounted) {
+        setState(() => _previewing = false);
+      }
+      debugPrint('[Preview] end - state reset');
     }
   }
 }

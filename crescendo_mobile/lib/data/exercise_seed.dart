@@ -136,21 +136,27 @@ List<VocalExercise> seedVocalExercises() {
     required double tolerance,
     String? label,
   }) {
-    final half = (durationMs / 2).round();
+    // Sirens: bottom->top->bottom (one complete cycle)
+    // The 2s rest between cycles is handled by gapBetweenRepetitionsSec in TransposedExerciseBuilder
+    final upDurationMs = (durationMs / 2).round();
+    final downDurationMs = (durationMs / 2).round();
+
     return PitchHighwaySpec(
       segments: [
+        // Up glide: bottom -> top
         PitchSegment(
           startMs: 0,
-          endMs: half,
+          endMs: upDurationMs,
           midiNote: startMidi,
           toleranceCents: tolerance,
           label: label,
           startMidi: startMidi,
           endMidi: highMidi,
         ),
+        // Down glide: top -> bottom
         PitchSegment(
-          startMs: half,
-          endMs: durationMs,
+          startMs: upDurationMs,
+          endMs: upDurationMs + downDurationMs,
           midiNote: highMidi,
           toleranceCents: tolerance,
           label: label,
@@ -394,19 +400,12 @@ List<VocalExercise> seedVocalExercises() {
       id: 'yawn_sigh',
       name: 'Yawn–Sigh',
       categoryId: 'resonance_placement',
-      type: ExerciseType.pitchHighway,
-      description: 'Open the pharynx and descend gently in a sigh.',
+      type: ExerciseType.sovtTimer,
+      description: 'Yawn, then gently sigh down. Repeat slowly.',
       purpose: 'Release constriction and soften the throat.',
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,
       tags: const ['release', 'resonance', 'recovery'],
-      highwaySpec: glideSpec(
-        startMidi: 67,
-        endMidi: 55,
-        durationMs: 4000,
-        tolerance: toleranceBeginner,
-        label: 'Sigh',
-      ),
       createdAt: createdAt,
     ),
     VocalExercise(
@@ -614,19 +613,6 @@ List<VocalExercise> seedVocalExercises() {
       createdAt: createdAt,
     ),
     VocalExercise(
-      id: 'call_response_matching',
-      name: 'Call-and-Response Pitch Matching',
-      categoryId: 'intonation',
-      type: ExerciseType.pitchMatchListening,
-      description: 'Echo short note patterns after hearing them.',
-      purpose: 'Strengthen ear–voice coordination.',
-      durationSeconds: 30,
-      reps: 8,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['pitch', 'ear', 'match'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
       id: 'scale_degrees',
       name: 'Scale Degrees (Do–Re–Mi)',
       categoryId: 'intonation',
@@ -656,26 +642,9 @@ List<VocalExercise> seedVocalExercises() {
       tags: const ['agility', 'runs', 'coordination'],
       highwaySpec: scaleSpec(
         baseMidi: baseC4,
-        noteMs: 180,
+        noteMs: 300, // Slowed down from 180ms (67% slower)
         tolerance: toleranceIntermediate,
         pattern: const [0, 2, 4, 2, 0, 2, 4, 2, 0],
-      ),
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'melismatic_scales',
-      name: 'Melismatic Scales',
-      categoryId: 'agility_runs',
-      type: ExerciseType.pitchHighway,
-      description: 'Multiple notes per syllable for flexibility.',
-      purpose: 'Develop smooth melismatic movement.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.intermediate,
-      tags: const ['agility', 'runs', 'flexibility'],
-      highwaySpec: scaleSpec(
-        baseMidi: baseC4,
-        noteMs: 260,
-        tolerance: toleranceIntermediate,
       ),
       createdAt: createdAt,
     ),

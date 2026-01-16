@@ -121,7 +121,83 @@ class PitchHighwayPainter extends CustomPainter {
       }
     }
 
-    for (final n in notes) {
+    // First pass: draw glides as continuous curves
+    for (var i = 0; i < notes.length; i++) {
+      final n = notes[i];
+      if (n.isGlideStart && n.glideEndMidi != null) {
+        // Find the corresponding glide end note
+        ReferenceNote? glideEnd;
+        for (var j = i + 1; j < notes.length; j++) {
+          if (notes[j].isGlideEnd && notes[j].midi == n.glideEndMidi) {
+            glideEnd = notes[j];
+            break;
+          }
+        }
+        
+        if (glideEnd != null) {
+          // Draw continuous curve between start and end
+          final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
+          final endX = playheadX + (glideEnd.endSec - currentTime) * pixelsPerSecond;
+          
+          if (endX < -32 || startX > size.width + 32) continue;
+          
+          final startY = PitchMath.midiToY(
+            midi: n.midi.toDouble(),
+            height: size.height,
+            midiMin: midiMin,
+            midiMax: midiMax,
+          );
+          final endY = PitchMath.midiToY(
+            midi: glideEnd.midi.toDouble(),
+            height: size.height,
+            midiMin: midiMin,
+            midiMax: midiMax,
+          );
+          
+          // Draw glide curve as a smooth path
+          final glidePath = Path();
+          glidePath.moveTo(startX, startY);
+          
+          // Use a cubic bezier for smooth curve (control points create smooth interpolation)
+          final controlPoint1X = startX + (endX - startX) * 0.33;
+          final controlPoint2X = startX + (endX - startX) * 0.67;
+          glidePath.cubicTo(
+            controlPoint1X, startY,
+            controlPoint2X, endY,
+            endX, endY,
+          );
+          
+          final glidePaint = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.0
+            ..strokeCap = StrokeCap.round
+            ..color = noteColor;
+          
+          final glowPaint = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6.0
+            ..strokeCap = StrokeCap.round
+            ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+                .withOpacity(colors.isMagical ? 0.4 : 0.3)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+          
+          canvas.drawPath(glidePath, glowPaint);
+          canvas.drawPath(glidePath, glidePaint);
+          
+          // Draw small endpoint markers
+          final endpointRadius = 4.0;
+          canvas.drawCircle(Offset(startX, startY), endpointRadius, glidePaint);
+          canvas.drawCircle(Offset(endX, endY), endpointRadius, glidePaint);
+          
+          // Skip the glide end note in the regular loop
+          continue;
+        }
+      }
+      
+      // Skip glide endpoints (they're handled above)
+      if (n.isGlideEnd) continue;
+      
+      // Regular note rendering (non-glide notes)
       final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
       final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;
       if (endX < -32 || startX > size.width + 32) continue;
@@ -257,8 +333,34 @@ class PitchHighwayPainter extends CustomPainter {
   }
 
   ReferenceNote? _noteAtTime(double t) {
-    for (final n in notes) {
-      if (t >= n.startSec && t <= n.endSec) return n;
+    for (var i = 0; i < notes.length; i++) {
+      final n = notes[i];
+      
+      // Check if we're in a glide
+      if (n.isGlideStart && n.glideEndMidi != null) {
+        ReferenceNote? glideEnd;
+        for (var j = i + 1; j < notes.length; j++) {
+          if (notes[j].isGlideEnd && notes[j].midi == n.glideEndMidi) {
+            glideEnd = notes[j];
+            break;
+          }
+        }
+        if (glideEnd != null && t >= n.startSec && t <= glideEnd.endSec) {
+          // Interpolate MIDI value for the glide
+          final progress = (t - n.startSec) / (glideEnd.endSec - n.startSec);
+          final interpolatedMidi = n.midi + (glideEnd.midi - n.midi) * progress;
+          // Return a virtual note with interpolated MIDI
+          return ReferenceNote(
+            startSec: n.startSec,
+            endSec: glideEnd.endSec,
+            midi: interpolatedMidi.round(),
+            lyric: n.lyric,
+          );
+        }
+      }
+      
+      // Regular note check
+      if (t >= n.startSec && t <= n.endSec && !n.isGlideEnd) return n;
     }
     return null;
   }
@@ -321,7 +423,7 @@ class PitchHighwayPainter extends CustomPainter {
         midiMin: midiMin,
         midiMax: midiMax,
       );
-      if (lastY != null && (y - lastY!).abs() > maxJumpPx) continue;
+      if (lastY != null && (y - lastY).abs() > maxJumpPx) continue;
       lastY = y;
       final voiced = (f.voicedProb ?? 1.0) >= 0.6 && (f.rms ?? 1.0) >= 0.02;
       raw.add(_PitchSample(time: f.time, y: y, voiced: voiced));
