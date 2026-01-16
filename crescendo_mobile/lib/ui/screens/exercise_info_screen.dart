@@ -474,12 +474,37 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       return;
     }
     
-    // Special handling for Octave Slides: mix discrete notes with continuous sine sweep
+    // Special handling for Yawn-Sigh: descending sine wave
     final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
     final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
     final scaledSegments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
     
-    if (exercise.id == 'octave_slides' && scaledSegments.length >= 2) {
+    if (exercise.id == 'yawn_sigh') {
+      // Yawn-sigh is a descending glide from high to low
+      final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
+      if (glideSegments.isNotEmpty) {
+        final firstGlide = glideSegments.first;
+        final durationMs = firstGlide.endMs - firstGlide.startMs;
+        final durationSeconds = durationMs / 1000.0;
+        
+        // Descending: start high (C5), end low (C4)
+        const previewStartMidi = 72.0; // C5
+        const previewEndMidi = 60.0; // C4
+        
+        await _synth.stop();
+        final path = await _sweepService.generateSweepWav(
+          midiStart: previewStartMidi,
+          midiEnd: previewEndMidi,
+          durationSeconds: durationSeconds,
+          amplitude: 0.2,
+          fadeSeconds: 0.01,
+        );
+        await _synth.playFile(path);
+        return;
+      }
+    }
+    // Special handling for Octave Slides: mix discrete notes with continuous sine sweep
+    else if (exercise.id == 'octave_slides' && scaledSegments.length >= 2) {
       // Octave slides pattern: bottom note, 1s silence, top note
       final bottomSegment = scaledSegments[0];
       final topSegment = scaledSegments[1];

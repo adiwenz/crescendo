@@ -86,7 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Center(child: SineSweepButton()),
                     Text('Today\'s Progress', style: AppText.h2),
                     const SizedBox(height: 12),
                     _TodaysProgressCard(dailyExercises: _dailyExercises),
