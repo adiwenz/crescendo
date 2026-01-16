@@ -161,6 +161,43 @@ List<VocalExercise> seedVocalExercises() {
     );
   }
 
+  PitchHighwaySpec octaveSlideSpec({
+    required int bottomMidi,
+    required int topMidi,
+    required int noteDurationMs,
+    required double tolerance,
+    String? label,
+  }) {
+    // Pattern: bottom note, 1 second silence, top note
+    const silenceMs = 1000; // 1 second silence
+    final bottomEndMs = noteDurationMs;
+    final silenceStartMs = bottomEndMs;
+    final silenceEndMs = silenceStartMs + silenceMs;
+    final topStartMs = silenceEndMs;
+    final topEndMs = topStartMs + noteDurationMs;
+
+    return PitchHighwaySpec(
+      segments: [
+        // Bottom note
+        PitchSegment(
+          startMs: 0,
+          endMs: bottomEndMs,
+          midiNote: bottomMidi,
+          toleranceCents: tolerance,
+          label: label,
+        ),
+        // Top note (after 1 second silence)
+        PitchSegment(
+          startMs: topStartMs,
+          endMs: topEndMs,
+          midiNote: topMidi,
+          toleranceCents: tolerance,
+          label: label,
+        ),
+      ],
+    );
+  }
+
   int _minutesFromSeconds(int? seconds, {int fallback = 2}) {
     if (seconds == null || seconds <= 0) return fallback;
     final mins = (seconds / 60).round();
@@ -454,10 +491,10 @@ List<VocalExercise> seedVocalExercises() {
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.intermediate,
       tags: const ['range', 'transition', 'support'],
-      highwaySpec: glideSpec(
-        startMidi: baseC4,
-        endMidi: baseC4 + 12,
-        durationMs: 3500,
+      highwaySpec: octaveSlideSpec(
+        bottomMidi: baseC4,
+        topMidi: baseC4 + 12,
+        noteDurationMs: 1000, // 1 second per note
         tolerance: toleranceIntermediate,
         label: 'Octave',
       ),
