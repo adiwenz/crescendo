@@ -95,6 +95,7 @@ class TransposedExerciseBuilder {
         baseRootMidi: baseRootMidi,
         actualTranspositionSemitones: actualTransposition,
         startTimeSec: currentTimeSec,
+        exerciseId: exercise.id,
       );
       
       allNotes.addAll(repetitionNotes);
@@ -162,38 +163,60 @@ class TransposedExerciseBuilder {
     required int baseRootMidi,
     required int actualTranspositionSemitones,
     required double startTimeSec,
+    String? exerciseId, // Add exercise ID to detect NG Slides and Sirens
   }) {
     final notes = <ReferenceNote>[];
+    final isNgSlides = exerciseId == 'ng_slides';
+    final isSirens = exerciseId == 'sirens';
 
-    for (final seg in segments) {
+    for (var i = 0; i < segments.length; i++) {
+      final seg = segments[i];
       // Segments have absolute times within the pattern (startMs, endMs)
       // Convert to seconds and offset by startTimeSec
       final segStartSec = startTimeSec + (seg.startMs / 1000.0);
       final segEndSec = startTimeSec + (seg.endMs / 1000.0);
       
       if (seg.isGlide) {
-        // For glides, only create endpoint notes (start and end)
-        final startMidi = (seg.startMidi ?? seg.midiNote) + actualTranspositionSemitones;
-        final endMidi = (seg.endMidi ?? seg.midiNote) + actualTranspositionSemitones;
-        
-        // Start endpoint note (very short duration, just to mark the position)
-        notes.add(ReferenceNote(
-          startSec: segStartSec,
-          endSec: segStartSec + 0.01, // Very short to mark position
-          midi: startMidi,
-          lyric: seg.label,
-          isGlideStart: true,
-          glideEndMidi: endMidi,
-        ));
-        
-        // End endpoint note
-        notes.add(ReferenceNote(
-          startSec: segEndSec - 0.01,
-          endSec: segEndSec,
-          midi: endMidi,
-          lyric: seg.label,
-          isGlideEnd: true,
-        ));
+        // For NG Slides and Sirens: create full-length notes for audio, but mark for visual glide
+        if (isNgSlides || isSirens) {
+          final midi = seg.midiNote + actualTranspositionSemitones;
+          final isFirstSegment = i == 0;
+          final endMidi = (seg.endMidi ?? seg.midiNote) + actualTranspositionSemitones;
+          
+          // Create full-length note for audio playback
+          notes.add(ReferenceNote(
+            startSec: segStartSec,
+            endSec: segEndSec,
+            midi: midi, // Use the segment's midiNote for audio
+            lyric: seg.label,
+            // Mark first glide segment as glide start for visual rendering
+            isGlideStart: isFirstSegment,
+            glideEndMidi: isFirstSegment ? endMidi : null,
+          ));
+        } else {
+          // For other glides: create endpoint notes (original behavior)
+          final startMidi = (seg.startMidi ?? seg.midiNote) + actualTranspositionSemitones;
+          final endMidi = (seg.endMidi ?? seg.midiNote) + actualTranspositionSemitones;
+          
+          // Start endpoint note (very short duration, just to mark the position)
+          notes.add(ReferenceNote(
+            startSec: segStartSec,
+            endSec: segStartSec + 0.01, // Very short to mark position
+            midi: startMidi,
+            lyric: seg.label,
+            isGlideStart: true,
+            glideEndMidi: endMidi,
+          ));
+          
+          // End endpoint note
+          notes.add(ReferenceNote(
+            startSec: segEndSec - 0.01,
+            endSec: segEndSec,
+            midi: endMidi,
+            lyric: seg.label,
+            isGlideEnd: true,
+          ));
+        }
       } else {
         final midi = seg.midiNote + actualTranspositionSemitones;
         notes.add(ReferenceNote(
@@ -203,6 +226,30 @@ class TransposedExerciseBuilder {
           lyric: seg.label,
         ));
       }
+    }
+    
+    // For Sirens: mark the top note (second) as glide end for first glide, and last note as glide end for second glide
+    if (isSirens && notes.length >= 3) {
+      // First glide: bottom1 -> top (top note should be marked as glide end)
+      final topNote = notes[1];
+      notes[1] = ReferenceNote(
+        startSec: topNote.startSec,
+        endSec: topNote.endSec,
+        midi: topNote.midi,
+        lyric: topNote.lyric,
+        isGlideEnd: true, // End of first glide (bottom1 -> top)
+        isGlideStart: true, // Start of second glide (top -> bottom2)
+        glideEndMidi: notes[2].midi, // End of second glide is bottom2
+      );
+      // Second glide: top -> bottom2 (bottom2 note should be marked as glide end)
+      final lastNote = notes.last;
+      notes[notes.length - 1] = ReferenceNote(
+        startSec: lastNote.startSec,
+        endSec: lastNote.endSec,
+        midi: lastNote.midi,
+        lyric: lastNote.lyric,
+        isGlideEnd: true, // End of second glide (top -> bottom2)
+      );
     }
 
     return notes;

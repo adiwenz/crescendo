@@ -114,16 +114,35 @@ List<VocalExercise> seedVocalExercises() {
     required double tolerance,
     String? label,
   }) {
+    // For NG Slides: pattern matches Octave Slides (bottom note, silence, top note)
+    // Visual glide curve is rendered, but audio plays only discrete notes
+    const silenceMs = 1000; // 1 second silence
+    final bottomEndMs = durationMs ~/ 2; // Half duration for bottom note
+    final silenceStartMs = bottomEndMs;
+    final silenceEndMs = silenceStartMs + silenceMs;
+    final topStartMs = silenceEndMs;
+    final topEndMs =
+        topStartMs + (durationMs ~/ 2); // Half duration for top note
+
     return PitchHighwaySpec(
       segments: [
+        // Bottom note (with glide visual endpoints)
         PitchSegment(
           startMs: 0,
-          endMs: durationMs,
+          endMs: bottomEndMs,
           midiNote: startMidi,
           toleranceCents: tolerance,
           label: label,
-          startMidi: startMidi,
-          endMidi: endMidi,
+          startMidi: startMidi, // For visual glide
+          endMidi: endMidi, // For visual glide
+        ),
+        // Top note (after 1 second silence)
+        PitchSegment(
+          startMs: topStartMs,
+          endMs: topEndMs,
+          midiNote: endMidi,
+          toleranceCents: tolerance,
+          label: label,
         ),
       ],
     );
@@ -136,32 +155,45 @@ List<VocalExercise> seedVocalExercises() {
     required double tolerance,
     String? label,
   }) {
-    // Sirens: bottom->top->bottom (one complete cycle)
-    // The 2s rest between cycles is handled by gapBetweenRepetitionsSec in TransposedExerciseBuilder
-    final upDurationMs = (durationMs / 2).round();
-    final downDurationMs = (durationMs / 2).round();
+    // Sirens: bottom->top->bottom with discrete notes (no glide audio)
+    // Visual glide curves are rendered, but audio plays only discrete notes
+    // Pattern: bottom note, top note, bottom note, then 2s rest (handled by gapBetweenRepetitionsSec)
+    final noteDurationMs = durationMs ~/ 3; // Each note gets 1/3 of duration
+    final bottom1EndMs = noteDurationMs;
+    final topStartMs = bottom1EndMs;
+    final topEndMs = topStartMs + noteDurationMs;
+    final bottom2StartMs = topEndMs;
+    final bottom2EndMs = bottom2StartMs + noteDurationMs;
 
     return PitchHighwaySpec(
       segments: [
-        // Up glide: bottom -> top
+        // First bottom note (with visual glide to top)
         PitchSegment(
           startMs: 0,
-          endMs: upDurationMs,
+          endMs: bottom1EndMs,
           midiNote: startMidi,
           toleranceCents: tolerance,
           label: label,
-          startMidi: startMidi,
-          endMidi: highMidi,
+          startMidi: startMidi, // For visual glide
+          endMidi: highMidi, // For visual glide
         ),
-        // Down glide: top -> bottom
+        // Top note (with visual glide back to bottom)
         PitchSegment(
-          startMs: upDurationMs,
-          endMs: upDurationMs + downDurationMs,
+          startMs: topStartMs,
+          endMs: topEndMs,
           midiNote: highMidi,
           toleranceCents: tolerance,
           label: label,
-          startMidi: highMidi,
-          endMidi: startMidi,
+          startMidi: highMidi, // For visual glide
+          endMidi: startMidi, // For visual glide
+        ),
+        // Second bottom note (end of cycle)
+        PitchSegment(
+          startMs: bottom2StartMs,
+          endMs: bottom2EndMs,
+          midiNote: startMidi,
+          toleranceCents: tolerance,
+          label: label,
         ),
       ],
     );
@@ -289,18 +321,6 @@ List<VocalExercise> seedVocalExercises() {
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,
       tags: const ['sovt', 'resonance', 'release'],
-      createdAt: createdAt,
-    ),
-    VocalExercise(
-      id: 'straw_phonation',
-      name: 'Straw Phonation',
-      categoryId: 'sovt',
-      type: ExerciseType.sovtTimer,
-      description: 'Phonate through a straw with gentle airflow.',
-      purpose: 'Encourage efficient fold closure and balance.',
-      durationSeconds: 30,
-      difficulty: ExerciseDifficulty.beginner,
-      tags: const ['sovt', 'recovery', 'support'],
       createdAt: createdAt,
     ),
     VocalExercise(

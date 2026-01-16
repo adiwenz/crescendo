@@ -740,9 +740,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final spec = _scaledSpec;
     if (spec == null) return const [];
     final notes = <ReferenceNote>[];
-    for (final seg in spec.segments) {
-      if (seg.isGlide) {
-        // For glides, only create endpoint notes (start and end)
+    final isNgSlides = widget.exercise.id == 'ng_slides';
+    final isSirens = widget.exercise.id == 'sirens';
+    
+    for (var i = 0; i < spec.segments.length; i++) {
+      final seg = spec.segments[i];
+      final isGlide = seg.isGlide;
+      
+      // For NG Slides and Sirens: create full-length notes for audio, but mark for visual glide
+      if ((isNgSlides || isSirens) && isGlide) {
+        final endMidi = seg.endMidi ?? seg.midiNote;
+        final isFirstSegment = i == 0;
+        
+        // Create full-length note for audio playback
+        notes.add(ReferenceNote(
+          startSec: seg.startMs / 1000.0 + _leadInSec,
+          endSec: seg.endMs / 1000.0 + _leadInSec,
+          midi: seg.midiNote, // Use the segment's midiNote for audio
+          lyric: seg.label,
+          // Mark first glide segment as glide start for visual rendering
+          isGlideStart: isFirstSegment,
+          glideEndMidi: isFirstSegment ? endMidi : null,
+        ));
+      } else if (isGlide && !isNgSlides && !isSirens) {
+        // For other glides: create endpoint notes (original behavior)
         final startMidi = seg.startMidi ?? seg.midiNote;
         final endMidi = seg.endMidi ?? seg.midiNote;
         
@@ -765,6 +786,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           isGlideEnd: true,
         ));
       } else {
+        // Regular non-glide note
         notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
           endSec: seg.endMs / 1000.0 + _leadInSec,
@@ -773,6 +795,31 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         ));
       }
     }
+    
+    // For Sirens: mark the top note (second) as glide end for first glide, and last note as glide end for second glide
+    if (isSirens && notes.length >= 3) {
+      // First glide: bottom1 -> top (top note should be marked as glide end)
+      final topNote = notes[1];
+      notes[1] = ReferenceNote(
+        startSec: topNote.startSec,
+        endSec: topNote.endSec,
+        midi: topNote.midi,
+        lyric: topNote.lyric,
+        isGlideEnd: true, // End of first glide (bottom1 -> top)
+        isGlideStart: true, // Start of second glide (top -> bottom2)
+        glideEndMidi: notes[2].midi, // End of second glide is bottom2
+      );
+      // Second glide: top -> bottom2 (bottom2 note should be marked as glide end)
+      final lastNote = notes.last;
+      notes[notes.length - 1] = ReferenceNote(
+        startSec: lastNote.startSec,
+        endSec: lastNote.endSec,
+        midi: lastNote.midi,
+        lyric: lastNote.lyric,
+        isGlideEnd: true, // End of second glide (top -> bottom2)
+      );
+    }
+    
     return notes;
   }
 
@@ -1278,7 +1325,6 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
   int _prepRunId = 0;
   double _elapsed = 0;
   double? _scorePct;
-  bool _phonationOn = true;
   DateTime? _startedAt;
   bool _attemptSaved = false;
 
@@ -1410,11 +1456,6 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
           Text('${remaining.toStringAsFixed(0)}s remaining',
               style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 12),
-          SwitchListTile(
-            title: const Text('Phonation on/off'),
-            value: _phonationOn,
-            onChanged: (v) => setState(() => _phonationOn = v),
-          ),
           if (_scorePct != null) ...[
             const SizedBox(height: 8),
             Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
@@ -1432,6 +1473,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
   }
 }
 
+// TODO: Next release - Multi-note progression, review screen, improved flow
+// Current limitations: Only generates a single note, requires quitting to end, no review flow
 class SustainedPitchHoldPlayer extends StatefulWidget {
   final VocalExercise exercise;
 
@@ -1665,6 +1708,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   }
 }
 
+// TODO: Next release - Expand interval logic, multiple interval types, proper preview coverage
+// Current limitations: Only generates a minor 2nd, no clean way to end exercise except quitting
 class PitchMatchListeningPlayer extends StatefulWidget {
   final VocalExercise exercise;
 

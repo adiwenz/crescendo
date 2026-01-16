@@ -502,14 +502,15 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
 
       // Use sine preview generator for glides
       if (metadata.previewAudioStyle == PreviewAudioStyle.sineSweep) {
-        if (exercise.id == 'ng_slides') {
-          // NG Slides: single ascending glide
+        // Only for yawn-sigh preview (which should be a glide)
+        if (exercise.id == 'yawn_sigh') {
+          // Yawn-sigh: descending glide preview
           final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
           if (glideSegments.isNotEmpty) {
             final glide = glideSegments.first;
             final durationMs = glide.endMs - glide.startMs;
-            const previewStartMidi = 60.0; // C4
-            const previewEndMidi = 72.0; // C5
+            const previewStartMidi = 72.0; // C5
+            const previewEndMidi = 60.0; // C4
             previewPath = await _previewGenerator.generateSweepWav(
               startMidi: previewStartMidi,
               endMidi: previewEndMidi,
@@ -517,40 +518,10 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               leadInMs: 2000,
               fadeMs: 10,
             );
-            debugPrint('[Preview] segment 1/1 - NG Slides glide ${durationMs}ms');
-          }
-        } else if (exercise.id == 'sirens') {
-          // Sirens: bottom->top->bottom with 2s rest between cycles
-          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-          if (glideSegments.length >= 2) {
-            final firstGlide = glideSegments[0];
-            final secondGlide = glideSegments[1];
-            final firstDurationMs = firstGlide.endMs - firstGlide.startMs;
-            final secondDurationMs = secondGlide.endMs - secondGlide.startMs;
-            const previewStartMidi = 60.0; // C4
-            const previewEndMidi = 72.0; // C5
-            
-            // Generate composite: sweep up, sweep down, 2s silence (for one cycle)
-            previewPath = await _previewGenerator.generateCompositeWav(
-              segments: [
-                CompositeSegment.sweep(
-                  startMidi: previewStartMidi,
-                  endMidi: previewEndMidi,
-                  durationSeconds: firstDurationMs / 1000.0,
-                ),
-                CompositeSegment.sweep(
-                  startMidi: previewEndMidi,
-                  endMidi: previewStartMidi,
-                  durationSeconds: secondDurationMs / 1000.0,
-                ),
-                CompositeSegment.silence(durationSeconds: 2.0), // 2s rest
-              ],
-              leadInMs: 2000,
-            );
-            debugPrint('[Preview] segment 1/3 - Sirens up ${firstDurationMs}ms, down ${secondDurationMs}ms, rest 2000ms');
+            debugPrint('[Preview] Yawn-sigh descending glide ${durationMs}ms');
           }
         } else {
-          // Generic glide: single sweep
+          // Generic glide: single sweep (for other exercises that use sweeps)
           final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
           if (glideSegments.isNotEmpty) {
             final glide = glideSegments.first;
@@ -567,8 +538,59 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           }
         }
       } else if (metadata.previewAudioStyle == PreviewAudioStyle.sineTone) {
-        // For exercises that need sine tones (e.g., Fast 3-note, Interval Training, Sustained Pitch Holds)
-        if (exercise.id == 'interval_training') {
+        // For exercises that need discrete tones (NG Slides, Sirens, Fast 3-note, etc.)
+        if (exercise.id == 'ng_slides') {
+          // NG Slides: discrete notes only (bottom + top), matching Octave Slides
+          final segments = scaledSegments;
+          if (segments.length >= 2) {
+            final bottomNote = segments[0];
+            final topNote = segments[1];
+            previewPath = await _previewGenerator.generateCompositeWav(
+              segments: [
+                CompositeSegment.tone(
+                  midi: bottomNote.midiNote.toDouble(),
+                  durationSeconds: (bottomNote.endMs - bottomNote.startMs) / 1000.0,
+                ),
+                CompositeSegment.silence(durationSeconds: 1.0), // 1s silence
+                CompositeSegment.tone(
+                  midi: topNote.midiNote.toDouble(),
+                  durationSeconds: (topNote.endMs - topNote.startMs) / 1000.0,
+                ),
+              ],
+              leadInMs: 2000,
+            );
+            debugPrint('[Preview] NG Slides: bottom note ${bottomNote.midiNote}, top note ${topNote.midiNote}');
+          }
+        } else if (exercise.id == 'sirens') {
+          // Sirens: discrete notes only (bottom → top → bottom), 2s rest
+          final segments = scaledSegments;
+          if (segments.length >= 3) {
+            final bottom1 = segments[0];
+            final top = segments[1];
+            final bottom2 = segments[2];
+            previewPath = await _previewGenerator.generateCompositeWav(
+              segments: [
+                CompositeSegment.tone(
+                  midi: bottom1.midiNote.toDouble(),
+                  durationSeconds: (bottom1.endMs - bottom1.startMs) / 1000.0,
+                ),
+                CompositeSegment.tone(
+                  midi: top.midiNote.toDouble(),
+                  durationSeconds: (top.endMs - top.startMs) / 1000.0,
+                ),
+                CompositeSegment.tone(
+                  midi: bottom2.midiNote.toDouble(),
+                  durationSeconds: (bottom2.endMs - bottom2.startMs) / 1000.0,
+                ),
+                CompositeSegment.silence(durationSeconds: 2.0), // 2s rest between cycles
+              ],
+              leadInMs: 2000,
+            );
+            debugPrint('[Preview] Sirens: bottom ${bottom1.midiNote} → top ${top.midiNote} → bottom ${bottom2.midiNote}, 2s rest');
+          }
+        } else if (exercise.id == 'interval_training') {
+          // TODO: Next release - Expand interval logic, multiple interval types, proper preview coverage
+          // Generate preview with a sample interval (perfect 5th = 7 semitones)
           // Generate preview with a sample interval (perfect 5th = 7 semitones)
           const rootMidi = 60.0; // C4
           const intervalSemitones = 7; // Perfect 5th
@@ -583,6 +605,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           );
           debugPrint('[Preview] Generated interval training preview: C4 -> G4');
         } else if (exercise.id == 'sustained_pitch_holds') {
+          // TODO: Next release - Multi-note progression, review screen, improved flow
           // Generate a single steady tone for the hold duration (3 seconds)
           const targetMidi = 60.0; // C4
           const holdDurationMs = 3000; // 3 seconds
@@ -629,6 +652,12 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           midi: s.midiNote,
         )).toList();
         debugPrint('[Preview] segment 1/${segments.length} - regular notes, total=${segments.length}');
+        if (exercise.id == 'vv_zz_scales') {
+          // Vv/Zz: ensure all segments are played with debug logs
+          for (var i = 0; i < notes.length; i++) {
+            debugPrint('[Preview] segment ${i + 1}/${notes.length} - Vv/Zz note ${notes[i].midi}');
+          }
+        }
         previewPath = await _synth.renderReferenceNotes(notes);
       }
 

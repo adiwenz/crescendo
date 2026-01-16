@@ -38,24 +38,24 @@ class ExerciseMetadata {
         );
       case 'yawn_sigh':
         return const ExerciseMetadata(
-          previewSupported: false,
-          usesPitchHighway: false,
-          previewAudioStyle: PreviewAudioStyle.none,
+          previewSupported: true, // Changed: has glide preview
+          usesPitchHighway: false, // Exercise is timer-only
+          previewAudioStyle: PreviewAudioStyle.sineSweep, // Descending glide preview
           exerciseTargetStyle: ExerciseTargetStyle.promptTimer,
         );
       case 'ng_slides':
         return const ExerciseMetadata(
           previewSupported: true,
           usesPitchHighway: true,
-          previewAudioStyle: PreviewAudioStyle.sineSweep,
-          exerciseTargetStyle: ExerciseTargetStyle.endpointsGlide,
+          previewAudioStyle: PreviewAudioStyle.sineTone, // Changed: discrete notes only
+          exerciseTargetStyle: ExerciseTargetStyle.endpointsGlide, // Visual still glides
         );
       case 'sirens':
         return const ExerciseMetadata(
           previewSupported: true,
           usesPitchHighway: true,
-          previewAudioStyle: PreviewAudioStyle.sineSweep,
-          exerciseTargetStyle: ExerciseTargetStyle.endpointsGlide,
+          previewAudioStyle: PreviewAudioStyle.sineTone, // Changed: discrete notes only
+          exerciseTargetStyle: ExerciseTargetStyle.endpointsGlide, // Visual still glides
         );
       case 'sustained_pitch_holds':
         return const ExerciseMetadata(
