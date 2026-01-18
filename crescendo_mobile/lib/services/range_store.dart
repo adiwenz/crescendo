@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'exercise_cache_service.dart';
 
 class RangeStore {
   static const _lowestKey = 'range_lowest_midi';
@@ -8,6 +9,12 @@ class RangeStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lowestKey, lowestMidi);
     await prefs.setInt(_highestKey, highestMidi);
+    
+    // Trigger cache regeneration when range changes
+    await ExerciseCacheService.instance.generateCache(
+      lowestMidi: lowestMidi,
+      highestMidi: highestMidi,
+    );
   }
 
   Future<int?> getLowestMidi() async {

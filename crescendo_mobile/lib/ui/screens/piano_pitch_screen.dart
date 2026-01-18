@@ -185,6 +185,13 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   void didPushNext() {
     debugPrint('[PianoPitchScreen] didPushNext - navigating away from Piano');
     _isVisible = false;
+    // Stop recording and pitch detection when navigating away
+    _sub?.cancel();
+    _sub = null;
+    if (_service.isRunning) {
+      _service.stop();
+      debugPrint('[PianoPitchScreen] Stopped pitch detection service');
+    }
   }
 
   @override

@@ -23,6 +23,7 @@ import '../../services/robust_note_scoring_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
+import '../../services/exercise_cache_service.dart';
 import '../../services/attempt_repository.dart';
 import '../../models/exercise_attempt.dart';
 import 'exercise_review_summary_screen.dart';
@@ -251,17 +252,31 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Validation logging
     debugPrint('[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
     
-    // Move heavy computation off the UI thread (async after first frame)
-    final buildStartTime = DateTime.now();
-    final notes = TransposedExerciseBuilder.buildTransposedSequence(
-      exercise: widget.exercise,
-      lowestMidi: lowestMidi,
-      highestMidi: highestMidi,
-      leadInSec: _leadInSec,
+    // Try to get cached notes first (instant - no generation needed)
+    final cacheService = ExerciseCacheService.instance;
+    final cachedNotes = cacheService.getCachedNotes(
+      exerciseId: widget.exercise.id,
       difficulty: widget.pitchDifficulty,
     );
-    final buildEndTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+    
+    List<ReferenceNote> notes;
+    if (cachedNotes != null) {
+      debugPrint('[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
+      notes = cachedNotes;
+    } else {
+      // Fallback: generate on the fly if not cached (shouldn't happen if cache is working)
+      debugPrint('[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
+      final buildStartTime = DateTime.now();
+      notes = TransposedExerciseBuilder.buildTransposedSequence(
+        exercise: widget.exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: _leadInSec,
+        difficulty: widget.pitchDifficulty,
+      );
+      final buildEndTime = DateTime.now();
+      debugPrint('[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+    }
     
     if (mounted) {
       setState(() {

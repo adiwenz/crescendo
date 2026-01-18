@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'ui/app.dart';
 import 'state/library_store.dart';
+import 'services/exercise_cache_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,10 @@ Future<void> main() async {
 
   // Preload library completion state.
   await libraryStore.load();
+
+  // Pre-generate exercise cache for current range (if set)
+  // This allows exercises to start instantly without generation delay
+  ExerciseCacheService.instance.loadCache();
 
   runApp(const CrescendoApp());
 }
