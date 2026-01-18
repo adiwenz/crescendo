@@ -464,22 +464,20 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       if (metadata.previewAudioStyle == PreviewAudioStyle.sineSweep) {
         // Only for yawn-sigh preview (which should be a glide)
         if (ex.id == 'yawn_sigh') {
-          // Yawn-sigh: descending glide preview
-          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-          if (glideSegments.isNotEmpty) {
-            final glide = glideSegments.first;
-            final durationMs = glide.endMs - glide.startMs;
-            const previewStartMidi = 72.0; // C5
-            const previewEndMidi = 60.0; // C4
-            previewPath = await _previewGenerator.generateSweepWav(
-              startMidi: previewStartMidi,
-              endMidi: previewEndMidi,
-              durationMs: durationMs,
-              leadInMs: 2000,
-              fadeMs: 10,
-            );
-            debugPrint('[Preview] Yawn-sigh descending glide ${durationMs}ms');
-          }
+          // Yawn-sigh: descending glide preview (timer-based exercise, no highwaySpec)
+          // Generate a descending glide from C5 to C4 over 2 seconds
+          const previewStartMidi = 72.0; // C5
+          const previewEndMidi = 60.0; // C4
+          const durationMs = 2000; // 2 seconds for the glide
+          previewPath = await _previewGenerator.generateSweepWav(
+            startMidi: previewStartMidi,
+            endMidi: previewEndMidi,
+            durationMs: durationMs,
+            leadInMs: 2000,
+            fadeMs: 10,
+          );
+          debugPrint(
+              '[Preview] Yawn-sigh descending glide C5->C4 ${durationMs}ms');
         } else {
           // Generic glide: single sweep (for other exercises that use sweeps)
           final glideSegments = scaledSegments.where((s) => s.isGlide).toList();

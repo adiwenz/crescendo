@@ -54,12 +54,16 @@ class RecordingService {
 
   Future<void> start() async {
     if (_isRecording) {
-      debugPrint('[RecordingService] Already recording, skipping start');
+      debugPrint('[RecordingService] Already recording (owner: $_owner), skipping start. Current state: _isRecording=true');
       return;
     }
 
     // Request access from session manager
+    final requestStartTime = DateTime.now();
+    debugPrint('[RecordingService] Requesting access for $_owner at ${requestStartTime.millisecondsSinceEpoch}');
     final accessGranted = await _sessionManager.requestAccess(_owner);
+    final requestEndTime = DateTime.now();
+    debugPrint('[RecordingService] Access request took ${requestEndTime.difference(requestStartTime).inMilliseconds}ms, granted: $accessGranted');
     if (!accessGranted) {
       debugPrint('[RecordingService] Failed to get microphone access (owner: $_owner)');
       // Force release and retry once

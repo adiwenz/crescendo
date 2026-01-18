@@ -5,7 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 import '../../models/pitch_frame.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -28,7 +28,6 @@ import '../../models/exercise_attempt.dart';
 import 'exercise_review_summary_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
-import '../widgets/debug_overlay.dart';
 import '../widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
@@ -39,10 +38,6 @@ import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
-import '../../utils/pitch_math.dart';
-import '../../services/sine_preview_audio_generator.dart';
-import '../../services/exercise_metadata.dart';
-import 'dart:async';
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -141,8 +136,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final PitchVisualState _visualState = PitchVisualState();
   final PitchTailBuffer _tailBuffer = PitchTailBuffer();
   final VocalRangeService _vocalRangeService = VocalRangeService();
-  static const _showDebugOverlay =
-      bool.fromEnvironment('SHOW_PITCH_DEBUG', defaultValue: false);
   final _tailWindowSec = 4.0;
   // Use shared constant for lead-in time
   static const double _leadInSec = ExerciseConstants.leadInSec;
@@ -155,7 +148,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   int _midiMax = 72;
   int _prepRemaining = 0;
   Timer? _prepTimer;
-  int _prepRunId = 0;
   bool _captureEnabled = false;
   bool _useMic = true;
   RecordingService? _recording;
@@ -192,35 +184,61 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   @override
   void initState() {
     super.initState();
+    final initStartTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
+    
     _ticker = createTicker(_onTick);
+    final afterTicker = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] after createTicker: ${afterTicker.difference(initStartTime).inMilliseconds}ms');
+    
     _scaledSpec = _buildScaledSpec();
+    final afterScaledSpec = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] after _buildScaledSpec: ${afterScaledSpec.difference(initStartTime).inMilliseconds}ms');
+    
     _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
-    // Initialize recording service early so it's ready when exercise starts
-    // This ensures the pitch ball appears immediately
-    if (_useMic) {
-      _recording = RecordingService(bufferSize: 512);
-      // Start recording asynchronously - don't await, let it initialize in background
-      _recording?.start().then((_) {
-        // Recording is ready, but don't start listening until _start() is called
-      }).catchError((e) {
-        // ignore: avoid_print
-        print('[ExercisePlayerScreen] Error initializing recording early: $e');
-      });
-    }
-    _loadTransposedNotes();
+    
+    // Schedule heavy work after first frame to avoid blocking UI
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final postFrameTime = DateTime.now();
+      debugPrint('[ExercisePlayerScreen] postFrameCallback at ${postFrameTime.difference(initStartTime).inMilliseconds}ms');
+      
+      // Initialize recording service (but don't start yet - will start in _start())
+      if (_useMic) {
+        _recording = RecordingService(bufferSize: 512);
+        debugPrint('[ExercisePlayerScreen] RecordingService created (not started yet)');
+      }
+      
+      // Load transposed notes asynchronously after first frame
+      _loadTransposedNotes();
+    });
+    
+    final initEndTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] initState complete: ${initEndTime.difference(initStartTime).inMilliseconds}ms');
   }
 
   Future<void> _loadTransposedNotes() async {
+    final loadStartTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] _loadTransposedNotes start at ${loadStartTime.millisecondsSinceEpoch}');
+    
+    // Show preparing state
+    if (mounted) {
+      setState(() {
+        _notesLoaded = false;
+      });
+    }
+    
     // Ensure range is loaded BEFORE generating exercise notes
+    final rangeStartTime = DateTime.now();
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    final rangeEndTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] getRange() took ${rangeEndTime.difference(rangeStartTime).inMilliseconds}ms');
     
     // Validate range - do not proceed with defaults
     if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
-      // ignore: avoid_print
-      print('[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
+      debugPrint('[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
       if (mounted) {
         setState(() {
           _notesLoaded = false;
@@ -231,9 +249,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
     
     // Validation logging
-    // ignore: avoid_print
-    print('[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
+    debugPrint('[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
     
+    // Move heavy computation off the UI thread (async after first frame)
+    final buildStartTime = DateTime.now();
     final notes = TransposedExerciseBuilder.buildTransposedSequence(
       exercise: widget.exercise,
       lowestMidi: lowestMidi,
@@ -241,6 +260,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       leadInSec: _leadInSec,
       difficulty: widget.pitchDifficulty,
     );
+    final buildEndTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
     
     if (mounted) {
       setState(() {
@@ -265,6 +286,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           );
         }
       });
+      
+      final loadEndTime = DateTime.now();
+      debugPrint('[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
       
       // Auto-start the exercise once notes are loaded
       // The 2-second lead-in is built into the notes themselves
@@ -359,6 +383,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   Future<void> _start() async {
     if (_playing || _preparing) return;
+    final startTime = DateTime.now();
+    debugPrint('[ExercisePlayerScreen] _start() called at ${startTime.millisecondsSinceEpoch}');
+    
     _scorePct = null;
     _attemptSaved = false;
     _startedAt = DateTime.now();
@@ -379,20 +406,35 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _captureEnabled = true;
     _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
     _ticker?.start();
+    
     if (_useMic) {
-      // Recording service should already be initialized in initState
-      // If it's not started yet, start it now
+      // Recording service should already be initialized in postFrameCallback
+      // Check if it needs to be started
       if (_recording == null) {
+        debugPrint('[ExercisePlayerScreen] Creating RecordingService in _start()');
         _recording = RecordingService(bufferSize: 512);
-        await _recording?.start();
-      } else {
-        // Ensure it's started (it may have been started early)
+      }
+      
+      // Only start if not already recording (check state first)
+      final beforeRequestAccess = DateTime.now();
+      debugPrint('[ExercisePlayerScreen] before requestAccess: ${beforeRequestAccess.difference(startTime).inMilliseconds}ms');
+      
+      // Check if already recording and stop it first to avoid contention
+      if (_recording != null) {
         try {
-          await _recording?.start();
+          // Try to stop any existing recording first
+          await _recording?.stop();
+          debugPrint('[ExercisePlayerScreen] Stopped existing recording before starting');
         } catch (e) {
-          // Already started, that's fine
+          // Not recording, that's fine
+          debugPrint('[ExercisePlayerScreen] No existing recording to stop: $e');
         }
       }
+      
+      // Now start fresh
+      await _recording?.start();
+      final afterRequestAccess = DateTime.now();
+      debugPrint('[ExercisePlayerScreen] after requestAccess: ${afterRequestAccess.difference(startTime).inMilliseconds}ms');
       // Cancel any existing subscription
       await _sub?.cancel();
       _sub = _recording?.liveStream.listen((frame) {
@@ -405,8 +447,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             midi != null && (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
         double? filtered;
         if (voiced) {
-          _pitchBall.addSample(timeSec: now, midi: midi!);
-          filtered = _pitchBall.lastSampleMidi ?? midi!;
+          _pitchBall.addSample(timeSec: now, midi: midi);
+          filtered = _pitchBall.lastSampleMidi ?? midi;
           _pitchState.updateVoiced(timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
         } else {
           _pitchState.updateUnvoiced(timeSec: now);
@@ -448,11 +490,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _pitchState.reset();
     _visualState.reset();
     _tailBuffer.clear();
-    await _saveLastTake(recordingResult?.audioPath);
-    _lastRecordingPath =
-        (recordingResult?.audioPath != null && recordingResult!.audioPath!.isNotEmpty)
-            ? recordingResult.audioPath
-            : null;
+    final audioPath = recordingResult?.audioPath;
+    await _saveLastTake(audioPath);
+    _lastRecordingPath = (audioPath != null && audioPath.isNotEmpty) ? audioPath : null;
     _lastContourJson = _buildContourJson();
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
@@ -661,18 +701,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _captured.add(pf);
   }
 
-  void _beginPrepCountdown() {
-    _preparing = true;
-    _prepRemaining = 2;
-    _prepTimer?.cancel();
-    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
-      if (_prepRemaining <= 0) timer.cancel();
-    });
-    setState(() {});
-  }
-
   void _endPrepCountdown() {
     _preparing = false;
     _prepTimer?.cancel();
@@ -705,28 +733,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         return (start + (end - start) * ratio).toDouble();
       }
       return seg.midiNote.toDouble();
-    }
-    return null;
-  }
-
-  String? _labelAtTime(double t) {
-    // Use transposed notes if available
-    if (_transposedNotes.isNotEmpty) {
-      for (final note in _transposedNotes) {
-        if (t >= note.startSec && t <= note.endSec) {
-          return note.lyric;
-        }
-      }
-      return null;
-    }
-    // Fallback to old method
-    final spec = _scaledSpec;
-    if (spec == null) return null;
-    final adjusted = t - _leadInSec;
-    if (adjusted < 0) return null;
-    final ms = (adjusted * 1000).round();
-    for (final seg in spec.segments) {
-      if (ms >= seg.startMs && ms <= seg.endMs) return seg.label;
     }
     return null;
   }
@@ -824,7 +830,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   Future<void> _playReference() async {
-    final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
     if (notes.isEmpty) return;
     final path = await _synth.renderReferenceNotes(notes);
@@ -1024,6 +1029,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       child: Text(
                         'Score ${_scorePct!.toStringAsFixed(0)}%',
                         style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                if (!_notesLoaded && _rangeError == null)
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: colors.surface2,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Preparing...',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -1921,7 +1950,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
             ),
           ],
           const SizedBox(height: 8),
-          Text('${(_centsError ?? 0).toStringAsFixed(1)} cents',
+          Text('${_centsError.toStringAsFixed(1)} cents',
               style: Theme.of(context).textTheme.headlineMedium),
           if (_scorePct != null) ...[
             const SizedBox(height: 8),

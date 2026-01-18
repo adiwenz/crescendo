@@ -1,22 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../data/progress_repository.dart';
 import '../../models/exercise_attempt.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
-import '../../models/exercise_instance.dart';
 import '../../models/exercise_level_progress.dart';
-import '../../models/pitch_highway_spec.dart';
-import '../../models/pitch_segment.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/sine_preview_audio_generator.dart';
 import '../../services/exercise_metadata.dart';
-import '../../services/range_exercise_generator.dart';
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import '../../services/vocal_range_service.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
@@ -43,8 +39,6 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   StreamSubscription<void>? _previewCompleteSub;
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
-  final _vocalRangeService = VocalRangeService();
-  final _rangeGenerator = RangeExerciseGenerator();
   int _highestUnlockedLevel = ExerciseLevelProgress.minLevel;
   int _selectedLevel = ExerciseLevelProgress.minLevel;
   int? _highlightedLevel;
@@ -286,8 +280,14 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             onPressed: selectionLocked
                 ? null
                 : () async {
+                    final tapTime = DateTime.now();
+                    debugPrint('[StartExercise] tapped at ${tapTime.millisecondsSinceEpoch}');
                     await _synth.stop();
+                    final afterStop = DateTime.now();
+                    debugPrint('[StartExercise] after stop: ${afterStop.difference(tapTime).inMilliseconds}ms');
                     await _startExercise(exercise);
+                    final afterStart = DateTime.now();
+                    debugPrint('[StartExercise] after _startExercise: ${afterStart.difference(tapTime).inMilliseconds}ms');
                     await _loadLastScore();
                     await _loadLatestAttempt();
                     await _loadProgress(showToast: true);
@@ -341,89 +341,50 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   }
 
   Future<void> _startExercise(VocalExercise exercise) async {
+    final startTime = DateTime.now();
+    debugPrint('[StartExercise] _startExercise called at ${startTime.millisecondsSinceEpoch}');
+    
+    // Navigate immediately - move heavy work to the exercise screen
+    final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    final beforeNav = DateTime.now();
+    debugPrint('[StartExercise] before Navigator.push: ${beforeNav.difference(startTime).inMilliseconds}ms');
+    
     if (exercise.type == ExerciseType.pitchHighway) {
-      _levelProgress.setLastSelectedLevel(
+      // Save level selection (lightweight DB write, but don't block navigation)
+      unawaited(_levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
         level: _selectedLevel,
-      );
-      final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-      final range = await _vocalRangeService.getRange();
-      final instances = _rangeGenerator.generate(
-        exercise: exercise,
-        lowestMidi: range.$1,
-        highestMidi: range.$2,
-      );
-      if (instances.isNotEmpty) {
-        final combined = _buildConcatenatedExercise(exercise, instances);
+      ));
+      
+      // Navigate immediately with original exercise - let the player screen handle range loading
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ExercisePlayerScreen(
-              exercise: combined,
+            exercise: exercise,
               pitchDifficulty: selectedDifficulty,
             ),
           ),
         );
+      final afterNav = DateTime.now();
+      debugPrint('[StartExercise] after Navigator.push completed: ${afterNav.difference(startTime).inMilliseconds}ms');
         return;
-      }
     }
+    
+    // For non-pitchHighway exercises, navigate immediately
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => buildExerciseScreen(
           exercise,
-          pitchDifficulty: pitchHighwayDifficultyFromLevel(_selectedLevel),
+          pitchDifficulty: selectedDifficulty,
         ),
       ),
     );
+    final afterNav = DateTime.now();
+    debugPrint('[StartExercise] after Navigator.push completed: ${afterNav.difference(startTime).inMilliseconds}ms');
   }
 
-  VocalExercise _buildConcatenatedExercise(
-    VocalExercise base,
-    List<ExerciseInstance> instances,
-  ) {
-    final baseSpec = base.highwaySpec;
-    if (baseSpec == null || baseSpec.segments.isEmpty) return base;
-    final stitched = <PitchSegment>[];
-    var cursorMs = 0;
-    const gapMs = 1000;
-    for (final instance in instances) {
-      final applied = instance.apply(base);
-      final spec = applied.highwaySpec;
-      if (spec == null || spec.segments.isEmpty) continue;
-      var localEnd = 0;
-      for (final seg in spec.segments) {
-        stitched.add(PitchSegment(
-          startMs: seg.startMs + cursorMs,
-          endMs: seg.endMs + cursorMs,
-          midiNote: seg.midiNote,
-          toleranceCents: seg.toleranceCents,
-          label: seg.label,
-          startMidi: seg.startMidi,
-          endMidi: seg.endMidi,
-        ));
-        if (seg.endMs > localEnd) localEnd = seg.endMs;
-      }
-      cursorMs += localEnd + gapMs;
-    }
-    final durationSec = (cursorMs / 1000.0).round();
-    return VocalExercise(
-      id: base.id,
-      name: base.name,
-      categoryId: base.categoryId,
-      type: base.type,
-      description: base.description,
-      purpose: base.purpose,
-      difficulty: base.difficulty,
-      tags: base.tags,
-      createdAt: base.createdAt,
-      iconKey: base.iconKey,
-      estimatedMinutes: base.estimatedMinutes,
-      durationSeconds: durationSec,
-      reps: base.reps,
-      highwaySpec: PitchHighwaySpec(segments: stitched),
-    );
-  }
 
   List<String> _targetsForExercise(VocalExercise exercise) {
     if (exercise.type == ExerciseType.pitchHighway &&
@@ -480,13 +441,13 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No preview available for this exercise.')),
-          );
+      );
         }
-        return;
-      }
+      return;
+    }
 
       // Stop any existing playback
-      await _synth.stop();
+    await _synth.stop();
       _previewCompleteSub?.cancel();
 
       String? previewPath;
@@ -504,22 +465,19 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       if (metadata.previewAudioStyle == PreviewAudioStyle.sineSweep) {
         // Only for yawn-sigh preview (which should be a glide)
         if (exercise.id == 'yawn_sigh') {
-          // Yawn-sigh: descending glide preview
-          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-          if (glideSegments.isNotEmpty) {
-            final glide = glideSegments.first;
-            final durationMs = glide.endMs - glide.startMs;
-            const previewStartMidi = 72.0; // C5
-            const previewEndMidi = 60.0; // C4
-            previewPath = await _previewGenerator.generateSweepWav(
-              startMidi: previewStartMidi,
-              endMidi: previewEndMidi,
-              durationMs: durationMs,
-              leadInMs: 2000,
-              fadeMs: 10,
-            );
-            debugPrint('[Preview] Yawn-sigh descending glide ${durationMs}ms');
-          }
+          // Yawn-sigh: descending glide preview (timer-based exercise, no highwaySpec)
+          // Generate a descending glide from C5 to C4 over 2 seconds
+          const previewStartMidi = 72.0; // C5
+          const previewEndMidi = 60.0; // C4
+          const durationMs = 2000; // 2 seconds for the glide
+          previewPath = await _previewGenerator.generateSweepWav(
+            startMidi: previewStartMidi,
+            endMidi: previewEndMidi,
+            durationMs: durationMs,
+            leadInMs: 2000,
+            fadeMs: 10,
+          );
+          debugPrint('[Preview] Yawn-sigh descending glide C5->C4 ${durationMs}ms');
         } else {
           // Generic glide: single sweep (for other exercises that use sweeps)
           final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
@@ -622,7 +580,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           final compositeSegments = <CompositeSegment>[];
           for (var i = 0; i < segments.length; i++) {
             final seg = segments[i];
-            final durationMs = seg.endMs - seg.startMs;
+        final durationMs = seg.endMs - seg.startMs;
             compositeSegments.add(CompositeSegment.tone(
               midi: seg.midiNote.toDouble(),
               durationSeconds: durationMs / 1000.0,
@@ -702,50 +660,6 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     }
   }
 
-  List<ReferenceNote> _buildReferenceNotes(
-    VocalExercise exercise,
-    PitchHighwayDifficulty difficulty,
-  ) {
-    final spec = exercise.highwaySpec;
-    if (spec == null) return const [];
-    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
-    final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
-    final notes = <ReferenceNote>[];
-    for (final seg in segments) {
-      if (seg.isGlide) {
-        // For glides, only create endpoint notes (start and end)
-        final startMidi = seg.startMidi ?? seg.midiNote;
-        final endMidi = seg.endMidi ?? seg.midiNote;
-        
-        // Start endpoint note
-        notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0,
-          endSec: seg.startMs / 1000.0 + 0.01,
-          midi: startMidi,
-          lyric: seg.label,
-          isGlideStart: true,
-          glideEndMidi: endMidi,
-        ));
-        
-        // End endpoint note
-          notes.add(ReferenceNote(
-          startSec: seg.endMs / 1000.0 - 0.01,
-          endSec: seg.endMs / 1000.0,
-          midi: endMidi,
-            lyric: seg.label,
-          isGlideEnd: true,
-          ));
-      } else {
-        notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0,
-          endSec: seg.endMs / 1000.0,
-          midi: seg.midiNote,
-          lyric: seg.label,
-        ));
-      }
-    }
-    return notes;
-  }
 }
 
 class _SectionHeader extends StatelessWidget {
