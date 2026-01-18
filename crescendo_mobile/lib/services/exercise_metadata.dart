@@ -54,7 +54,7 @@ class ExerciseMetadata {
         return const ExerciseMetadata(
           previewSupported: true,
           usesPitchHighway: true,
-          previewAudioStyle: PreviewAudioStyle.sineTone, // Changed: discrete notes only
+          previewAudioStyle: PreviewAudioStyle.sineSweep, // Continuous sine wave glide up and down
           exerciseTargetStyle: ExerciseTargetStyle.endpointsGlide, // Visual still glides
         );
       case 'sustained_pitch_holds':

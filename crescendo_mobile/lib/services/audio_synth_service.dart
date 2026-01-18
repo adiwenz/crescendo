@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -14,7 +15,8 @@ class AudioSynthService {
   static const double tailSeconds = 1.0;
   final int sampleRate;
   final AudioPlayer _player;
-  final AudioPlayer? _secondaryPlayer; // For mixing reference notes with recorded audio
+  final AudioPlayer?
+      _secondaryPlayer; // For mixing reference notes with recorded audio
 
   AudioSynthService({this.sampleRate = 44100, bool enableMixing = false})
       : _player = AudioPlayer(),
@@ -29,40 +31,24 @@ class AudioSynthService {
   }
 
   Future<String> renderReferenceNotes(List<ReferenceNote> notes) async {
-    final samples = <double>[];
-    double cursor = 0;
-    ReferenceNote? lastNote;
-    double lastNoteDur = 0.0;
-    for (final n in notes) {
-      if (n.startSec > cursor) {
-        final gapFrames = ((n.startSec - cursor) * sampleRate).toInt();
-        samples.addAll(List.filled(gapFrames, 0.0));
-        cursor = n.startSec;
-      }
-      final dur = max(0.01, n.endSec - n.startSec);
-      final frames = (dur * sampleRate).toInt();
-      final hz = _midiToHz(n.midi.toDouble());
-      for (var f = 0; f < frames; f++) {
-        samples.add(_pianoSample(hz, f / sampleRate));
-      }
-      cursor = n.endSec;
-      lastNote = n;
-      lastNoteDur = dur;
-    }
-    if (lastNote != null) {
-      final hz = _midiToHz(lastNote.midi.toDouble());
-      final releaseFrames = (tailSeconds * sampleRate).toInt();
-      for (var f = 0; f < releaseFrames; f++) {
-        final t = lastNoteDur + f / sampleRate;
-        final fade = 1.0 - (f / releaseFrames);
-        samples.add(_pianoSample(hz, t) * fade);
-      }
-    }
-    if (samples.isEmpty) {
-      final frames = (0.1 * sampleRate).toInt();
-      samples.addAll(List.filled(frames, 0.0));
-    }
+    // Convert ReferenceNote to serializable format for isolate
+    final noteData = notes
+        .map((n) => {
+              'startSec': n.startSec,
+              'endSec': n.endSec,
+              'midi': n.midi,
+            })
+        .toList();
 
+    // Generate samples in isolate (heavy CPU work)
+    // This PerfTrace breakdown will show the isolate work is off UI thread
+    final samples = await compute(_generateSamplesInIsolate, {
+      'notes': noteData,
+      'sampleRate': sampleRate,
+      'tailSeconds': tailSeconds,
+    });
+
+    // Convert to WAV and write file (lightweight I/O)
     final bytes = _toWav(samples);
     final dir = await getTemporaryDirectory();
     final path = p.join(
@@ -70,6 +56,68 @@ class AudioSynthService {
     final file = File(path);
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
+  }
+
+  /// Isolate function for sample generation (pure function, no side effects)
+  static List<double> _generateSamplesInIsolate(Map<String, dynamic> params) {
+    final noteData = params['notes'] as List<Map<String, dynamic>>;
+    final sampleRate = params['sampleRate'] as int;
+    final tailSeconds = params['tailSeconds'] as double;
+
+    final samples = <double>[];
+    double cursor = 0;
+    Map<String, dynamic>? lastNote;
+    double lastNoteDur = 0.0;
+
+    for (final n in noteData) {
+      final startSec = n['startSec'] as double;
+      final endSec = n['endSec'] as double;
+      final midi = (n['midi'] as num).toDouble();
+
+      if (startSec > cursor) {
+        final gapFrames = ((startSec - cursor) * sampleRate).toInt();
+        samples.addAll(List.filled(gapFrames, 0.0));
+        cursor = startSec;
+      }
+      final dur = max(0.01, endSec - startSec);
+      final frames = (dur * sampleRate).toInt();
+      final hz = 440.0 * pow(2.0, (midi - 69.0) / 12.0);
+      for (var f = 0; f < frames; f++) {
+        samples.add(_pianoSampleStatic(hz, f / sampleRate));
+      }
+      cursor = endSec;
+      lastNote = n;
+      lastNoteDur = dur;
+    }
+    if (lastNote != null) {
+      final midi = (lastNote['midi'] as num).toDouble();
+      final hz = 440.0 * pow(2.0, (midi - 69.0) / 12.0);
+      final releaseFrames = (tailSeconds * sampleRate).toInt();
+      for (var f = 0; f < releaseFrames; f++) {
+        final t = lastNoteDur + f / sampleRate;
+        final fade = 1.0 - (f / releaseFrames);
+        samples.add(_pianoSampleStatic(hz, t) * fade);
+      }
+    }
+    if (samples.isEmpty) {
+      final frames = (0.1 * sampleRate).toInt();
+      samples.addAll(List.filled(frames, 0.0));
+    }
+
+    return samples;
+  }
+
+  /// Static version of _pianoSample for use in isolate
+  static double _pianoSampleStatic(double hz, double noteTime) {
+    // Simple additive "piano-ish" timbre: fast attack with exponential decay.
+    final attack = (noteTime / 0.02).clamp(0.0, 1.0);
+    final decay = exp(-3.0 * noteTime);
+    final env = attack * decay;
+    final fundamental = sin(2 * pi * hz * noteTime);
+    final harmonic2 = 0.6 * sin(2 * pi * hz * 2 * noteTime);
+    final harmonic3 = 0.3 * sin(2 * pi * hz * 3 * noteTime);
+    final harmonic4 = 0.15 * sin(2 * pi * hz * 4 * noteTime);
+    return 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
   }
 
   Future<void> playFile(String path) async {
@@ -169,7 +217,8 @@ class AudioSynthService {
   }
 
   Uint8List _toWav(List<double> samples) {
-    final floats = Float64List.fromList(samples.map((s) => s.clamp(-1.0, 1.0)).toList());
+    final floats =
+        Float64List.fromList(samples.map((s) => s.clamp(-1.0, 1.0)).toList());
     final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
     return wav.write();
   }

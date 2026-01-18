@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 enum PitchMatch { good, near, off }
 
 final Set<int> _loggedNoteMappingPainters = <int>{};
+int? _lastLoggedRunId; // Track last logged runId for painter logging
 
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -31,6 +32,7 @@ class PitchHighwayPainter extends CustomPainter {
   final double noteTimeOffsetSec;
   final List<TailPoint>? tailPoints;
   final bool debugLogMapping;
+  final int? runId; // For debugging: track which run this painter belongs to
 
   PitchHighwayPainter({
     required this.notes,
@@ -49,12 +51,27 @@ class PitchHighwayPainter extends CustomPainter {
     this.noteTimeOffsetSec = 0,
     this.tailPoints,
     this.debugLogMapping = false,
+    this.runId,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
         super(repaint: liveMidi == null ? time : Listenable.merge([time, liveMidi]));
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Log painter input once per runId (debugging instrumentation)
+    if (runId != null && _lastLoggedRunId != runId) {
+      _lastLoggedRunId = runId;
+      final pitchPointsCount = pitchTail.length;
+      final tailPointsCount = tailPoints?.length ?? 0;
+      debugPrint(
+        '[Painter] runId=$runId '
+        'pitchPoints=$pitchPointsCount '
+        'tailPoints=$tailPointsCount '
+        'notes=${notes.length} '
+        'time=${time.value}'
+      );
+    }
+    
     // Use time.value directly - notes already have absolute times including lead-in
     // At time.value=0, notes with startSec=2.0 will be positioned 2 seconds to the right
     // As time.value increases, notes slide left toward the playhead

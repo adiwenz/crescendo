@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:convert';
+import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -39,6 +40,23 @@ import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
+
+/// Performance tracing helper for stopwatch + DevTools Timeline spans
+class PerfTrace {
+  PerfTrace(this.label) : _sw = Stopwatch()..start() {
+    debugPrint('[Perf] $label start');
+    dev.Timeline.startSync(label);
+  }
+  final String label;
+  final Stopwatch _sw;
+  void mark(String name) {
+    debugPrint('[Perf] $label +${_sw.elapsedMilliseconds}ms :: $name');
+  }
+  void end() {
+    dev.Timeline.finishSync();
+    debugPrint('[Perf] $label end @${_sw.elapsedMilliseconds}ms');
+  }
+}
 
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
@@ -169,6 +187,25 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   List<ReferenceNote> _transposedNotes = const [];
   bool _notesLoaded = false;
   String? _rangeError;
+  
+  // Instant start state management
+  bool _starting = false;
+  bool _stopping = false;
+  bool _isRunning = false;
+  int? _tapEpochMs;
+  int? _exerciseStartEpochMs;
+  bool _isImmediateTick = false; // Flag to prevent double logging on immediate tick
+  int _runId = 0; // Increment on each start to ignore stale async callbacks
+  Key? _pitchHighwayKey; // Key to force remount of pitch highway widget
+  bool _loggedFirstTick = false; // Track if we've logged the first ticker tick
+  PerfTrace? _startTrace; // Store trace for ticker access
+  
+  // Per-run start guards to prevent double-starting
+  bool _visualsStarted = false; // Visuals (clock/ticker) started for this run
+  bool _runningSet = false; // Running flag set for this run
+  int? _timelineStartEpochMs; // Timeline anchor epoch (set once per run, never changed)
+  int? _lastModelHash; // Track model identity per run
+  int? _lastRepaintHash; // Track repaint notifier identity per run
 
   double get _durationSec {
     if (_transposedNotes.isEmpty) {
@@ -188,6 +225,34 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final initStartTime = DateTime.now();
     debugPrint('[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
     
+    // Clear all state to prevent rendering old data from previous exercise
+    _transposedNotes = const [];
+    _notesLoaded = false;
+    _playing = false;
+    _preparing = false;
+    _setTimeValue(0.0, src: 'initState');
+    _pitchBall.reset();
+    _pitchState.reset();
+    _visualState.reset();
+    _tailBuffer.clear();
+    _captured.clear();
+    _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = null;
+    _audioPositionSec = null;
+    _audioStarted = false;
+    _tapEpochMs = null;
+    _exerciseStartEpochMs = null;
+    _setTimelineStartEpochMs(null, src: 'initState');
+    _visualsStarted = false;
+    _runningSet = false;
+    _lastModelHash = null;
+    _lastRepaintHash = null;
+    _isImmediateTick = false;
+    _loggedFirstTick = false;
+    _runId = 0;
+    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'), src: 'initState'); // Initialize key
+    
     _ticker = createTicker(_onTick);
     final afterTicker = DateTime.now();
     debugPrint('[ExercisePlayerScreen] after createTicker: ${afterTicker.difference(initStartTime).inMilliseconds}ms');
@@ -201,6 +266,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
     
+    // Add frame timing callback to detect jank
+    SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+    
+    // Prime audio player to avoid first-play latency
+    _primeAudio();
+    
     // Schedule heavy work after first frame to avoid blocking UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postFrameTime = DateTime.now();
@@ -208,7 +279,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       
       // Initialize recording service (but don't start yet - will start in _start())
       if (_useMic) {
-        _recording = RecordingService(bufferSize: 512);
+        _recording = RecordingService(owner: 'exercise', bufferSize: 512);
         debugPrint('[ExercisePlayerScreen] RecordingService created (not started yet)');
       }
       
@@ -305,15 +376,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final loadEndTime = DateTime.now();
       debugPrint('[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
       
-      // Auto-start the exercise once notes are loaded
+      // Auto-start the exercise immediately once notes are loaded
       // The 2-second lead-in is built into the notes themselves
-      if (notes.isNotEmpty && !_playing && !_preparing) {
-        // Use a small delay to ensure the UI is ready
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted && !_playing && !_preparing) {
-            _start();
-          }
-        });
+      if (notes.isNotEmpty && !_playing && !_preparing && !_starting) {
+        // Start immediately - no delay needed
+        onStartPressed();
       }
     }
   }
@@ -331,14 +398,38 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return PitchHighwaySpec(segments: scaledSegments);
   }
 
+  /// Frame timing callback to detect jank
+  void _onFrameTimings(List<FrameTiming> timings) {
+    for (final t in timings) {
+      final total = t.totalSpan.inMilliseconds;
+      if (total > 16) {
+        debugPrint('[Frame] total=${total}ms '
+          'build=${t.buildDuration.inMilliseconds}ms '
+          'raster=${t.rasterDuration.inMilliseconds}ms');
+      }
+    }
+  }
+
   @override
   void dispose() {
     // ignore: avoid_print
     print('[ExercisePlayerScreen] dispose - cleaning up resources');
+    
+    // Remove frame timing callback
+    SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
+    
+    // Stop ticker and clock first
+    _ticker?.stop();
     _ticker?.dispose();
+    _clock.pause();
+    
+    // Cancel subscriptions
     _sub?.cancel();
+    _sub = null;
     _audioPosSub?.cancel();
-    // Properly stop and dispose the recording service
+    _audioPosSub = null;
+    
+    // Stop and dispose recording service
     if (_recording != null) {
       // Stop first, then dispose asynchronously
       _recording!.stop().then((_) async {
@@ -354,16 +445,77 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         // ignore: avoid_print
         print('[ExercisePlayerScreen] Error stopping recording: $e');
       });
+      _recording = null;
     }
+    
+    // Cancel timers
     _prepTimer?.cancel();
+    _prepTimer = null;
+    
+    // Stop audio
     _synth.stop();
+    
+    // Clear all state to prevent old data from persisting
+    _transposedNotes = const [];
+    _notesLoaded = false;
+    _playing = false;
+    _preparing = false;
+    _starting = false;
+    _stopping = false;
+    _isRunning = false;
+    _captureEnabled = false;
+    _audioStarted = false;
+    _scorePct = null;
+    _attemptSaved = false;
+    _startedAt = null;
+    _audioPositionSec = null;
+    _tapEpochMs = null;
+    _exerciseStartEpochMs = null;
+    _timelineStartEpochMs = null;
+    _visualsStarted = false;
+    _runningSet = false;
+    _isImmediateTick = false;
+    _rangeError = null;
+    _lastRecordingPath = null;
+    _lastContourJson = null;
+    _canvasSize = null;
+    
+    // Clear buffers and state objects
+    _captured.clear();
+    _tailBuffer.clear();
+    _pitchBall.reset();
+    _pitchState.reset();
+    _visualState.reset();
+    
+    // Dispose value notifiers
     _time.dispose();
     _liveMidi.dispose();
+    
     super.dispose();
   }
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
+    
+    // Log first ticker callback (not the immediate manual call)
+    if (!_isImmediateTick && !_loggedFirstTick) {
+      _loggedFirstTick = true;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      debugPrint('[Visuals] FIRST TICK at $nowMs elapsed=$elapsed runId=$_runId');
+      _startTrace?.mark('ticker first tick fired');
+      if (_tapEpochMs != null) {
+        final delayMs = nowMs - _tapEpochMs!;
+        debugPrint('[Visuals] FIRST TICK delay from tap: ${delayMs}ms');
+      }
+    }
+    
+    // Log first tick for instrumentation (but skip if this is the immediate manual call)
+    if (!_isImmediateTick && _tapEpochMs != null && elapsed.inMilliseconds < 20) {
+      final firstTickTime = DateTime.now().millisecondsSinceEpoch;
+      debugPrint('[Start] firstTick <= ${firstTickTime - _tapEpochMs!}ms');
+    }
+    _isImmediateTick = false; // Reset flag after first use
+    
     final next = _clock.nowSeconds();
     final effectiveMidi = _pitchState.effectiveMidi;
     final effectiveHz = _pitchState.effectiveHz;
@@ -373,7 +525,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       pitchMidi: effectiveMidi,
       voiced: _pitchState.isVoiced,
     );
-    _time.value = next;
+    _setTimeValue(next, src: '_onTick');
     _liveMidi.value = _visualState.visualPitchMidi;
     final visualMidi = _visualState.visualPitchMidi;
     if (_canvasSize != null && visualMidi != null) {
@@ -396,64 +548,296 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
   }
 
-  Future<void> _start() async {
-    if (_playing || _preparing) return;
-    final startTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] _start() called at ${startTime.millisecondsSinceEpoch}');
+  /// Prime audio player to avoid first-play latency
+  Future<void> _primeAudio() async {
+    try {
+      // Warm up the audio player by setting a minimal source
+      // This initializes the audio engine without playing anything
+      await _synth.stop(); // Ensure clean state
+    } catch (e) {
+      debugPrint('[ExercisePlayerScreen] Error priming audio: $e');
+    }
+  }
+
+  /// Hard-reset ALL runtime state used by the pitch highway.
+  /// Called on Start press to ensure a clean slate.
+  void _resetRunState() {
+    _runId++;
     
+    // Stop ticker and clock
+    _ticker?.stop();
+    _clock.pause();
+    
+    // Cancel subscriptions (but don't block - will be replaced)
+    _sub?.cancel();
+    _sub = null;
+    _audioPosSub?.cancel();
+    _audioPosSub = null;
+    
+    // Reset all runtime flags
+    _playing = false;
+    _preparing = false;
+    _starting = false;
+    _stopping = false;
+    _isRunning = false;
+    _captureEnabled = false;
+    _audioStarted = false;
+    _isImmediateTick = false;
+    
+    // Reset per-run start guards
+    _visualsStarted = false;
+    _runningSet = false;
+    _lastModelHash = null;
+    _lastRepaintHash = null;
+    
+    // Reset timestamps
+    _tapEpochMs = null;
+    _exerciseStartEpochMs = null;
+    _setTimelineStartEpochMs(null, src: '_resetRunState'); // Reset timeline anchor
+    _startedAt = null;
+    _audioPositionSec = null;
+    
+    // Reset score and attempt state
     _scorePct = null;
     _attemptSaved = false;
-    _startedAt = DateTime.now();
+    
+    // Reset time to 0 (only allowed here)
+    _setTimeValue(0.0, src: '_resetRunState');
+    _liveMidi.value = null;
+    
+    // Clear all buffers and collections
     _captured.clear();
     _tailBuffer.clear();
-    _captureEnabled = false;
-    _time.value = 0.0;
-    _preparing = false;
-    _prepTimer?.cancel();
-    _audioPositionSec = null;
-    _audioStarted = false;
-    _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+    
+    // Reset state objects
     _pitchBall.reset();
     _pitchState.reset();
     _visualState.reset();
-    _tailBuffer.clear();
-    _playing = true;
-    _captureEnabled = true;
-    _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
+    
+    // Cancel prep timer and any other timers
+    _prepTimer?.cancel();
+    _prepTimer = null;
+    _prepRemaining = 0;
+    
+    // Force pitch highway widget to remount with new key (only allowed in reset)
+    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'), src: '_resetRunState');
+    
+    // Reset first tick logging flag
+    _loggedFirstTick = false;
+    
+    // Log repaint listenable replacement
+    final oldRepaintListenable = _liveMidi == null 
+        ? _time 
+        : Listenable.merge([_time, _liveMidi]);
+    debugPrint('[Reset] Run state cleared, runId=$_runId, repaintListenable=${oldRepaintListenable.hashCode}');
+    
+    // Log model/notifier identities (if we had a model, but we use ValueNotifiers directly)
+    debugPrint('[Reset] timeNotifier=${_time.hashCode} liveMidiNotifier=${_liveMidi.hashCode}');
+    
+    // Log that scroll/time are reset (should only happen here)
+    debugPrint('[Reset] scroll/time reset to 0 (runId=$_runId)');
+  }
+
+  /// Tripwire: Set time value with source tracking
+  void _setTimeValue(double v, {required String src}) {
+    if (v == 0.0 && _playing) {
+      debugPrint('[TRIPWIRE] time reset to 0 src=$src runId=$_runId\n${StackTrace.current}');
+    }
+    _time.value = v;
+  }
+
+  /// Tripwire: Set timeline start epoch with source tracking
+  void _setTimelineStartEpochMs(int? v, {required String src}) {
+    if (v != null && _timelineStartEpochMs != null && _timelineStartEpochMs != v) {
+      debugPrint('[TRIPWIRE] timelineStartEpochMs CHANGED from $_timelineStartEpochMs to $v src=$src runId=$_runId\n${StackTrace.current}');
+    } else if (v != null) {
+      debugPrint('[TRIPWIRE] timelineStartEpochMs set to $v src=$src runId=$_runId\n${StackTrace.current}');
+    }
+    _timelineStartEpochMs = v;
+  }
+
+  /// Tripwire: Set pitch highway key with source tracking
+  void _setPitchHighwayKey(Key key, {required String src}) {
+    if (_pitchHighwayKey != null && _pitchHighwayKey != key && _playing) {
+      debugPrint('[TRIPWIRE] pitchHighwayKey CHANGED from $_pitchHighwayKey to $key src=$src runId=$_runId\n${StackTrace.current}');
+    } else if (_pitchHighwayKey != key) {
+      debugPrint('[TRIPWIRE] pitchHighwayKey set to $key src=$src runId=$_runId\n${StackTrace.current}');
+    }
+    _pitchHighwayKey = key;
+  }
+
+  /// Called immediately when user taps Start - no awaits, instant UI response
+  void onStartPressed() {
+    if (_starting || _isRunning || _stopping) {
+      debugPrint('[Start] Ignored - already starting/running/stopping');
+      return;
+    }
+    
+    final tapTime = DateTime.now();
+    final t0 = tapTime.millisecondsSinceEpoch;
+    debugPrint('[Start] tap at $t0');
+    
+    // Create performance trace for this start
+    final trace = PerfTrace('StartExercise runId=${_runId + 1}');
+    trace.mark('tap');
+    _startTrace = trace; // Store for ticker access
+    
+    // CRITICAL: Reset ALL state FIRST in setState to ensure clean UI render
+    debugPrint('[Start] BEFORE setState runId=$_runId');
+    
+    // Compute timeline start epoch ONCE (this is the anchor, never changes)
+    final timelineStartMs = t0; // Start immediately at tap time
+    
+    setState(() {
+      _resetRunState(); // Clears all runtime state, increments runId, creates new key
+      _tapEpochMs = t0;
+      _exerciseStartEpochMs = t0 + 120; // Small buffer for audio/mic spin up (for reference only)
+      _setTimelineStartEpochMs(timelineStartMs, src: 'onStartPressed'); // Set timeline anchor ONCE
+      _startedAt = tapTime;
+      _playing = true; // UI state: show as playing immediately
+    });
+    
+    trace.mark('after reset setState');
+    debugPrint('[Start] AFTER setState runId=$_runId');
+    
+    // Start visuals immediately (no awaits) - idempotent, will only start once
+    _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
+    trace.mark('after ensureVisualsStarted');
+    
+    // Start fast engines immediately (recorder, mic access)
+    final currentRunId = _runId;
+    unawaited(_startFastEngines(runId: currentRunId, t0: t0, trace: trace));
+    
+    // CRITICAL: Schedule heavy audio preparation AFTER first frame paints
+    // This ensures the clean-slate UI is visible immediately before heavy work begins
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[Start] FIRST FRAME AFTER RESET PAINTED runId=$_runId');
+      trace.mark('first frame after reset painted');
+      unawaited(_startHeavyPrepare(runId: currentRunId, t0: t0, trace: trace));
+    });
+  }
+
+  /// Ensure visuals are started exactly once per run (idempotent)
+  /// Must NOT clear scroll, buffers, or reset notifiers - those belong in _resetRunState()
+  void _ensureVisualsStarted({required int runId, required int startEpochMs}) {
+    if (runId != _runId) {
+      debugPrint('[Visuals] _ensureVisualsStarted ignored - runId mismatch ($runId != $_runId)');
+      return;
+    }
+    if (_visualsStarted) {
+      debugPrint('[Visuals] _ensureVisualsStarted ignored - already started (runId=$runId)');
+      return;
+    }
+    
+    _visualsStarted = true;
+    
+    // Set timeline anchor ONCE - tripwire will log if it's being changed
+    _setTimelineStartEpochMs(startEpochMs, src: '_ensureVisualsStarted');
+    
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[Visuals] started once runId=$runId startEpoch=$startEpochMs (at $nowMs)');
+    
+    // Start clock and ticker immediately (visuals start moving)
+    // Clock starts at 0, audio will align naturally (notes have 2s lead-in built in)
+    _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+    
+    // Tripwire: detect clock restart
+    debugPrint('[TRIPWIRE] _clock.start() called runId=$runId\n${StackTrace.current}');
+    _clock.start(offsetSec: 0.0, freezeUntilAudio: false);
+    
+    // Tripwire: detect ticker restart
+    debugPrint('[TRIPWIRE] _ticker.start() called runId=$runId\n${StackTrace.current}');
     _ticker?.start();
     
-    if (_useMic) {
-      // Recording service should already be initialized in postFrameCallback
-      // Check if it needs to be started
-      if (_recording == null) {
-        debugPrint('[ExercisePlayerScreen] Creating RecordingService in _start()');
-        _recording = RecordingService(bufferSize: 512);
+    // Log post-frame after ticker.start()
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[Visuals] postFrame after ticker.start at ${DateTime.now().millisecondsSinceEpoch}');
+    });
+    
+    // Force immediate first tick to render visuals right away (don't wait for next frame)
+    _isImmediateTick = true; // Mark as immediate to prevent double logging
+    _onTick(Duration.zero);
+    
+    final afterVisuals = DateTime.now();
+    debugPrint('[Visuals] visuals started <= ${afterVisuals.millisecondsSinceEpoch - startEpochMs}ms');
+  }
+
+  /// Fast engine start: mic access, recording (no heavy CPU work)
+  /// This runs immediately to start recording as fast as possible
+  Future<void> _startFastEngines({required int runId, required int t0, required PerfTrace trace}) async {
+    _starting = true;
+    try {
+      trace.mark('_startEngines begin');
+      debugPrint('[Start] _startEngines called at ${DateTime.now().millisecondsSinceEpoch - t0}ms (runId=$runId)');
+      
+      // Check runId after each await to ignore stale callbacks
+      if (runId != _runId) {
+        debugPrint('[Start] Aborted - runId mismatch ($runId != $_runId)');
+        trace.mark('abort - runId mismatch');
+        trace.end();
+        return;
       }
       
-      // Only start if not already recording (check state first)
-      final beforeRequestAccess = DateTime.now();
-      debugPrint('[ExercisePlayerScreen] before requestAccess: ${beforeRequestAccess.difference(startTime).inMilliseconds}ms');
-      
-      // Check if already recording and stop it first to avoid contention
-      if (_recording != null) {
+    if (_useMic) {
+        // Recording service should already be initialized
+        if (_recording == null) {
+          trace.mark('creating RecordingService');
+          debugPrint('[Start] Creating RecordingService in _startEngines()');
+          _recording = RecordingService(owner: 'exercise', bufferSize: 512);
+        }
+        
+        // Stop any existing recording first
+        trace.mark('before recorder.stop');
+        dev.Timeline.startSync('recorder.stop');
         try {
-          // Try to stop any existing recording first
           await _recording?.stop();
-          debugPrint('[ExercisePlayerScreen] Stopped existing recording before starting');
+          debugPrint('[Start] Stopped existing recording');
         } catch (e) {
           // Not recording, that's fine
-          debugPrint('[ExercisePlayerScreen] No existing recording to stop: $e');
         }
-      }
-      
-      // Now start fresh
+        dev.Timeline.finishSync();
+        trace.mark('after recorder.stop');
+        
+        if (runId != _runId) {
+          debugPrint('[Start] Aborted after stop - runId mismatch');
+          trace.mark('abort after recorder.stop');
+          trace.end();
+          return;
+        }
+        
+        // Start recording - this includes mic access request
+        trace.mark('before recorder.start');
+        dev.Timeline.startSync('recorder.start');
+        final beforeRecorder = DateTime.now();
       await _recording?.start();
-      final afterRequestAccess = DateTime.now();
-      debugPrint('[ExercisePlayerScreen] after requestAccess: ${afterRequestAccess.difference(startTime).inMilliseconds}ms');
-      // Cancel any existing subscription
-      await _sub?.cancel();
+        final afterRecorder = DateTime.now();
+        dev.Timeline.finishSync();
+        trace.mark('after recorder.start');
+        debugPrint('[Start] recorder started at ${afterRecorder.difference(beforeRecorder).inMilliseconds}ms');
+        
+        if (runId != _runId) {
+          debugPrint('[Start] Aborted after recorder start - runId mismatch');
+          trace.mark('abort after recorder.start');
+          trace.end();
+          return;
+        }
+        
+        // Cancel any existing subscription
+        trace.mark('before cancel subscription');
+        await _sub?.cancel();
+        trace.mark('after cancel subscription');
+        
+        // Capture runId in closure to guard against stale callbacks
+        final localRunId = runId;
+        trace.mark('before listen to stream');
       _sub = _recording?.liveStream.listen((frame) {
+          // Ignore stale data from previous runs
+          if (localRunId != _runId) {
+            debugPrint('[Stale] ignored pitch frame from runId=$localRunId current=$_runId');
+            return;
+          }
         if (!_captureEnabled) return;
+          
         final midi = frame.midi ??
             (frame.hz != null ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2 : null);
         final now =
@@ -462,8 +846,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             midi != null && (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
         double? filtered;
         if (voiced) {
-          _pitchBall.addSample(timeSec: now, midi: midi);
-          filtered = _pitchBall.lastSampleMidi ?? midi;
+            _pitchBall.addSample(timeSec: now, midi: midi);
+            filtered = _pitchBall.lastSampleMidi ?? midi;
           _pitchState.updateVoiced(timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
         } else {
           _pitchState.updateUnvoiced(timeSec: now);
@@ -477,40 +861,156 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         );
         _captured.add(pf);
       });
+        trace.mark('after listen to stream');
+      }
+      
+      // Fast engines started - recording is ready
+      trace.mark('fast engines complete');
+      debugPrint('[Start] fast engines complete (runId=$runId)');
+      
+    } catch (e, stackTrace) {
+      debugPrint('[Start] ERROR in _startFastEngines: $e');
+      debugPrint('[Start] Stack trace: $stackTrace');
+      trace.mark('ERROR in fast engines: $e');
+      // Don't end trace here - heavy prepare will handle it
     }
-    await _playReference();
+  }
+
+  /// Heavy audio preparation: render notes, prepare audio (runs in isolate, post-frame)
+  /// This is scheduled AFTER the first reset frame paints to avoid blocking UI
+  Future<void> _startHeavyPrepare({required int runId, required int t0, required PerfTrace trace}) async {
+    try {
+      trace.mark('_startHeavyPrepare begin');
+      debugPrint('[Start] _startHeavyPrepare called (runId=$runId)');
+      
+      if (runId != _runId) {
+        debugPrint('[Start] Aborted - runId mismatch ($runId != $_runId)');
+        trace.mark('abort - runId mismatch');
+        trace.end();
+        return;
+      }
+      
+      // Build reference notes (lightweight - just data structure)
+      trace.mark('before buildReferenceNotes');
+      final notes = _buildReferenceNotes();
+      trace.mark('after buildReferenceNotes');
+      if (notes.isEmpty) {
+        trace.mark('abort - no notes');
+        trace.end();
+        return;
+      }
+      
+      // Render audio in isolate (heavy CPU work)
+      trace.mark('before audio.render (isolate)');
+      dev.Timeline.startSync('audio.render');
+      final path = await _synth.renderReferenceNotes(notes);
+      dev.Timeline.finishSync();
+      trace.mark('after audio.render (isolate)');
+      
+      if (runId != _runId) {
+        debugPrint('[Start] Aborted after render - runId mismatch');
+        trace.mark('abort after render');
+        trace.end();
+        return;
+      }
+      
+      // Play audio (lightweight - just file I/O and player setup)
+      trace.mark('before audio.play');
+      dev.Timeline.startSync('audio.play');
+      final beforeAudio = DateTime.now();
+      await _synth.playFile(path);
+      await _audioPosSub?.cancel();
+      _audioPosSub = _synth.onPositionChanged.listen((pos) {
+        if (!_audioStarted && pos > Duration.zero) {
+          _audioStarted = true;
+        }
+        if (_audioStarted) {
+          _audioPositionSec = pos.inMilliseconds / 1000.0;
+        }
+      });
+      dev.Timeline.finishSync();
+      final afterAudio = DateTime.now();
+      trace.mark('after audio.play');
+      debugPrint('[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
+      
+      if (runId != _runId) {
+        debugPrint('[Start] Aborted after audio - runId mismatch');
+        trace.mark('abort after audio');
+        trace.end();
+        return;
+      }
+      
+      // All engines started - mark as running (idempotent, only set once)
+      if (mounted && runId == _runId && !_runningSet) {
+        _runningSet = true;
+        setState(() {
+          _isRunning = true;
+          _captureEnabled = true;
+        });
+        debugPrint('[Start] set running ONCE (runId=$runId) - no timeline reset');
+        trace.mark('set running');
+      } else if (_runningSet) {
+        debugPrint('[Start] set running ignored - already set (runId=$runId)');
+        trace.mark('set running (already set)');
+      }
+      trace.end();
+      debugPrint('[Start] running (runId=$runId)');
+      
+    } catch (e, stackTrace) {
+      debugPrint('[Start] ERROR in _startHeavyPrepare: $e');
+      debugPrint('[Start] Stack trace: $stackTrace');
+      trace.mark('ERROR: $e');
+      trace.end();
+      // Revert to idle state on error (only if still current run)
+      if (runId == _runId && mounted) {
+        _playing = false;
+        _isRunning = false;
+        _ticker?.stop();
+        _clock.pause();
     setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start exercise: $e')),
+        );
+      }
+    } finally {
+      if (runId == _runId) {
+        _starting = false;
+      }
+    }
   }
 
   Future<void> _stop() async {
-    if (!_playing && !_preparing) return;
+    if (_stopping || (!_playing && !_preparing)) return;
+    
+    _stopping = true;
     _endPrepCountdown();
     _playing = false;
+    _isRunning = false;
     _captureEnabled = false;
     _ticker?.stop();
+    
+    // Stop engines
     await _sub?.cancel();
     _sub = null;
     await _audioPosSub?.cancel();
     _audioPosSub = null;
-    // ignore: avoid_print
-    print('[ExercisePlayerScreen] _stop - stopping recording');
+    debugPrint('[Stop] stopping recording');
     final recordingResult = _recording == null ? null : await _recording!.stop();
-    // Dispose the recording service to fully release resources
-    if (_recording != null) {
-      await _recording!.dispose();
-    }
-    _recording = null;
+    // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();
     _tailBuffer.clear();
+    
     final audioPath = recordingResult?.audioPath;
     await _saveLastTake(audioPath);
     _lastRecordingPath = (audioPath != null && audioPath.isNotEmpty) ? audioPath : null;
     _lastContourJson = _buildContourJson();
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
+    
+    _stopping = false;
     await _completeAndPop(score, {'intonation': score});
   }
 
@@ -789,11 +1289,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         final endMidi = seg.endMidi ?? seg.midiNote;
         
         // Start endpoint note
-        notes.add(ReferenceNote(
+          notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
           endSec: seg.startMs / 1000.0 + _leadInSec + 0.01,
           midi: startMidi,
-          lyric: seg.label,
+            lyric: seg.label,
           isGlideStart: true,
           glideEndMidi: endMidi,
         ));
@@ -844,21 +1344,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return notes;
   }
 
-  Future<void> _playReference() async {
-    final notes = _buildReferenceNotes();
-    if (notes.isEmpty) return;
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
-    await _audioPosSub?.cancel();
-    _audioPosSub = _synth.onPositionChanged.listen((pos) {
-      if (!_audioStarted && pos > Duration.zero) {
-        _audioStarted = true;
-      }
-      if (_audioStarted) {
-        _audioPositionSec = pos.inMilliseconds / 1000.0;
-      }
-    });
-  }
 
   double _computeScore() {
     final notes = _buildReferenceNotes();
@@ -959,13 +1444,60 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           bottom: false,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _playing || _preparing ? _stop : _start,
+            onTap: _playing || _preparing ? _stop : onStartPressed,
             child: Stack(
               children: [
+                // DEBUG OVERLAY - Temporary debugging instrumentation
+                Positioned(
+                  top: 40,
+                  left: 16,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        'runId=$_runId\n'
+                        'key=${_pitchHighwayKey?.toString() ?? "null"}\n'
+                        'playing=$_playing starting=$_starting\n'
+                        't=${DateTime.now().millisecondsSinceEpoch}',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ),
+                // Only render pitch highway once notes are loaded to prevent showing old data
+                // Use key to force remount on each run to prevent stale painter state
+                if (_notesLoaded)
                 Positioned.fill(
+                    key: _pitchHighwayKey, // Force remount to prevent stale painter state
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+                        
+                        // Log repaint listenable identity and model identities
+                        final repaintListenable = _liveMidi == null 
+                            ? _time 
+                            : Listenable.merge([_time, _liveMidi]);
+                        final modelHash = _time.hashCode;
+                        final repaintHash = repaintListenable.hashCode;
+                        
+                        // Tripwire: detect model/notifier identity changes within a run
+                        if (_lastModelHash != null && _lastModelHash != modelHash && _playing) {
+                          debugPrint('[TRIPWIRE] modelHash CHANGED from $_lastModelHash to $modelHash runId=$_runId\n${StackTrace.current}');
+                        }
+                        if (_lastRepaintHash != null && _lastRepaintHash != repaintHash && _playing) {
+                          debugPrint('[TRIPWIRE] repaintHash CHANGED from $_lastRepaintHash to $repaintHash runId=$_runId\n${StackTrace.current}');
+                        }
+                        
+                        _lastModelHash = modelHash;
+                        _lastRepaintHash = repaintHash;
+                        
+                        debugPrint('[Build] PitchHighway repaint listenable = $repaintHash runId=$_runId');
+                        debugPrint('[Build] timeNotifier=$modelHash liveMidiNotifier=${_liveMidi.hashCode}');
+                        
                       return CustomPaint(
                         painter: PitchHighwayPainter(
                           notes: notes,
@@ -975,11 +1507,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           pixelsPerSecond: _pixelsPerSecond,
                           liveMidi: _liveMidi,
                           pitchTailTimeOffsetSec: 0,
-                          noteTimeOffsetSec: _leadInSec,
+                            noteTimeOffsetSec: _leadInSec,
                           drawBackground: false,
-                          midiMin: _midiMin,
-                          midiMax: _midiMax,
+                            midiMin: _midiMin,
+                            midiMax: _midiMax,
                           colors: colors,
+                            runId: _runId, // Pass runId to painter for logging
                         ),
                       );
                     },
@@ -1827,11 +2360,11 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       setState(() => _targetMidi = intervalMidi);
     } else {
       // For other exercises (call-and-response): single tone
-      final notes = [
-        ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
-      ];
-      final path = await _synth.renderReferenceNotes(notes);
-      await _synth.playFile(path);
+    final notes = [
+      ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
+    ];
+    final path = await _synth.renderReferenceNotes(notes);
+    await _synth.playFile(path);
     }
   }
   
@@ -1954,15 +2487,15 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
             Text('Root: C4 (MIDI $_rootMidi) → Target: MIDI $_targetMidi', 
                 style: Theme.of(context).textTheme.bodyMedium),
           ] else ...[
-            Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
-            Slider(
-              value: _targetMidi.toDouble(),
-              min: 48,
-              max: 72,
-              divisions: 24,
-              label: _targetMidi.toString(),
-              onChanged: (v) => setState(() => _targetMidi = v.round()),
-            ),
+          Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
+          Slider(
+            value: _targetMidi.toDouble(),
+            min: 48,
+            max: 72,
+            divisions: 24,
+            label: _targetMidi.toString(),
+            onChanged: (v) => setState(() => _targetMidi = v.round()),
+          ),
           ],
           const SizedBox(height: 8),
           Text('${_centsError.toStringAsFixed(1)} cents',

@@ -520,31 +520,35 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             debugPrint('[Preview] NG Slides: bottom note ${bottomNote.midiNote}, top note ${topNote.midiNote}');
           }
         } else if (exercise.id == 'sirens') {
-          // Sirens: discrete notes only (bottom → top → bottom), 2s rest
+          // Sirens: continuous sine wave glide up then down
           final segments = scaledSegments;
           if (segments.length >= 3) {
             final bottom1 = segments[0];
             final top = segments[1];
             final bottom2 = segments[2];
+            final bottomMidi = bottom1.midiNote.toDouble();
+            final topMidi = top.midiNote.toDouble();
+            // Calculate durations from segments
+            final upDuration = (top.endMs - bottom1.startMs) / 1000.0;
+            final downDuration = (bottom2.endMs - top.startMs) / 1000.0;
+            
             previewPath = await _previewGenerator.generateCompositeWav(
               segments: [
-                CompositeSegment.tone(
-                  midi: bottom1.midiNote.toDouble(),
-                  durationSeconds: (bottom1.endMs - bottom1.startMs) / 1000.0,
+                CompositeSegment.sweep(
+                  startMidi: bottomMidi,
+                  endMidi: topMidi,
+                  durationSeconds: upDuration,
                 ),
-                CompositeSegment.tone(
-                  midi: top.midiNote.toDouble(),
-                  durationSeconds: (top.endMs - top.startMs) / 1000.0,
-                ),
-                CompositeSegment.tone(
-                  midi: bottom2.midiNote.toDouble(),
-                  durationSeconds: (bottom2.endMs - bottom2.startMs) / 1000.0,
+                CompositeSegment.sweep(
+                  startMidi: topMidi,
+                  endMidi: bottomMidi,
+                  durationSeconds: downDuration,
                 ),
                 CompositeSegment.silence(durationSeconds: 2.0), // 2s rest between cycles
               ],
               leadInMs: 2000,
             );
-            debugPrint('[Preview] Sirens: bottom ${bottom1.midiNote} → top ${top.midiNote} → bottom ${bottom2.midiNote}, 2s rest');
+            debugPrint('[Preview] Sirens: continuous glide ${bottomMidi.toInt()} → ${topMidi.toInt()} → ${bottomMidi.toInt()}, 2s rest');
           }
         } else if (exercise.id == 'interval_training') {
           // TODO: Next release - Expand interval logic, multiple interval types, proper preview coverage
