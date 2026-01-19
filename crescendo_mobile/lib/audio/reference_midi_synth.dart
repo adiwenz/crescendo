@@ -15,6 +15,7 @@ class ReferenceMidiSynth {
   bool _initialized = false;
   bool _isPlaying = false;
   final List<Timer> _activeTimers = [];
+  final Set<int> _activeNotes = {}; // Track notes that are currently playing (noteOn sent, noteOff not yet sent)
   int? _currentRunId;
   static const int _defaultVelocity = 100;
 
@@ -60,7 +61,7 @@ class ReferenceMidiSynth {
       return;
     }
 
-    // Stop any existing playback
+    // Stop any existing playback (this will clear _activeNotes)
     await stop();
 
     // Ensure initialized
@@ -70,9 +71,10 @@ class ReferenceMidiSynth {
       return;
     }
 
-    // Set current run ID
+    // Set current run ID and reset state
     _currentRunId = runId;
     _isPlaying = true;
+    _activeNotes.clear(); // Ensure clean state (stop() should have cleared this, but be explicit)
 
     // Calculate note timing
     final minStartSec = notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
@@ -144,6 +146,7 @@ class ReferenceMidiSynth {
 
         try {
           _midi.playMidiNote(midi: note.midi, velocity: _defaultVelocity);
+          _activeNotes.add(note.midi); // Track that this note is now playing
           
           // Log first note firing (one line)
           if (!firstNoteFired) {
@@ -172,6 +175,7 @@ class ReferenceMidiSynth {
 
         try {
           _midi.stopMidiNote(midi: note.midi, velocity: 127);
+          _activeNotes.remove(note.midi); // Remove from active notes set
         } catch (e) {
           debugPrint('[ReferenceMidiSynth] Error stopping note ${note.midi}: $e');
         }
@@ -186,10 +190,11 @@ class ReferenceMidiSynth {
   /// Stop playback immediately
   /// Cancels all scheduled timers and stops all active notes
   Future<void> stop() async {
-    if (!_isPlaying) return;
+    if (!_isPlaying && _activeNotes.isEmpty) return;
 
     _isPlaying = false;
     final timerCount = _activeTimers.length;
+    final activeNoteCount = _activeNotes.length;
     _currentRunId = null;
 
     // Cancel all active timers
@@ -198,7 +203,19 @@ class ReferenceMidiSynth {
     }
     _activeTimers.clear();
 
-    debugPrint('[ReferenceMidiSynth] Stopped playback (cancelled $timerCount timers)');
+    // Stop all currently playing notes immediately
+    final notesToStop = List<int>.from(_activeNotes);
+    _activeNotes.clear();
+    for (final midi in notesToStop) {
+      try {
+        _midi.stopMidiNote(midi: midi, velocity: 127);
+      } catch (e) {
+        debugPrint('[ReferenceMidiSynth] Error stopping note $midi during stop(): $e');
+      }
+    }
+
+    debugPrint(
+        '[ReferenceMidiSynth] Stopped playback (cancelled $timerCount timers, stopped $activeNoteCount active notes)');
   }
 
   /// Check if currently playing
