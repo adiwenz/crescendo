@@ -77,6 +77,7 @@ class RecordingService {
     }
 
     debugPrint('[RecordingService] Starting recording (owner: $_owner)...');
+    debugPrint('[RecordingService] Mic started - reason: normal start');
     _samples.clear();
     _pitchBuffer.clear();
     _frames.clear();
@@ -128,6 +129,7 @@ class RecordingService {
   Future<RecordingResult> stop() async {
     if (!_isRecording) return RecordingResult('', const []);
     debugPrint('[RecordingService] Stopping recording (owner: $_owner)...');
+    debugPrint('[RecordingService] Mic stopped - reason: normal stop');
     await _sub?.cancel();
     _sub = null;
     try {

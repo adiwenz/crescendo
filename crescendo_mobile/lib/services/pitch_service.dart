@@ -17,12 +17,20 @@ class PitchFrame {
 }
 
 class PitchService {
+  static PitchService? _instance;
+  static PitchService get instance {
+    _instance ??= PitchService();
+    return _instance!;
+  }
+
   final RecordingService _recording;
   final StreamController<PitchFrame> _controller =
       StreamController<PitchFrame>.broadcast();
   StreamSubscription<recording.PitchFrame>? _sub;
   bool _running = false;
   bool _disposed = false;
+  bool _pausedByPlayback = false;
+  DateTime? _watchdogDisabledUntil;
   DateTime? _lastFrameTime;
   Timer? _watchdogTimer;
 
@@ -122,9 +130,19 @@ class PitchService {
   void _startWatchdog() {
     _watchdogTimer?.cancel();
     _watchdogTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      if (!_running || _disposed) {
+      if (!_running || _disposed || _pausedByPlayback) {
         timer.cancel();
         return;
+      }
+      
+      // Check if watchdog is temporarily disabled (e.g., during MIDI playback)
+      if (_watchdogDisabledUntil != null) {
+        final now = DateTime.now();
+        if (now.isBefore(_watchdogDisabledUntil!)) {
+          return; // Watchdog disabled, don't check
+        } else {
+          _watchdogDisabledUntil = null; // Re-enable
+        }
       }
       
       final now = DateTime.now();
@@ -143,6 +161,12 @@ class PitchService {
         }
       }
     });
+  }
+  
+  /// Temporarily disable watchdog for a duration (e.g., during MIDI playback)
+  void disableWatchdogTemporarily({Duration duration = const Duration(seconds: 5)}) {
+    _watchdogDisabledUntil = DateTime.now().add(duration);
+    debugPrint('[PitchService] Watchdog disabled for ${duration.inSeconds}s (until ${_watchdogDisabledUntil})');
   }
 
   Future<void> _handleStreamError() async {
@@ -181,6 +205,127 @@ class PitchService {
       debugPrint('[PitchService] Pitch detection stopped');
     } catch (e) {
       debugPrint('[PitchService] Error stopping recording: $e');
+    }
+  }
+
+  /// Pause pitch detection for MIDI playback
+  /// Stops watchdog, stops recording, and sets pause flag
+  Future<void> pauseForPlayback() async {
+    if (!_running || _pausedByPlayback) return;
+    
+    debugPrint('[PitchService] paused mic');
+    _pausedByPlayback = true;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+    
+    // Disable watchdog for 5 seconds to prevent restart during MIDI playback
+    disableWatchdogTemporarily(duration: const Duration(seconds: 5));
+    
+    await _sub?.cancel();
+    _sub = null;
+    
+    try {
+      await _recording.stop();
+    } catch (e) {
+      debugPrint('[PitchService] Error stopping recording for playback: $e');
+    }
+  }
+  
+  /// Pause mic, play MIDI notes, then resume mic when playback completes
+  /// This ensures mic doesn't restart during MIDI playback
+  Future<void> pauseForMidiPlaybackAndPlay(
+    Future<void> Function() playMidiNotes,
+  ) async {
+    if (!_running || _pausedByPlayback) {
+      // If not running, just play MIDI without pause/resume
+      await playMidiNotes();
+      return;
+    }
+    
+    // Pause mic
+    await pauseForPlayback();
+    
+    try {
+      // Play MIDI and wait for completion
+      debugPrint('[PitchService] midi started');
+      await playMidiNotes();
+      debugPrint('[PitchService] midi done, resuming mic');
+      
+      // Resume mic
+      await resumeAfterPlayback();
+    } catch (e) {
+      // If playback fails, still try to resume mic
+      debugPrint('[PitchService] MIDI playback error: $e, resuming mic');
+      await resumeAfterPlayback();
+      rethrow;
+    }
+  }
+
+  /// Resume pitch detection after MIDI playback
+  /// Restarts recording and detection, re-enables watchdog
+  Future<void> resumeAfterPlayback({Duration delay = Duration.zero}) async {
+    if (!_pausedByPlayback) return;
+    
+    if (delay.inMilliseconds > 0) {
+      await Future.delayed(delay);
+    }
+    
+    if (_disposed || !_pausedByPlayback) return;
+    
+    _pausedByPlayback = false;
+    
+    if (!_running) {
+      // Was not running before pause, nothing to resume
+      return;
+    }
+    
+    // Restart recording and subscription
+    try {
+      await _recording.start();
+      _lastFrameTime = DateTime.now();
+      
+      _sub = _recording.liveStream.listen(
+        (frame) {
+          _lastFrameTime = DateTime.now();
+          final hz = frame.hz;
+          final hasPitch = hz != null && hz > 0 && hz.isFinite;
+          
+          // Compute confidence based on pitch validity and voiced probability
+          double confidence = 0.0;
+          final hzValue = hasPitch ? hz : null;
+          if (hzValue != null) {
+            if (frame.voicedProb != null && frame.voicedProb! > 0) {
+              confidence = frame.voicedProb!.clamp(0.0, 1.0);
+            } else {
+              if (hzValue >= 80 && hzValue <= 1000) {
+                confidence = 0.85;
+              } else if (hzValue >= 50 && hzValue < 80) {
+                confidence = 0.70;
+              } else if (hzValue > 1000 && hzValue <= 2000) {
+                confidence = 0.75;
+              } else {
+                confidence = 0.50;
+              }
+            }
+          }
+          
+          _controller.add(PitchFrame(
+            frequencyHz: hzValue ?? 0,
+            confidence: confidence,
+            ts: DateTime.now(),
+          ));
+        },
+        onError: (error) {
+          debugPrint('[PitchService] Stream error: $error');
+          _handleStreamError();
+        },
+        cancelOnError: false,
+      );
+      
+      _startWatchdog();
+    } catch (e) {
+      debugPrint('[PitchService] Error resuming after playback: $e');
+      _running = false;
     }
   }
 

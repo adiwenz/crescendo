@@ -67,7 +67,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   void initState() {
     super.initState();
     debugPrint('[PianoPitchScreen] initState');
-    _service = PitchService();
+    _service = PitchService.instance;
     _tracker = PitchTracker();
     _isVisible = true;
     WidgetsBinding.instance.addObserver(this);

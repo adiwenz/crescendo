@@ -17,6 +17,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
+import '../../services/reference_synth_service.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -152,7 +153,8 @@ class PitchHighwayPlayer extends StatefulWidget {
 
 class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
-  final AudioSynthService _synth = AudioSynthService();
+  final AudioSynthService _synth = AudioSynthService(); // Keep for review mode
+  final ReferenceSynthService _referenceSynth = ReferenceSynthService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
   final List<PitchFrame> _captured = [];
@@ -295,9 +297,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Add frame timing callback to detect jank (only if frame timing debug enabled)
     // Frame timing is disabled by default to reduce log spam
-    if (kDebugPitchHighway && kDebugFrameTiming) {
-      SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
-    }
+    // Frame timing disabled to reduce log spam
+    // if (kDebugPitchHighway && kDebugFrameTiming) {
+    //   SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+    // }
 
     // Prime audio player to avoid first-play latency
     _primeAudio();
@@ -418,9 +421,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       debugPrint(
           '[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
 
-      // Prewarm reference audio in background (non-blocking)
+      // Initialize reference synth (lightweight - no heavy work)
       if (notes.isNotEmpty) {
-        unawaited(_prewarmReferenceAudio(notes));
+        unawaited(_referenceSynth.start());
       }
 
       // Auto-start the exercise immediately once notes are loaded
@@ -514,9 +517,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     print('[ExercisePlayerScreen] dispose - cleaning up resources');
 
     // Remove frame timing callback (only if it was added)
-    if (kDebugPitchHighway && kDebugFrameTiming) {
-      SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
-    }
+    // Frame timing disabled to reduce log spam
+    // if (kDebugPitchHighway && kDebugFrameTiming) {
+    //   SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
+    // }
 
     // Stop ticker and clock first
     _ticker?.stop();
@@ -1060,7 +1064,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
   }
 
-  /// Heavy audio preparation: render notes, prepare audio (runs in isolate, post-frame)
+  /// Schedule and start real-time MIDI playback (lightweight, no rendering)
   /// This is scheduled AFTER the first reset frame paints to avoid blocking UI
   Future<void> _startHeavyPrepare(
       {required int runId, required int t0, required PerfTrace trace}) async {
@@ -1079,85 +1083,56 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       trace.mark('before buildReferenceNotes');
       final notes = _buildReferenceNotes();
       trace.mark('after buildReferenceNotes');
+
+      // Log note details for audio debugging
+      if (notes.isNotEmpty) {
+        final minStartSec =
+            notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
+        final maxEndSec =
+            notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
+        DebugLog.logEvent('AudioDebug',
+            'Building notes: count=${notes.length}, minStartSec=$minStartSec, maxEndSec=$maxEndSec');
+        DebugLog.logEvent('AudioDebug', 'First 3 notes:');
+        for (var i = 0; i < notes.length && i < 3; i++) {
+          final n = notes[i];
+          DebugLog.logEvent('AudioDebug',
+              '  note[$i]: startSec=${n.startSec}, durationSec=${n.endSec - n.startSec}, midi=${n.midi}');
+        }
+        // Check if lead-in is in note timestamps
+        final leadInSec = _leadInSec;
+        DebugLog.logEvent(
+            'AudioDebug', 'leadInSec=$leadInSec (from _leadInSec)');
+        DebugLog.logEvent('AudioDebug',
+            'First note startSec=$minStartSec (should be ~$leadInSec if lead-in applied)');
+      }
+
       if (notes.isEmpty) {
         trace.mark('abort - no notes');
         trace.end();
         return;
       }
 
-      // Check cache first - if cached, skip heavy render
-      final cache = ReferenceAudioCache.instance;
-      final cachedPath = cache.getCached(
-        exerciseId: widget.exercise.id,
-        difficulty: widget.pitchDifficulty.name,
-        notes: notes,
-        sampleRate: _synth.sampleRate,
-      );
-
-      String path;
-      if (cachedPath != null) {
-        // Cache hit - use cached audio (instant)
-        trace.mark('cache HIT - using cached audio');
-        DebugLog.logEvent('Audio', 'Cache HIT - using cached audio path');
-        path = cachedPath;
-      } else {
-        // Cache miss - render in isolate (heavy CPU work)
-        trace.mark('cache MISS - rendering audio (isolate)');
-        DebugLog.logEvent('Audio', 'Cache MISS - rendering audio in isolate');
-        dev.Timeline.startSync('audio.render');
-        path = await _synth.renderReferenceNotes(notes);
-        dev.Timeline.finishSync();
-        trace.mark('after audio.render (isolate)');
-
-        // Store in cache for next time
-        cache.putCached(
-          exerciseId: widget.exercise.id,
-          difficulty: widget.pitchDifficulty.name,
-          notes: notes,
-          sampleRate: _synth.sampleRate,
-          audioPath: path,
-        );
-      }
-
-      if (runId != _runId || !mounted) {
-        debugPrint(
-            '[Start] Aborted after render - runId mismatch or unmounted');
-        trace.mark('abort after render');
-        trace.end();
-        return;
-      }
-
-      // Transition to waitingAudio phase (still shows "starting" UI)
-      if (mounted && runId == _runId && _phase == StartPhase.starting) {
-        setState(() {
-          _phase = StartPhase.waitingAudio;
-        });
-        DebugLog.logEvent('Phase',
-            'runId=$runId -> waitingAudio (audio render complete, waiting for play)');
-      }
-
-      // Play audio (lightweight - just file I/O and player setup)
-      trace.mark('before audio.play');
+      // Schedule MIDI notes for real-time playback (no rendering, instant)
+      trace.mark('before scheduleNotes');
       _audioPlayCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
-      dev.Timeline.startSync('audio.play');
+      dev.Timeline.startSync('audio.scheduleNotes');
       final beforeAudio = DateTime.now();
+
       try {
-        await _synth.playFile(path);
-        await _audioPosSub?.cancel();
-        _audioPosSub = _synth.onPositionChanged.listen((pos) {
-          if (!_audioStarted && pos > Duration.zero) {
-            _audioStarted = true;
-          }
-          if (_audioStarted) {
-            _audioPositionSec = pos.inMilliseconds / 1000.0;
-          }
-        });
+        // Schedule notes with 0 lead-in delay (lead-in is in note timestamps)
+        await _referenceSynth.scheduleNotes(
+          notes: notes,
+          leadInSeconds:
+              0.0, // Start immediately, lead-in is in MIDI timestamps
+        );
+
         dev.Timeline.finishSync();
         final afterAudio = DateTime.now();
         _audioPlayingEpochMs = afterAudio.millisecondsSinceEpoch;
-        trace.mark('after audio.play');
+        trace.mark('after scheduleNotes');
+        final elapsedFromTap = _audioPlayingEpochMs! - _tapEpochMs!;
         debugPrint(
-            '[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
+            '[Start] MIDI scheduled and started in ${afterAudio.difference(beforeAudio).inMilliseconds}ms (${elapsedFromTap}ms after tap)');
 
         if (runId != _runId || !mounted) {
           debugPrint(
@@ -1167,26 +1142,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           return;
         }
 
-        // Audio is playing - transition to running phase
+        // Audio is playing - transition to running phase immediately
         if (mounted && runId == _runId) {
           setState(() {
             _phase = StartPhase.running;
             _captureEnabled = true;
           });
-          final elapsedFromTap = _audioPlayingEpochMs! - _tapEpochMs!;
           DebugLog.logEvent('Phase',
-              'runId=$runId -> running (audio playing, ${elapsedFromTap}ms after tap)');
+              'runId=$runId -> running (MIDI playing, ${elapsedFromTap}ms after tap)');
           trace.mark('set running');
         }
       } catch (e) {
-        // Audio play failed - still transition to running but mark audio as disabled
+        // Audio scheduling failed - still transition to running but mark audio as disabled
         dev.Timeline.finishSync();
-        debugPrint('[Start] Audio play failed: $e - continuing without audio');
+        debugPrint(
+            '[Start] MIDI scheduling failed: $e - continuing without audio');
         if (runId == _runId && mounted) {
           setState(() {
             _phase = StartPhase.running;
             _captureEnabled = true;
-            // Audio will be disabled implicitly (no audio position updates)
+            // Audio will be disabled implicitly
           });
           DebugLog.logEvent('Phase',
               'runId=$runId -> running (audio failed, continuing silently)');
@@ -1237,6 +1212,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _recording == null ? null : await _recording!.stop();
     // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
+    await _referenceSynth.stop();
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();

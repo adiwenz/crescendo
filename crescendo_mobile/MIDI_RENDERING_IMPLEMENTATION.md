@@ -9,55 +9,14 @@ This implementation replaces software synthesis (oscillator-based WAV generation
 ### Dart Layer
 - **`lib/audio/midi/midi_score.dart`**: MIDI event model and score builder
 - **`lib/audio/midi/midi_export.dart`**: SMF (Standard MIDI File) exporter
-- **`lib/audio/render/midi_wav_renderer.dart`**: Dart API for native rendering
-- **`lib/services/audio_synth_service.dart`**: Updated to use MIDI renderer for glides
-
-### Native Layer
-- **iOS**: `ios/Runner/MidiWavRenderer.swift` - Uses AVAudioEngine + AVAudioSequencer
-- **Android**: `android/app/src/main/kotlin/.../MidiWavRenderer.kt` - Placeholder for FluidSynth
+- **`lib/services/audio_synth_service.dart`**: Audio synthesis service
 
 ## Implementation Status
 
 ### ✅ Completed
 1. MIDI score model with pitch bend support
 2. MIDI SMF export
-3. Dart rendering API
-4. iOS renderer structure (needs testing/refinement)
-5. Android renderer structure (needs FluidSynth integration)
-6. AudioSynthService integration with fallback
-7. SoundFont asset configuration
-
-### ⚠️ Needs Completion
-
-#### iOS Renderer
-The current iOS implementation uses AVAudioSequencer with manual rendering. This approach needs:
-- Proper buffer allocation and deallocation
-- Correct audio format handling
-- Testing on actual devices
-- Potential simplification using AVAudioEngine's offline rendering APIs
-
-**Note**: The AudioBufferList extension may need adjustment based on Swift version and iOS SDK.
-
-#### Android Renderer
-The Android renderer currently throws an error indicating FluidSynth is needed. To complete:
-
-1. **Add FluidSynth Library**:
-   - Option A: Use prebuilt FluidSynth AAR
-   - Option B: Build FluidSynth via NDK
-   - Option C: Use alternative MIDI synth library
-
-2. **Implement Rendering**:
-   ```kotlin
-   // Pseudo-code for FluidSynth integration
-   - Load libfluidsynth.so via System.loadLibrary()
-   - Create FluidSynth settings and synth
-   - Load SoundFont
-   - Parse MIDI and send events
-   - Render PCM samples
-   - Write WAV file
-   ```
-
-3. **JNI Bindings**: If using native FluidSynth, create JNI wrapper
+3. AudioSynthService integration
 
 ## SoundFont Setup
 
@@ -69,12 +28,7 @@ If no SoundFont is available, the app falls back to software synthesis.
 
 ## Usage
 
-The MIDI renderer is automatically used when:
-- Notes form a continuous glide (detected by `_isContinuousGlide()`)
-- SoundFont is available
-- MIDI renderer succeeds
-
-Otherwise, falls back to software synthesis.
+The app uses software synthesis for audio generation.
 
 ## Testing
 
@@ -94,24 +48,17 @@ Enable debug logging to see:
 
 ## Next Steps
 
-1. **iOS**: Test and refine offline rendering approach
-2. **Android**: Integrate FluidSynth or alternative synth
-3. **Testing**: Verify on multiple devices
-4. **Performance**: Optimize rendering speed if needed
-5. **Error Handling**: Improve fallback behavior
+1. **Testing**: Verify on multiple devices
+2. **Performance**: Optimize rendering speed if needed
+3. **Error Handling**: Improve error handling
 
 ## Files Modified/Created
 
 ### New Files
 - `lib/audio/midi/midi_score.dart`
 - `lib/audio/midi/midi_export.dart`
-- `lib/audio/render/midi_wav_renderer.dart`
-- `ios/Runner/MidiWavRenderer.swift`
-- `android/app/src/main/kotlin/.../MidiWavRenderer.kt`
 - `assets/soundfonts/README.md`
 
 ### Modified Files
 - `lib/services/audio_synth_service.dart`
-- `ios/Runner/AppDelegate.swift`
-- `android/app/src/main/kotlin/.../MainActivity.kt`
 - `pubspec.yaml`

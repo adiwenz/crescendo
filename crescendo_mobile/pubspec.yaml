@@ -23,6 +23,7 @@ dependencies:
   pitch_detector_dart: ^0.0.7
   google_fonts: ^6.1.0
   crypto: ^3.0.3
+  flutter_midi_pro: ^1.0.0
 
 dev_dependencies:
   flutter_test:
@@ -36,6 +37,7 @@ flutter:
   assets:
     - assets/icon.png
     - assets/
+    - assets/soundfonts/default.sf2
 
 flutter_launcher_icons:
   image_path: "assets/purple_logo.png"
