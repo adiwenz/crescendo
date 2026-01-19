@@ -38,6 +38,7 @@ flutter:
     - assets/icon.png
     - assets/
     - assets/soundfonts/default.sf2
+    - assets/audio/previews/
 
 flutter_launcher_icons:
   image_path: "assets/purple_logo.png"

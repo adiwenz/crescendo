@@ -19,6 +19,7 @@ import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
 import '../../audio/reference_midi_synth.dart';
+import '../../audio/midi_playback_config.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -1185,12 +1186,69 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           }
         }
 
+        // Octave tripwire validation: check for +12 semitone shift
+        if (notes.isNotEmpty) {
+          final firstNote = notes.first;
+          final scheduledMidi = firstNote.midi.round();
+          final noteName = PitchMath.midiToName(scheduledMidi);
+          final hz = 440.0 * math.pow(2.0, (scheduledMidi - 69) / 12.0);
+
+          // Get expected MIDI from the same source as review (for comparison)
+          // This should match what review playback uses
+          final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+          final expectedNotes = widget.exercise.id == 'sirens'
+              ? TransposedExerciseBuilder.buildSirensWithVisualPath(
+                  exercise: widget.exercise,
+                  lowestMidi: lowestMidi,
+                  highestMidi: highestMidi,
+                  leadInSec: _leadInSec,
+                  difficulty: widget.pitchDifficulty,
+                ).audioNotes
+              : TransposedExerciseBuilder.buildTransposedSequence(
+                  exercise: widget.exercise,
+                  lowestMidi: lowestMidi,
+                  highestMidi: highestMidi,
+                  leadInSec: _leadInSec,
+                  difficulty: widget.pitchDifficulty,
+                );
+
+          if (expectedNotes.isNotEmpty) {
+            final expectedMidi = expectedNotes.first.midi.round();
+            final expectedNoteName = PitchMath.midiToName(expectedMidi);
+            final midiDiff = (scheduledMidi - expectedMidi).abs();
+
+            debugPrint('[OctaveTripwire] EXERCISE playback: '
+                'exerciseId=${widget.exercise.id}, difficulty=${widget.pitchDifficulty}, runId=$runId, '
+                'scheduledMidi=$scheduledMidi ($noteName), hz=${hz.toStringAsFixed(1)}, '
+                'expectedMidi=$expectedMidi ($expectedNoteName), diff=$midiDiff semitones');
+
+            // Tripwire: detect exactly +12 semitone shift
+            if (midiDiff == 12) {
+              final spec = _scaledSpec;
+              final baseRootMidi = spec?.segments.first.midiNote ?? 0;
+              debugPrint('[OctaveTripwire] ⚠️ OCTAVE SHIFT DETECTED: '
+                  'exerciseId=${widget.exercise.id}, runId=$runId, '
+                  'difficulty=${widget.pitchDifficulty}, '
+                  'baseRootMidi=$baseRootMidi, '
+                  'lowestMidi=$lowestMidi, highestMidi=$highestMidi, '
+                  'expectedMidi=$expectedMidi ($expectedNoteName), '
+                  'scheduledMidi=$scheduledMidi ($noteName), '
+                  'shift=+${midiDiff} semitones (one octave too high)');
+              // Stack trace for debugging
+              debugPrint('[OctaveTripwire] Stack trace: ${StackTrace.current}');
+            }
+          }
+        }
+
         // Schedule notes with lead-in delay (lead-in is in MIDI timestamps, but we pass it for timing)
+        // Use exercise config to ensure consistent audio pipeline
+        final exerciseConfig = MidiPlaybackConfig.exercise();
         await _referenceMidiSynth.playSequence(
           notes: notes,
           leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
           runId: runId,
           startEpochMs: timelineStartMs,
+          config: exerciseConfig,
         );
 
         dev.Timeline.finishSync();

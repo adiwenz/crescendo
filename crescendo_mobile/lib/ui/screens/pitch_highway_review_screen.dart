@@ -12,6 +12,8 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
+import '../../audio/reference_midi_synth.dart';
+import '../../audio/midi_playback_config.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
@@ -43,6 +45,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
   // Enable mixing mode to play both recorded audio and reference notes simultaneously
   final AudioSynthService _synth = AudioSynthService(enableMixing: true);
+  final ReferenceMidiSynth _referenceMidiSynth = ReferenceMidiSynth();
   final VocalRangeService _vocalRangeService = VocalRangeService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final PerformanceClock _clock = PerformanceClock();
@@ -67,6 +70,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   String? _recordedAudioPath;
   DateTime? _playbackStartEpoch; // Exact moment playback truly starts
   int _lastSyncLogTime = 0;
+  int _reviewRunId = 0; // Run ID for review MIDI playback
 
   @override
   void initState() {
@@ -96,11 +100,14 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Step 1: Load transposed notes
     await _loadTransposedNotes(difficulty);
     
-    // Step 2: Render reference notes audio (this is the expensive operation)
+    // Step 2: Pre-render reference notes audio (for backward compatibility with WAV path)
+    // NOTE: Review now uses ReferenceMidiSynth for real-time playback (same as exercise),
+    // but we still render WAV as fallback or for mixing with recorded audio
     if (_notes.isNotEmpty) {
       _referenceAudioPath = await _synth.renderReferenceNotes(_notes);
       if (kDebugMode) {
-        debugPrint('[Review Preload] Reference audio rendered: ${_referenceAudioPath}');
+        debugPrint('[Review Preload] Reference audio rendered (WAV fallback): ${_referenceAudioPath}');
+        debugPrint('[Review Preload] Review will use ReferenceMidiSynth for real-time MIDI (same as exercise)');
       }
     }
     
@@ -233,6 +240,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _audioPosSub?.cancel();
     _audioCompleteSub?.cancel();
     _synth.stop();
+    _referenceMidiSynth.stop(); // Stop MIDI playback when navigating away
     _time.dispose();
     super.dispose();
   }
@@ -338,6 +346,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _clock.pause();
     // Stop audio immediately - this will stop audio position updates
     await _synth.stop();
+    await _referenceMidiSynth.stop(); // Stop MIDI playback
     await _audioPosSub?.cancel();
     _audioPosSub = null;
     await _audioCompleteSub?.cancel();
@@ -439,24 +448,43 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   }
 
   Future<void> _playReference({bool useSecondaryPlayer = false}) async {
-    if (_notes.isEmpty || _referenceAudioPath == null) return;
+    if (_notes.isEmpty) return;
     
-    // Use pre-rendered audio path (from preload)
-    final path = _referenceAudioPath!;
-    // Reference notes already have lead-in built in (first note starts at leadInSec)
-    // So audio will have 2 seconds of silence at the start, which matches the visual lead-in
+    // Use ReferenceMidiSynth for review playback (same as exercise) to ensure identical audio pipeline
+    // This ensures both exercise and review use the same SoundFont, program, bank, channel, etc.
+    final reviewConfig = MidiPlaybackConfig.review();
     
-    // Use secondary player if mixing with recorded audio, otherwise primary player
-    if (useSecondaryPlayer) {
-      await _synth.playSecondaryFile(path);
-    } else {
-    await _synth.playFile(path);
+    // Log first note for review playback (for octave tripwire comparison)
+    if (_notes.isNotEmpty) {
+      final firstNote = _notes.first;
+      final reviewMidi = firstNote.midi.round();
+      final noteName = PitchMath.midiToName(reviewMidi);
+      final hz = 440.0 * math.pow(2.0, (reviewMidi - 69) / 12.0);
+      final difficulty = widget.lastTake.pitchDifficulty ?? 'unknown';
+      debugPrint(
+          '[OctaveTripwire] REVIEW playback: '
+          'exerciseId=${widget.exercise.id}, difficulty=$difficulty, '
+          'firstNoteMidi=$reviewMidi ($noteName), hz=${hz.toStringAsFixed(1)}, '
+          'noteCount=${_notes.length}');
     }
     
-    // Debug: log when reference audio starts
+    // Use ReferenceMidiSynth for real-time MIDI playback (same as exercise)
+    // This ensures identical audio pipeline: same SoundFont, same synth, same configuration
+    _reviewRunId++;
+    final startEpochMs = DateTime.now().millisecondsSinceEpoch;
+    
+    await _referenceMidiSynth.playSequence(
+      notes: _notes,
+      leadInSec: 0.0, // Lead-in is already in note timestamps
+      runId: _reviewRunId,
+      startEpochMs: startEpochMs,
+      config: reviewConfig,
+    );
+    
+    // Debug: log when reference MIDI playback starts
     if (kDebugMode) {
       final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
-      debugPrint('[Review Start] t0_audioStart=$t0AudioStart (reference audio playback began)');
+      debugPrint('[Review Start] t0_audioStart=$t0AudioStart (reference MIDI playback began, using ReferenceMidiSynth)');
     }
     
     // Only set up position listener if we're not already listening to recorded audio

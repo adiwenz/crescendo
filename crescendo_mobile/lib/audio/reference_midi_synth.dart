@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 import '../models/reference_note.dart';
+import 'midi_playback_config.dart';
 
 /// Real-time MIDI synthesizer for reference audio playback using flutter_midi_pro
 /// Plays MIDI notes directly without rendering to WAV files
@@ -21,19 +22,36 @@ class ReferenceMidiSynth {
 
   /// Initialize flutter_midi_pro and load SoundFont (idempotent)
   /// Should be called once at app startup or once per screen lifetime
-  Future<void> init() async {
+  /// [config] - MIDI playback configuration (if provided, ensures correct SoundFont is loaded)
+  Future<void> init({MidiPlaybackConfig? config}) async {
+    final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
+    
+    // If already initialized with the same SoundFont, skip
     if (_initialized && _sfId != null) {
+      // TODO: Check if SoundFont matches config (flutter_midi_pro may not support this)
+      // For now, assume if initialized, it's correct
       return;
     }
 
     try {
-      debugPrint('[ReferenceMidiSynth] Loading SoundFont...');
+      debugPrint('[ReferenceMidiSynth] Loading SoundFont: ${effectiveConfig.soundFontName}...');
       _sfId = await _midi.loadSoundfont(
-        sf2Path: 'assets/soundfonts/default.sf2',
-        name: 'default.sf2',
+        sf2Path: effectiveConfig.soundFontAssetPath,
+        name: effectiveConfig.soundFontName,
       );
       _initialized = true;
       debugPrint('[ReferenceMidiSynth] SoundFont loaded successfully, ID: $_sfId');
+      
+      // TODO: Set program/bank/channel if flutter_midi_pro supports it
+      // Currently flutter_midi_pro may not expose these APIs, so we log what we would set
+      if (effectiveConfig.program != 0 || effectiveConfig.bankMSB != 0 || effectiveConfig.bankLSB != 0) {
+        debugPrint('[ReferenceMidiSynth] Note: program=${effectiveConfig.program} bankMSB=${effectiveConfig.bankMSB} bankLSB=${effectiveConfig.bankLSB} requested but may not be supported by flutter_midi_pro');
+      }
+      
+      // TODO: Set pitch bend if enabled and supported
+      if (effectiveConfig.enablePitchBend && effectiveConfig.initialPitchBend != 8192) {
+        debugPrint('[ReferenceMidiSynth] Note: pitchBend=${effectiveConfig.initialPitchBend} requested but may not be supported by flutter_midi_pro');
+      }
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Failed to initialize: $e');
       rethrow;
@@ -46,6 +64,7 @@ class ReferenceMidiSynth {
   /// [leadInSec] - Lead-in delay before starting first note (0 = start immediately)
   /// [runId] - Run ID to guard against stale callbacks (must match current runId)
   /// [startEpochMs] - Timeline anchor epoch in milliseconds (for logging/debugging)
+  /// [config] - MIDI playback configuration (defaults to exercise config)
   /// 
   /// Notes are scheduled relative to the current time, using the startEpochMs
   /// as a reference point for logging purposes only. Actual playback timing
@@ -55,7 +74,9 @@ class ReferenceMidiSynth {
     double leadInSec = 0.0,
     required int runId,
     int? startEpochMs,
+    MidiPlaybackConfig? config,
   }) async {
+    final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
     if (notes.isEmpty) {
       debugPrint('[ReferenceMidiSynth] No notes to play');
       return;
@@ -64,11 +85,26 @@ class ReferenceMidiSynth {
     // Stop any existing playback (this will clear _activeNotes)
     await stop();
 
-    // Ensure initialized
-    await init();
+    // Ensure initialized with the correct SoundFont
+    await init(config: effectiveConfig);
     if (_sfId == null) {
       debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
       return;
+    }
+
+    // Log audio configuration (one line per playback call)
+    if (notes.isNotEmpty) {
+      final firstNote = notes.first;
+      final firstNoteMidi = firstNote.midi.round();
+      final firstNoteStartSec = firstNote.startSec;
+      debugPrint(
+          '[AudioConfig] mode=${effectiveConfig.debugTag} '
+          'soundFont=${effectiveConfig.soundFontName} '
+          'program=${effectiveConfig.program} bankMSB=${effectiveConfig.bankMSB} bankLSB=${effectiveConfig.bankLSB} '
+          'channel=${effectiveConfig.channel} transpose=${effectiveConfig.transposeSemitones} '
+          'volume=${effectiveConfig.volume.toStringAsFixed(2)} '
+          'pitchBend=${effectiveConfig.enablePitchBend ? effectiveConfig.initialPitchBend : "center"} '
+          'firstNoteMidi=$firstNoteMidi firstNoteStartSec=${firstNoteStartSec.toStringAsFixed(2)} noteCount=${notes.length}');
     }
 
     // Set current run ID and reset state

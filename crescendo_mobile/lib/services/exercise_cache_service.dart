@@ -155,11 +155,21 @@ class ExerciseCacheService {
     await generateCache(lowestMidi: lowestMidi, highestMidi: highestMidi);
   }
 
-  /// Clear the cache (e.g., when range is cleared)
+  /// Clear the cache (e.g., when range is cleared or after fixing note generation bugs)
   void clearCache() {
     _cache.clear();
     _cachedLowestMidi = null;
     _cachedHighestMidi = null;
-    debugPrint('[ExerciseCacheService] Cache cleared');
+    debugPrint('[ExerciseCacheService] Cache cleared - will regenerate on next exercise load');
+  }
+  
+  /// Force cache regeneration even if range hasn't changed
+  /// Useful after fixing bugs in note generation logic (e.g., octave shift fixes)
+  Future<void> forceRegenerateCache() async {
+    final (lowestMidi, highestMidi) = await _rangeService.getRange();
+    _cachedLowestMidi = null; // Force regeneration
+    _cachedHighestMidi = null;
+    await generateCache(lowestMidi: lowestMidi, highestMidi: highestMidi);
+    debugPrint('[ExerciseCacheService] Cache force-regenerated for range: $lowestMidi-$highestMidi');
   }
 }

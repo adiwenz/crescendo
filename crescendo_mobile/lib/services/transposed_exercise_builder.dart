@@ -10,6 +10,7 @@ import '../models/siren_path.dart';
 import '../models/vocal_exercise.dart';
 import '../utils/pitch_highway_tempo.dart';
 import '../utils/exercise_constants.dart';
+import '../utils/pitch_math.dart';
 
 /// Builds a complete transposed exercise sequence that starts at the user's lowest note
 /// and steps up by semitones until reaching the highest note.
@@ -128,14 +129,31 @@ class TransposedExerciseBuilder {
     if (allNotes.isNotEmpty) {
       final firstTargetMidi = allNotes.first.midi.round();
       final lastTargetMidi = allNotes.last.midi.round();
+      final firstNoteName = PitchMath.midiToName(firstTargetMidi);
       // ignore: avoid_print
-      print('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi, lastTargetMidi=$lastTargetMidi');
+      print('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi ($firstNoteName), lastTargetMidi=$lastTargetMidi');
       
       // Assert: first note should be at or near lowestMidi (accounting for pattern offsets)
       final expectedFirstMidi = lowestMidi + patternMin;
+      final expectedNoteName = PitchMath.midiToName(expectedFirstMidi);
+      final midiDiff = (firstTargetMidi - expectedFirstMidi).abs();
+      
+      // Octave tripwire: detect if first note is exactly +12 semitones off
+      if (midiDiff == 12) {
+        debugPrint(
+            '[TransposedExerciseBuilder] ⚠️ OCTAVE SHIFT DETECTED in note generation: '
+            'exerciseId=${exercise.id}, baseRootMidi=$baseRootMidi, '
+            'lowestMidi=$lowestMidi, patternMin=$patternMin, '
+            'expectedFirstMidi=$expectedFirstMidi ($expectedNoteName), '
+            'actualFirstMidi=$firstTargetMidi ($firstNoteName), '
+            'shift=+${midiDiff} semitones (one octave too high)');
+        debugPrint('[TransposedExerciseBuilder] Stack trace: ${StackTrace.current}');
+      }
+      
       assert(
         (firstTargetMidi - expectedFirstMidi).abs() <= 1,
-        'First target MIDI ($firstTargetMidi) should be near expected ($expectedFirstMidi) based on lowestMidi ($lowestMidi)',
+        'First target MIDI ($firstTargetMidi/$firstNoteName) should be near expected ($expectedFirstMidi/$expectedNoteName) based on lowestMidi ($lowestMidi). '
+        'Difference: ${midiDiff} semitones${midiDiff == 12 ? " (OCTAVE SHIFT BUG!)" : ""}',
       );
     }
 
@@ -143,26 +161,29 @@ class TransposedExerciseBuilder {
   }
 
   /// Gets the base root MIDI note from the segments (the first note's MIDI value)
+  /// Uses midiNote (audio note) rather than startMidi (visual glide start) for transposition calculations
   /// Throws if segments are empty - range must be validated before calling this
   static int _getBaseRootMidi(List<PitchSegment> segments) {
     if (segments.isEmpty) {
       throw ArgumentError('Cannot get base root MIDI from empty segments');
     }
     final first = segments.first;
-    return first.startMidi ?? first.midiNote;
+    // Use midiNote (audio note) for transposition, not startMidi (visual glide)
+    return first.midiNote;
   }
 
   /// Extracts pattern offsets relative to the base root note
+  /// Uses only midiNote and endMidi (audio notes), not startMidi (visual glide start)
   static List<int> _extractPatternOffsets(List<PitchSegment> segments, int baseRootMidi) {
     final offsets = <int>{};
     for (final seg in segments) {
+      // Use midiNote (audio note) for pattern offsets
       offsets.add(seg.midiNote - baseRootMidi);
-      if (seg.startMidi != null) {
-        offsets.add(seg.startMidi! - baseRootMidi);
-      }
+      // Include endMidi if present (for glides, this is the audio end note)
       if (seg.endMidi != null) {
         offsets.add(seg.endMidi! - baseRootMidi);
       }
+      // Do NOT include startMidi - it's for visual glides only, not audio transposition
     }
     return offsets.toList();
   }

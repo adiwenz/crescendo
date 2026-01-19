@@ -79,7 +79,6 @@ class PitchContourPainter extends CustomPainter {
     final path = Path();
     bool hasStarted = false;
     double? lastTime;
-    var sampleIndex = 0;
     for (final f in frames) {
       if (f.time < leftTime) continue;
       if (f.time > rightTime) break;
@@ -113,12 +112,6 @@ class PitchContourPainter extends CustomPainter {
         midiMin: midiMin,
         midiMax: midiMax,
       );
-      if (debugLogMapping && kDebugMode && sampleIndex % 20 == 0) {
-        debugPrint(
-          'CONTOUR Y: timeMs=${(f.time * 1000).round()} '
-          'midi=${midi.toStringAsFixed(2)} y=${y.toStringAsFixed(2)}',
-        );
-      }
       if (!hasStarted) {
         path.moveTo(x, y);
         hasStarted = true;
@@ -126,7 +119,6 @@ class PitchContourPainter extends CustomPainter {
         path.lineTo(x, y);
       }
       lastTime = f.time;
-      sampleIndex += 1;
     }
     canvas.drawPath(path, glowPaint);
     canvas.drawPath(path, corePaint);

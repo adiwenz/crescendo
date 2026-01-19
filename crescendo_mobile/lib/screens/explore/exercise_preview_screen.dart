@@ -6,17 +6,14 @@ import '../../routing/exercise_route_registry.dart';
 import '../../services/attempt_repository.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../services/exercise_repository.dart';
-import '../../services/audio_synth_service.dart';
 import '../../widgets/banner_card.dart';
 import '../../ui/screens/exercise_review_summary_screen.dart';
-import '../../models/reference_note.dart';
-import '../../services/sine_preview_audio_generator.dart';
+import '../../services/preview_audio_service.dart';
 import '../../services/exercise_metadata.dart';
 import 'dart:async';
 import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
-import '../../utils/pitch_highway_tempo.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -33,10 +30,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   final AttemptRepository _attempts = AttemptRepository.instance;
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
-  final AudioSynthService _synth = AudioSynthService();
-  final SinePreviewAudioGenerator _previewGenerator =
-      SinePreviewAudioGenerator();
-  StreamSubscription<void>? _previewCompleteSub;
+  final PreviewAudioService _previewAudio = PreviewAudioService();
   VocalExercise? _exercise;
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
@@ -66,8 +60,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _previewCompleteSub?.cancel();
-    _synth.stop();
+    _previewAudio.dispose();
     super.dispose();
   }
 
@@ -371,7 +364,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
 
   Future<void> _startExercise() async {
     // Stop preview immediately when starting exercise
-    await _synth.stop();
+    await _previewAudio.stop();
     if (mounted) {
       setState(() => _previewing = false);
     }
@@ -445,222 +438,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
         return;
       }
 
-      // Stop any existing playback
-      await _synth.stop();
-      _previewCompleteSub?.cancel();
-
-      String? previewPath;
-      final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-      final multiplier = PitchHighwayTempo.multiplierFor(
-        difficulty,
-        ex.highwaySpec?.segments ?? [],
-      );
-      final scaledSegments = PitchHighwayTempo.scaleSegments(
-        ex.highwaySpec?.segments ?? [],
-        multiplier,
-      );
-
-      // Use sine preview generator for glides
-      if (metadata.previewAudioStyle == PreviewAudioStyle.sineSweep) {
-        // Only for yawn-sigh preview (which should be a glide)
-        if (ex.id == 'yawn_sigh') {
-          // Yawn-sigh: descending glide preview (timer-based exercise, no highwaySpec)
-          // Generate a descending glide from C5 to C4 over 2 seconds
-          const previewStartMidi = 72.0; // C5
-          const previewEndMidi = 60.0; // C4
-          const durationMs = 2000; // 2 seconds for the glide
-          previewPath = await _previewGenerator.generateSweepWav(
-            startMidi: previewStartMidi,
-            endMidi: previewEndMidi,
-            durationMs: durationMs,
-            leadInMs: 2000,
-            fadeMs: 10,
-          );
-          debugPrint(
-              '[Preview] Yawn-sigh descending glide C5->C4 ${durationMs}ms');
-        } else {
-          // Generic glide: single sweep (for other exercises that use sweeps)
-          final glideSegments = scaledSegments.where((s) => s.isGlide).toList();
-          if (glideSegments.isNotEmpty) {
-            final glide = glideSegments.first;
-            final startMidi = (glide.startMidi ?? glide.midiNote).toDouble();
-            final endMidi = (glide.endMidi ?? glide.midiNote).toDouble();
-            final durationMs = glide.endMs - glide.startMs;
-            previewPath = await _previewGenerator.generateSweepWav(
-              startMidi: startMidi,
-              endMidi: endMidi,
-              durationMs: durationMs,
-              leadInMs: 2000,
-              fadeMs: 10,
-            );
-          }
-        }
-      } else if (metadata.previewAudioStyle == PreviewAudioStyle.sineTone) {
-        // For exercises that need discrete tones (NG Slides, Sirens, Fast 3-note, etc.)
-        if (ex.id == 'ng_slides') {
-          // NG Slides: discrete notes only (bottom + top), matching Octave Slides
-          final segments = scaledSegments;
-          if (segments.length >= 2) {
-            final bottomNote = segments[0];
-            final topNote = segments[1];
-            previewPath = await _previewGenerator.generateCompositeWav(
-              segments: [
-                CompositeSegment.tone(
-                  midi: bottomNote.midiNote.toDouble(),
-                  durationSeconds:
-                      (bottomNote.endMs - bottomNote.startMs) / 1000.0,
-                ),
-                CompositeSegment.silence(durationSeconds: 1.0), // 1s silence
-                CompositeSegment.tone(
-                  midi: topNote.midiNote.toDouble(),
-                  durationSeconds: (topNote.endMs - topNote.startMs) / 1000.0,
-                ),
-              ],
-              leadInMs: 2000,
-            );
-            debugPrint(
-                '[Preview] NG Slides: bottom note ${bottomNote.midiNote}, top note ${topNote.midiNote}');
-          }
-        } else if (ex.id == 'sirens') {
-          // Sirens: continuous sine wave glide up then down
-          final segments = scaledSegments;
-          if (segments.length >= 3) {
-            final bottom1 = segments[0];
-            final top = segments[1];
-            final bottom2 = segments[2];
-            final bottomMidi = bottom1.midiNote.toDouble();
-            final topMidi = top.midiNote.toDouble();
-            // Calculate durations from segments
-            final upDuration = (top.endMs - bottom1.startMs) / 1000.0;
-            final downDuration = (bottom2.endMs - top.startMs) / 1000.0;
-
-            previewPath = await _previewGenerator.generateCompositeWav(
-              segments: [
-                CompositeSegment.sweep(
-                  startMidi: bottomMidi,
-                  endMidi: topMidi,
-                  durationSeconds: upDuration,
-                ),
-                CompositeSegment.sweep(
-                  startMidi: topMidi,
-                  endMidi: bottomMidi,
-                  durationSeconds: downDuration,
-                ),
-                CompositeSegment.silence(
-                    durationSeconds: 2.0), // 2s rest between cycles
-              ],
-              leadInMs: 2000,
-            );
-            debugPrint(
-                '[Preview] Sirens: continuous glide ${bottomMidi.toInt()} → ${topMidi.toInt()} → ${bottomMidi.toInt()}, 2s rest');
-          }
-        } else if (ex.id == 'interval_training') {
-          // TODO: Next release - Expand interval logic, multiple interval types, proper preview coverage
-          // Generate preview with a sample interval (perfect 5th = 7 semitones)
-          // Generate preview with a sample interval (perfect 5th = 7 semitones)
-          const rootMidi = 60.0; // C4
-          const intervalSemitones = 7; // Perfect 5th
-          const intervalMidi = rootMidi + intervalSemitones;
-          previewPath = await _previewGenerator.generateCompositeWav(
-            segments: [
-              CompositeSegment.tone(midi: rootMidi, durationSeconds: 1.0),
-              CompositeSegment.silence(durationSeconds: 0.2),
-              CompositeSegment.tone(midi: intervalMidi, durationSeconds: 1.0),
-            ],
-            leadInMs: 2000,
-          );
-          debugPrint('[Preview] Generated interval training preview: C4 -> G4');
-        } else if (ex.id == 'sustained_pitch_holds') {
-          // TODO: Next release - Multi-note progression, review screen, improved flow
-          // Generate a single steady tone for the hold duration (3 seconds)
-          const targetMidi = 60.0; // C4
-          const holdDurationMs = 3000; // 3 seconds
-          previewPath = await _previewGenerator.generateToneWav(
-            noteMidi: targetMidi,
-            durationMs: holdDurationMs,
-            leadInMs: 2000,
-            fadeMs: 50, // Longer fade for smooth ending
-          );
-          debugPrint(
-              '[Preview] segment 1/1 - Sustained Pitch Hold ${holdDurationMs}ms');
-        } else if (ex.id == 'fast_three_note_patterns') {
-          // Generate tones for each note in the pattern
-          final segments = scaledSegments.take(9).toList(); // Take full pattern
-          final compositeSegments = <CompositeSegment>[];
-          for (var i = 0; i < segments.length; i++) {
-            final seg = segments[i];
-            final durationMs = seg.endMs - seg.startMs;
-            compositeSegments.add(CompositeSegment.tone(
-              midi: seg.midiNote.toDouble(),
-              durationSeconds: durationMs / 1000.0,
-            ));
-            debugPrint(
-                '[Preview] segment ${i + 1}/${segments.length} - note ${seg.midiNote}');
-          }
-          previewPath = await _previewGenerator.generateCompositeWav(
-            segments: compositeSegments,
-            leadInMs: 2000,
-          );
-        } else {
-          // Fallback: use regular note rendering
-          final segments = scaledSegments.take(8).toList();
-          final notes = segments
-              .map((s) => ReferenceNote(
-                    startSec: s.startMs / 1000.0,
-                    endSec: s.endMs / 1000.0,
-                    midi: s.midiNote,
-                  ))
-              .toList();
-          previewPath = await _synth.renderReferenceNotes(notes);
-        }
-      } else {
-        // Regular note-based preview (discrete notes, not glides)
-        final segments = scaledSegments; // Play ALL segments, not just first 8
-        final notes = segments
-            .map((s) => ReferenceNote(
-                  startSec: s.startMs / 1000.0,
-                  endSec: s.endMs / 1000.0,
-                  midi: s.midiNote,
-                ))
-            .toList();
-        debugPrint(
-            '[Preview] segment 1/${segments.length} - regular notes, total=${segments.length}');
-        if (ex.id == 'vv_zz_scales') {
-          // Vv/Zz: ensure all segments are played with debug logs
-          for (var i = 0; i < notes.length; i++) {
-            debugPrint(
-                '[Preview] segment ${i + 1}/${notes.length} - Vv/Zz note ${notes[i].midi}');
-          }
-        }
-        previewPath = await _synth.renderReferenceNotes(notes);
-      }
-
-      if (previewPath == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to generate preview')),
-          );
-        }
-        return;
-      }
-
-      // Play the preview and wait for completion
-      await _synth.playFile(previewPath);
-
-      // Wait for playback to complete
-      final completer = Completer<void>();
-      _previewCompleteSub = _synth.onComplete.listen((_) {
-        debugPrint('[Preview] complete');
-        if (!completer.isCompleted) {
-          completer.complete();
-        }
-      });
-
-      // Also set a timeout as fallback (audio duration + 500ms buffer)
-      final timeout = Duration(milliseconds: 10000); // 10s max
-      await completer.future.timeout(timeout, onTimeout: () {
-        debugPrint('[Preview] timeout - forcing completion');
-      });
+      // Use the new preview audio service (loads bundled assets or generates real-time)
+      await _previewAudio.playPreview(ex);
     } catch (e) {
       debugPrint('[Preview] error: $e');
       if (mounted) {
@@ -669,12 +448,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
         );
       }
     } finally {
-      _previewCompleteSub?.cancel();
-      _previewCompleteSub = null;
       if (mounted) {
         setState(() => _previewing = false);
       }
-      debugPrint('[Preview] end - state reset');
     }
   }
 }
