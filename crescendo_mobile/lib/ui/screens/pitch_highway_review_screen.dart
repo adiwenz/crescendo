@@ -10,6 +10,7 @@ import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
+import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
@@ -52,6 +53,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   double? _audioPositionSec;
   bool _audioStarted = false;
   List<ReferenceNote> _notes = const [];
+  SirenPath? _sirenVisualPath; // Visual path for Sirens (separate from audio notes)
   double _durationSec = 1.0;
   // Use shared constant for lead-in time
   static const double _leadInSec = ExerciseConstants.leadInSec;
@@ -179,8 +181,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
     
-    // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
+    // Special handling for Sirens: use buildSirensWithVisualPath to get both audio notes and visual path
     final List<ReferenceNote> notes;
+    SirenPath? sirenPath;
     if (widget.exercise.id == 'sirens') {
       final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
         exercise: widget.exercise,
@@ -190,6 +193,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         difficulty: difficulty,
       );
       notes = sirenResult.audioNotes; // Get the 3 audio notes for playback
+      sirenPath = sirenResult.visualPath; // Get the visual bell curve path
     } else {
       notes = TransposedExerciseBuilder.buildTransposedSequence(
         exercise: widget.exercise,
@@ -198,11 +202,13 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         leadInSec: _leadInSec,
         difficulty: difficulty,
       );
+      sirenPath = null;
     }
     
     if (mounted) {
       setState(() {
         _notes = notes;
+        _sirenVisualPath = sirenPath; // Store visual path for Sirens
         _durationSec = _computeDuration(notes);
       });
       
@@ -465,29 +471,24 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Auto-start playback if preload is complete and not playing yet
-    // This ensures playback starts immediately when screen is first built
-    if (_preloadComplete && !_playing && _notes.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_playing && _preloadComplete && _notes.isNotEmpty) {
-          _start();
-        }
-      });
-    }
-    
     final colors = AppThemeColors.of(context);
     final noteMidis = _notes.map((n) => n.midi.toDouble()).toList();
     final contourMidis = widget.lastTake.frames
         .map((f) => f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null))
         .whereType<double>()
         .toList();
-    final combined = [...noteMidis, ...contourMidis];
-    final minMidi = combined.isNotEmpty
-        ? (combined.reduce(math.min).floor() - 3)
-        : 48;
-    final maxMidi = combined.isNotEmpty
-        ? (combined.reduce(math.max).ceil() + 3)
-        : 72;
+    
+    // For Sirens, use visual path for MIDI range (more accurate)
+    final minMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
+        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce((a, b) => a < b ? a : b).floor() - 3)
+        : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
+            ? ([...noteMidis, ...contourMidis].reduce(math.min).floor() - 3)
+            : 48);
+    final maxMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
+        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce((a, b) => a > b ? a : b).ceil() + 3)
+        : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
+            ? ([...noteMidis, ...contourMidis].reduce(math.max).ceil() + 3)
+            : 72);
     assert(() {
       debugPrint('[Review] exerciseId: ${widget.lastTake.exerciseId}');
       if (noteMidis.isNotEmpty) {
@@ -543,6 +544,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                           midiMax: maxMidi,
                           colors: colors,
                           debugLogMapping: true,
+                          sirenPath: _sirenVisualPath, // Pass visual path for Sirens bell curve
                         ),
                       ),
                     ),
