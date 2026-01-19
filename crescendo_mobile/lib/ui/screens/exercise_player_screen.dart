@@ -25,6 +25,7 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_cache_service.dart';
+import '../../services/reference_audio_cache.dart';
 import '../../services/attempt_repository.dart';
 import '../../models/exercise_attempt.dart';
 import 'exercise_review_summary_screen.dart';
@@ -42,6 +43,9 @@ import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
 import '../../debug/debug_log.dart'
     show DebugLog, kDebugPitchHighway, kDebugFrameTiming;
+
+/// Single source of truth for exercise start state
+enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
 
 /// Performance tracing helper for stopwatch + DevTools Timeline spans
 class PerfTrace {
@@ -166,8 +170,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   // Use shared constant for lead-in time
   static const double _leadInSec = ExerciseConstants.leadInSec;
   Ticker? _ticker;
-  bool _playing = false;
-  bool _preparing = false;
+
+  /// Single source of truth for exercise state
+  StartPhase _phase = StartPhase.idle;
+
+  /// Derived UI flags
+  bool get isStarting =>
+      _phase == StartPhase.starting || _phase == StartPhase.waitingAudio;
+  bool get isRunning => _phase == StartPhase.running;
+  bool get _playing =>
+      _phase == StartPhase.running || isStarting; // For backward compatibility
+  bool get _preparing => isStarting; // For backward compatibility
+
   bool _audioStarted = false;
   Size? _canvasSize;
   int _midiMin = 48;
@@ -196,11 +210,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   String? _rangeError;
 
   // Instant start state management
-  bool _starting = false;
-  bool _stopping = false;
-  bool _isRunning = false;
   int? _tapEpochMs;
   int? _exerciseStartEpochMs;
+  int? _audioPlayCalledEpochMs; // When audio.play() was called
+  int? _audioPlayingEpochMs; // When audio.play() returned successfully
   bool _isImmediateTick =
       false; // Flag to prevent double logging on immediate tick
   int _runId = 0; // Increment on each start to ignore stale async callbacks
@@ -210,7 +223,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   // Per-run start guards to prevent double-starting
   bool _visualsStarted = false; // Visuals (clock/ticker) started for this run
-  bool _runningSet = false; // Running flag set for this run
   int?
       _timelineStartEpochMs; // Timeline anchor epoch (set once per run, never changed)
   int? _lastModelHash; // Track model identity per run
@@ -239,8 +251,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
     _notesLoaded = false;
-    _playing = false;
-    _preparing = false;
+    _phase = StartPhase.idle;
     _setTimeValue(0.0, src: 'initState');
     _pitchBall.reset();
     _pitchState.reset();
@@ -254,9 +265,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioStarted = false;
     _tapEpochMs = null;
     _exerciseStartEpochMs = null;
+    _audioPlayCalledEpochMs = null;
+    _audioPlayingEpochMs = null;
     _setTimelineStartEpochMs(null, src: 'initState');
     _visualsStarted = false;
-    _runningSet = false;
     _lastModelHash = null;
     _lastRepaintHash = null;
     _isImmediateTick = false;
@@ -406,12 +418,66 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       debugPrint(
           '[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
 
+      // Prewarm reference audio in background (non-blocking)
+      if (notes.isNotEmpty) {
+        unawaited(_prewarmReferenceAudio(notes));
+      }
+
       // Auto-start the exercise immediately once notes are loaded
       // The 2-second lead-in is built into the notes themselves
-      if (notes.isNotEmpty && !_playing && !_preparing && !_starting) {
+      if (notes.isNotEmpty && _phase == StartPhase.idle) {
         // Start immediately - no delay needed
         onStartPressed();
       }
+    }
+  }
+
+  /// Prewarm reference audio in background after notes are loaded
+  /// This ensures audio is ready (cached) before user taps Start
+  Future<void> _prewarmReferenceAudio(List<ReferenceNote> notes) async {
+    if (!mounted) return;
+    final prewarmStart = DateTime.now();
+    DebugLog.logEvent(
+        'Prewarm', 'Starting audio prewarm for ${notes.length} notes');
+
+    try {
+      // Check cache first
+      final cache = ReferenceAudioCache.instance;
+      final cachedPath = cache.getCached(
+        exerciseId: widget.exercise.id,
+        difficulty: widget.pitchDifficulty.name,
+        notes: notes,
+        sampleRate: _synth.sampleRate,
+      );
+
+      if (cachedPath != null) {
+        final prewarmEnd = DateTime.now();
+        DebugLog.logEvent('Prewarm',
+            'Cache HIT - audio ready (${prewarmEnd.difference(prewarmStart).inMilliseconds}ms)');
+        return; // Already cached, no work needed
+      }
+
+      // Cache miss - render in background
+      DebugLog.logEvent(
+          'Prewarm', 'Cache MISS - rendering audio in background');
+      final path = await _synth.renderReferenceNotes(notes);
+
+      // Store in cache
+      if (mounted) {
+        cache.putCached(
+          exerciseId: widget.exercise.id,
+          difficulty: widget.pitchDifficulty.name,
+          notes: notes,
+          sampleRate: _synth.sampleRate,
+          audioPath: path,
+        );
+        final prewarmEnd = DateTime.now();
+        DebugLog.logEvent('Prewarm',
+            'Audio rendered and cached (${prewarmEnd.difference(prewarmStart).inMilliseconds}ms)');
+      }
+    } catch (e) {
+      DebugLog.logEvent('Prewarm', 'Error prewarming audio: $e');
+      // Non-fatal - will render on Start if needed
     }
   }
 
@@ -492,11 +558,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Clear all state to prevent old data from persisting
     _transposedNotes = const [];
     _notesLoaded = false;
-    _playing = false;
-    _preparing = false;
-    _starting = false;
-    _stopping = false;
-    _isRunning = false;
+    _phase = StartPhase.idle;
     _captureEnabled = false;
     _audioStarted = false;
     _scorePct = null;
@@ -505,9 +567,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioPositionSec = null;
     _tapEpochMs = null;
     _exerciseStartEpochMs = null;
+    _audioPlayCalledEpochMs = null;
+    _audioPlayingEpochMs = null;
     _timelineStartEpochMs = null;
     _visualsStarted = false;
-    _runningSet = false;
     _isImmediateTick = false;
     _rangeError = null;
     _lastRecordingPath = null;
@@ -529,7 +592,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   void _onTick(Duration elapsed) {
-    if (!_playing) return;
+    if (!isRunning && !isStarting) return;
 
     // Log first ticker callback (not the immediate manual call)
     if (!_isImmediateTick && !_loggedFirstTick) {
@@ -576,7 +639,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           '_clock.nowSeconds()=$clockTime '
           '_audioPositionSec=$_audioPositionSec '
           '_leadInSec=$_leadInSec '
-          '_playing=$_playing _preparing=$_preparing _isRunning=$_isRunning '
+          '_playing=$_playing _preparing=$_preparing phase=$_phase '
           'runId=$_runId '
           'lastTime=$_lastTime';
       DebugLog.tripwire('time_backwards_inputs',
@@ -584,7 +647,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
 
     // Monotonic clamp safety: prevent UI from jumping backward even if bug remains
-    if (_playing && next < _time.value) {
+    if (isRunning && next < _time.value) {
       DebugLog.tripwire('time_backwards_clamped',
           'time clamped: would be $next but clamped to ${_time.value} runId=$_runId');
       next = _time.value; // Clamp to prevent visible restart
@@ -618,7 +681,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (!_useMic) {
       _simulatePitch(next);
     }
-    if (next >= _durationSec) {
+    if (next >= _durationSec && isRunning) {
       _stop();
     }
   }
@@ -650,24 +713,21 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioPosSub = null;
 
     // Reset all runtime flags
-    _playing = false;
-    _preparing = false;
-    _starting = false;
-    _stopping = false;
-    _isRunning = false;
+    _phase = StartPhase.idle;
     _captureEnabled = false;
     _audioStarted = false;
     _isImmediateTick = false;
 
     // Reset per-run start guards
     _visualsStarted = false;
-    _runningSet = false;
     _lastModelHash = null;
     _lastRepaintHash = null;
 
     // Reset timestamps
     _tapEpochMs = null;
     _exerciseStartEpochMs = null;
+    _audioPlayCalledEpochMs = null;
+    _audioPlayingEpochMs = null;
     _setTimelineStartEpochMs(null,
         src: '_resetRunState'); // Reset timeline anchor
     _startedAt = null;
@@ -763,8 +823,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   /// Called immediately when user taps Start - no awaits, instant UI response
   void onStartPressed() {
-    if (_starting || _isRunning || _stopping) {
-      debugPrint('[Start] Ignored - already starting/running/stopping');
+    if (isStarting || isRunning || _phase == StartPhase.stopping) {
+      debugPrint('[Start] Ignored - phase=$_phase');
       return;
     }
 
@@ -791,17 +851,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       _setTimelineStartEpochMs(timelineStartMs,
           src: 'onStartPressed'); // Set timeline anchor ONCE
       _startedAt = tapTime;
-      _playing = true; // UI state: show as playing immediately
+      _phase = StartPhase
+          .starting; // Set phase to starting - stays true until audio plays
+      DebugLog.logEvent('Phase', 'runId=$_runId -> starting (tap=$t0)');
     });
 
     trace.mark('after reset setState');
-    debugPrint('[Start] AFTER setState runId=$_runId');
+    debugPrint('[Start] AFTER setState runId=$_runId phase=$_phase');
 
     // Start visuals immediately (no awaits) - idempotent, will only start once
     _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
     trace.mark('after ensureVisualsStarted');
 
-    // Start fast engines immediately (recorder, mic access)
+    // Start fast engines immediately (recorder, mic access) - does NOT change phase
     final currentRunId = _runId;
     unawaited(_startFastEngines(runId: currentRunId, t0: t0, trace: trace));
 
@@ -878,9 +940,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   /// Fast engine start: mic access, recording (no heavy CPU work)
   /// This runs immediately to start recording as fast as possible
+  /// IMPORTANT: Does NOT change phase - phase stays in "starting" until audio plays
   Future<void> _startFastEngines(
       {required int runId, required int t0, required PerfTrace trace}) async {
-    _starting = true;
     try {
       trace.mark('_startEngines begin');
       debugPrint(
@@ -1023,63 +1085,115 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         return;
       }
 
-      // Render audio in isolate (heavy CPU work)
-      trace.mark('before audio.render (isolate)');
-      dev.Timeline.startSync('audio.render');
-      final path = await _synth.renderReferenceNotes(notes);
-      dev.Timeline.finishSync();
-      trace.mark('after audio.render (isolate)');
+      // Check cache first - if cached, skip heavy render
+      final cache = ReferenceAudioCache.instance;
+      final cachedPath = cache.getCached(
+        exerciseId: widget.exercise.id,
+        difficulty: widget.pitchDifficulty.name,
+        notes: notes,
+        sampleRate: _synth.sampleRate,
+      );
 
-      if (runId != _runId) {
-        debugPrint('[Start] Aborted after render - runId mismatch');
+      String path;
+      if (cachedPath != null) {
+        // Cache hit - use cached audio (instant)
+        trace.mark('cache HIT - using cached audio');
+        DebugLog.logEvent('Audio', 'Cache HIT - using cached audio path');
+        path = cachedPath;
+      } else {
+        // Cache miss - render in isolate (heavy CPU work)
+        trace.mark('cache MISS - rendering audio (isolate)');
+        DebugLog.logEvent('Audio', 'Cache MISS - rendering audio in isolate');
+        dev.Timeline.startSync('audio.render');
+        path = await _synth.renderReferenceNotes(notes);
+        dev.Timeline.finishSync();
+        trace.mark('after audio.render (isolate)');
+
+        // Store in cache for next time
+        cache.putCached(
+          exerciseId: widget.exercise.id,
+          difficulty: widget.pitchDifficulty.name,
+          notes: notes,
+          sampleRate: _synth.sampleRate,
+          audioPath: path,
+        );
+      }
+
+      if (runId != _runId || !mounted) {
+        debugPrint(
+            '[Start] Aborted after render - runId mismatch or unmounted');
         trace.mark('abort after render');
         trace.end();
         return;
       }
 
+      // Transition to waitingAudio phase (still shows "starting" UI)
+      if (mounted && runId == _runId && _phase == StartPhase.starting) {
+        setState(() {
+          _phase = StartPhase.waitingAudio;
+        });
+        DebugLog.logEvent('Phase',
+            'runId=$runId -> waitingAudio (audio render complete, waiting for play)');
+      }
+
       // Play audio (lightweight - just file I/O and player setup)
       trace.mark('before audio.play');
+      _audioPlayCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
       dev.Timeline.startSync('audio.play');
       final beforeAudio = DateTime.now();
-      await _synth.playFile(path);
-      await _audioPosSub?.cancel();
-      _audioPosSub = _synth.onPositionChanged.listen((pos) {
-        if (!_audioStarted && pos > Duration.zero) {
-          _audioStarted = true;
-        }
-        if (_audioStarted) {
-          _audioPositionSec = pos.inMilliseconds / 1000.0;
-        }
-      });
-      dev.Timeline.finishSync();
-      final afterAudio = DateTime.now();
-      trace.mark('after audio.play');
-      debugPrint(
-          '[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
-
-      if (runId != _runId) {
-        debugPrint('[Start] Aborted after audio - runId mismatch');
-        trace.mark('abort after audio');
-        trace.end();
-        return;
-      }
-
-      // All engines started - mark as running (idempotent, only set once)
-      if (mounted && runId == _runId && !_runningSet) {
-        _runningSet = true;
-        setState(() {
-          _isRunning = true;
-          _captureEnabled = true;
+      try {
+        await _synth.playFile(path);
+        await _audioPosSub?.cancel();
+        _audioPosSub = _synth.onPositionChanged.listen((pos) {
+          if (!_audioStarted && pos > Duration.zero) {
+            _audioStarted = true;
+          }
+          if (_audioStarted) {
+            _audioPositionSec = pos.inMilliseconds / 1000.0;
+          }
         });
+        dev.Timeline.finishSync();
+        final afterAudio = DateTime.now();
+        _audioPlayingEpochMs = afterAudio.millisecondsSinceEpoch;
+        trace.mark('after audio.play');
         debugPrint(
-            '[Start] set running ONCE (runId=$runId) - no timeline reset');
-        trace.mark('set running');
-      } else if (_runningSet) {
-        debugPrint('[Start] set running ignored - already set (runId=$runId)');
-        trace.mark('set running (already set)');
+            '[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
+
+        if (runId != _runId || !mounted) {
+          debugPrint(
+              '[Start] Aborted after audio - runId mismatch or unmounted');
+          trace.mark('abort after audio');
+          trace.end();
+          return;
+        }
+
+        // Audio is playing - transition to running phase
+        if (mounted && runId == _runId) {
+          setState(() {
+            _phase = StartPhase.running;
+            _captureEnabled = true;
+          });
+          final elapsedFromTap = _audioPlayingEpochMs! - _tapEpochMs!;
+          DebugLog.logEvent('Phase',
+              'runId=$runId -> running (audio playing, ${elapsedFromTap}ms after tap)');
+          trace.mark('set running');
+        }
+      } catch (e) {
+        // Audio play failed - still transition to running but mark audio as disabled
+        dev.Timeline.finishSync();
+        debugPrint('[Start] Audio play failed: $e - continuing without audio');
+        if (runId == _runId && mounted) {
+          setState(() {
+            _phase = StartPhase.running;
+            _captureEnabled = true;
+            // Audio will be disabled implicitly (no audio position updates)
+          });
+          DebugLog.logEvent('Phase',
+              'runId=$runId -> running (audio failed, continuing silently)');
+        }
       }
       trace.end();
-      debugPrint('[Start] running (runId=$runId)');
+      debugPrint('[Start] running (runId=$runId) phase=$_phase');
     } catch (e, stackTrace) {
       debugPrint('[Start] ERROR in _startHeavyPrepare: $e');
       debugPrint('[Start] Stack trace: $stackTrace');
@@ -1087,29 +1201,29 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       trace.end();
       // Revert to idle state on error (only if still current run)
       if (runId == _runId && mounted) {
-        _playing = false;
-        _isRunning = false;
+        setState(() {
+          _phase = StartPhase.idle;
+        });
         _ticker?.stop();
         _clock.pause();
-        setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start exercise: $e')),
         );
-      }
-    } finally {
-      if (runId == _runId) {
-        _starting = false;
+        DebugLog.logEvent('Phase', 'runId=$runId -> idle (error: $e)');
       }
     }
   }
 
   Future<void> _stop() async {
-    if (_stopping || (!_playing && !_preparing)) return;
+    if (_phase == StartPhase.stopping ||
+        _phase == StartPhase.done ||
+        (_phase == StartPhase.idle && !isStarting)) return;
 
-    _stopping = true;
+    setState(() {
+      _phase = StartPhase.stopping;
+    });
+    DebugLog.logEvent('Phase', 'runId=$_runId -> stopping');
     _endPrepCountdown();
-    _playing = false;
-    _isRunning = false;
     _captureEnabled = false;
     _ticker?.stop();
 
@@ -1136,12 +1250,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
 
-    _stopping = false;
+    setState(() {
+      _phase = StartPhase.done;
+    });
+    DebugLog.logEvent('Phase', 'runId=$_runId -> done');
     await _completeAndPop(score, {'intonation': score});
   }
 
   Future<bool> _handleExit() async {
-    if (_playing || _preparing) {
+    if (isStarting || isRunning) {
       await _stop();
       return false;
     }
@@ -1346,7 +1463,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   void _endPrepCountdown() {
-    _preparing = false;
+    // No-op: phase-based state doesn't need this
     _prepTimer?.cancel();
     _prepTimer = null;
     _prepRemaining = 0;
@@ -1579,7 +1696,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           bottom: false,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _playing || _preparing ? _stop : onStartPressed,
+            onTap: isStarting || isRunning ? _stop : onStartPressed,
             child: Stack(
               children: [
                 // DEBUG OVERLAY - Temporary debugging instrumentation
@@ -1595,8 +1712,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       padding: const EdgeInsets.all(6),
                       child: Text(
                         'runId=$_runId\n'
-                        'key=${_pitchHighwayKey?.toString() ?? "null"}\n'
-                        'playing=$_playing starting=$_starting\n'
+                        'phase=$_phase\n'
+                        'tap=${_tapEpochMs ?? "null"}\n'
+                        'audioPlayCalled=${_audioPlayCalledEpochMs ?? "null"}\n'
+                        'audioPlaying=${_audioPlayingEpochMs ?? "null"}\n'
                         't=${DateTime.now().millisecondsSinceEpoch}',
                         style:
                             const TextStyle(color: Colors.white, fontSize: 12),
@@ -1708,13 +1827,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     ),
                   ),
                 ),
-                if (_preparing)
+                if (isStarting)
                   Align(
                     alignment: Alignment.topCenter,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: Text(
-                        'Starting in $_prepRemaining...',
+                        'Preparing audio...',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),

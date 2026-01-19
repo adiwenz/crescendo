@@ -22,6 +22,7 @@ dependencies:
   wav: ^1.2.1
   pitch_detector_dart: ^0.0.7
   google_fonts: ^6.1.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
