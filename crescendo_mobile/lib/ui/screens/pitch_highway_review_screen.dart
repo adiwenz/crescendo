@@ -277,24 +277,26 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (_playing || !_preloadComplete) return;
     
     final tapTime = DateTime.now().millisecondsSinceEpoch;
+    final startOffsetSec = widget.startTimeSec;
+    
     if (kDebugMode) {
-      debugPrint('[Review Start] tapTime=$tapTime (playback requested)');
+      debugPrint('[Review Start] tapTime=$tapTime (playback requested), startOffsetSec=$startOffsetSec');
     }
     
-    if (_time.value >= _durationSec) {
-      _time.value = widget.startTimeSec;
-    }
-    if (_time.value < widget.startTimeSec) {
-      _time.value = widget.startTimeSec;
+    // Set visual time to start offset immediately (before audio starts)
+    _time.value = startOffsetSec;
+    
+    if (kDebugMode) {
+      debugPrint('[Review] visualsSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
     }
     
     _playing = true;
-    _audioPositionSec = null;
+    _audioPositionSec = startOffsetSec; // Initialize to start offset
     _audioStarted = false;
     
     // Reset clock - visuals will be driven directly by audio position
     _clock.setLatencyCompensationMs(0);
-    _clock.start(offsetSec: widget.startTimeSec, freezeUntilAudio: true);
+    _clock.start(offsetSec: startOffsetSec, freezeUntilAudio: true);
     
     // Start ticker - it will update visuals from audio position
     _ticker?.start();
@@ -305,10 +307,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     if (kDebugMode) {
       debugPrint('[Review Start] playbackStartEpoch=$playbackStartTime, '
-          'LEAD_IN_MS=${ExerciseConstants.leadInMs}');
+          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${ExerciseConstants.leadInMs}');
     }
     
     // Start audio playback immediately (everything is preloaded)
+    // Audio will be sought to startOffsetSec in _playAudio()
     await _playAudio();
     
     final midiEngineStartTime = DateTime.now().millisecondsSinceEpoch;
@@ -316,8 +319,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       debugPrint('[Review Start] midiEngineStartTime=$midiEngineStartTime, '
           'latency=${midiEngineStartTime - playbackStartTime}ms');
       if (_notes.isNotEmpty) {
-        final firstNoteStartMs = _notes.first.startSec * 1000.0;
-        debugPrint('[Review Start] firstMidiNoteScheduledAtMs=$firstNoteStartMs (expected=${ExerciseConstants.leadInMs})');
+        // Find first note that's >= startOffsetSec
+        final relevantNotes = _notes.where((n) => n.startSec >= startOffsetSec).toList();
+        if (relevantNotes.isNotEmpty) {
+          final firstNoteStartMs = relevantNotes.first.startSec * 1000.0;
+          debugPrint('[Review Start] firstMidiNoteAfterOffset=${firstNoteStartMs}ms (offset=$startOffsetSec)');
+        }
       }
     }
     
@@ -354,9 +361,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   }
 
   Future<void> _playAudio() async {
-    // Everything is preloaded, so playback starts immediately
-    // Notes already have LEAD_IN_MS built into their timestamps
-    // No need for additional delays - audio starts at t=0, first note plays at t=LEAD_IN_MS
+    // Seek to the start time before playing (if startTimeSec > 0)
+    final startOffsetSec = widget.startTimeSec;
+    
+    if (kDebugMode) {
+      debugPrint('[Review] startOffsetSec=$startOffsetSec');
+    }
     
     final hasRecordedAudio = _recordedAudioPath != null && _recordedAudioPath!.isNotEmpty;
     
@@ -365,9 +375,18 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     if (hasRecordedAudio) {
       // Play both recorded audio and reference notes simultaneously
       // Reference notes on secondary player, recorded audio on primary player
-      // Both start immediately - notes have lead-in built in
       await _playReference(useSecondaryPlayer: true); // Start reference notes on secondary
       await _synth.playFile(_recordedAudioPath!); // Then start recorded audio on primary
+      
+      // Seek both players to the start offset
+      if (startOffsetSec > 0) {
+        final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
+        await _synth.seek(seekPos);
+        await _synth.seekSecondary(seekPos);
+        if (kDebugMode) {
+          debugPrint('[Review] audioSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
+        }
+      }
       
       // Debug: log when audio actually starts
       if (kDebugMode) {
@@ -387,12 +406,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           }
         if (_audioStarted) {
           // Audio position is relative to audio file start
-          // Recorded audio file starts at t=0 (includes any ambient sound from first 2 seconds)
-          // MIDI reference notes have lead-in built in (first note starts at t=2.0s in the audio file)
-          // Visual time should match audio position directly (no offset needed)
-          // Audio at 0s = chart time 0s (recorded audio starts, notes sliding in)
-          // Audio at 2.0s = chart time 2.0s (first MIDI note plays, first note hits sing line)
-          _audioPositionSec = pos.inMilliseconds / 1000.0;
+          // Add the start offset to get the actual timeline position
+          _audioPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
           
           // Visual time is driven directly by audio position (master clock)
           // This ensures perfect sync
@@ -407,6 +422,19 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     } else {
       // No recorded audio, just play reference notes
       await _playReference();
+      
+      // Seek to the start offset
+      if (startOffsetSec > 0) {
+        final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
+        await _synth.seek(seekPos);
+        if (kDebugMode) {
+          debugPrint('[Review] audioSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
+        }
+      }
+    }
+    
+    if (kDebugMode) {
+      debugPrint('[Review] playbackStartedAt=${startOffsetSec.toStringAsFixed(2)}s');
     }
   }
 

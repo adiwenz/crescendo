@@ -169,6 +169,16 @@ class AudioSynthService {
 
   Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
+  /// Seek the primary player to a specific position
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+  }
+
+  /// Seek the secondary player to a specific position
+  Future<void> seekSecondary(Duration position) async {
+    await _secondaryPlayer?.seek(position);
+  }
+
   Future<void> stop() async {
     await _player.stop();
     await _secondaryPlayer?.stop();

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/exercise_attempt.dart';
@@ -227,13 +228,22 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
       );
       return;
     }
+    // Start 2 seconds before the segment starts (for context/lead-in)
+    // But don't go below 0.0
+    final segmentStartSec = segment.startMs / 1000.0;
+    final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
+    
+    if (kDebugMode) {
+      debugPrint('[Review] segmentTap index=${segment.segmentIndex} startSec=$segmentStartSec replayStartSec=$replayStartSec');
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
           exercise: widget.exercise,
           lastTake: take,
-          startTimeSec: segment.startMs / 1000.0,
+          startTimeSec: replayStartSec,
         ),
       ),
     );
