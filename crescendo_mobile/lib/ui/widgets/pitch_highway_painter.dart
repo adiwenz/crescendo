@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/reference_note.dart';
+import '../../models/siren_path.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../theme/app_theme.dart';
@@ -33,11 +34,13 @@ class PitchHighwayPainter extends CustomPainter {
   final List<TailPoint>? tailPoints;
   final bool debugLogMapping;
   final int? runId; // For debugging: track which run this painter belongs to
+  final SirenPath? sirenPath; // Optional visual path for Sirens (separate from audio notes)
 
   PitchHighwayPainter({
     required this.notes,
     required this.pitchTail,
     required this.time,
+    this.sirenPath,
     this.pixelsPerSecond = 160,
     this.playheadFraction = 0.45,
     this.smoothingWindowSec = 0.2,
@@ -140,85 +143,156 @@ class PitchHighwayPainter extends CustomPainter {
       }
     }
 
-    // First pass: draw glides as continuous curves
-    for (var i = 0; i < notes.length; i++) {
-      final n = notes[i];
-      if (n.isGlideStart && n.glideEndMidi != null) {
-        // Find the corresponding glide end note
-        ReferenceNote? glideEnd;
-        for (var j = i + 1; j < notes.length; j++) {
-          if (notes[j].isGlideEnd && notes[j].midi == n.glideEndMidi) {
-            glideEnd = notes[j];
-            break;
+    // First pass: draw Sirens visual path if provided (separate from audio notes)
+    if (sirenPath != null && sirenPath!.points.isNotEmpty) {
+      // Draw Sirens as a single continuous smooth curve through visual path points
+      final path = Path();
+      final sirenPoints = <Offset>[];
+      
+      // Collect all visible points from visual path
+      for (final point in sirenPath!.points) {
+        final x = playheadX + (point.tSec - currentTime) * pixelsPerSecond;
+        if (x < -32 || x > size.width + 32) continue;
+        
+        final y = PitchMath.midiToY(
+          midi: point.midiFloat,
+          height: size.height,
+          midiMin: midiMin,
+          midiMax: midiMax,
+        );
+        sirenPoints.add(Offset(x, y));
+      }
+      
+      if (sirenPoints.length >= 2) {
+        // Build smooth path through all points using quadratic bezier
+        path.moveTo(sirenPoints.first.dx, sirenPoints.first.dy);
+        
+        for (var i = 1; i < sirenPoints.length; i++) {
+          final prev = sirenPoints[i - 1];
+          final curr = sirenPoints[i];
+          
+          if (i == 1) {
+            // First segment: use midpoint for smooth start
+            final midX = (prev.dx + curr.dx) / 2;
+            final midY = (prev.dy + curr.dy) / 2;
+            path.quadraticBezierTo(prev.dx, prev.dy, midX, midY);
+          } else if (i == sirenPoints.length - 1) {
+            // Last segment: use midpoint for smooth end
+            final prevPrev = sirenPoints[i - 2];
+            final midX = (prevPrev.dx + prev.dx) / 2;
+            final midY = (prevPrev.dy + prev.dy) / 2;
+            path.quadraticBezierTo(midX, midY, curr.dx, curr.dy);
+          } else {
+            // Middle segments: use midpoint smoothing
+            final prevPrev = sirenPoints[i - 2];
+            final controlX = (prevPrev.dx + prev.dx) / 2;
+            final controlY = (prevPrev.dy + prev.dy) / 2;
+            path.quadraticBezierTo(controlX, controlY, curr.dx, curr.dy);
           }
         }
         
-        if (glideEnd != null) {
-          // Draw continuous curve between start and end
-          final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
-          final endX = playheadX + (glideEnd.endSec - currentTime) * pixelsPerSecond;
-          
-          if (endX < -32 || startX > size.width + 32) continue;
-          
-          final startY = PitchMath.midiToY(
-            midi: n.midi.toDouble(),
-            height: size.height,
-            midiMin: midiMin,
-            midiMax: midiMax,
-          );
-          final endY = PitchMath.midiToY(
-            midi: glideEnd.midi.toDouble(),
-            height: size.height,
-            midiMin: midiMin,
-            midiMax: midiMax,
-          );
-          
-          // Draw glide curve as a smooth path
-          final glidePath = Path();
-          glidePath.moveTo(startX, startY);
-          
-          // Use a cubic bezier for smooth curve (control points create smooth interpolation)
-          final controlPoint1X = startX + (endX - startX) * 0.33;
-          final controlPoint2X = startX + (endX - startX) * 0.67;
-          glidePath.cubicTo(
-            controlPoint1X, startY,
-            controlPoint2X, endY,
-            endX, endY,
-          );
-          
-          final glidePaint = Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3.0
-            ..strokeCap = StrokeCap.round
-            ..color = noteColor;
-          
-          final glowPaint = Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 6.0
-            ..strokeCap = StrokeCap.round
-            ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
-                .withOpacity(colors.isMagical ? 0.4 : 0.3)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-          
-          canvas.drawPath(glidePath, glowPaint);
-          canvas.drawPath(glidePath, glidePaint);
-          
-          // Draw small endpoint markers
-          final endpointRadius = 4.0;
-          canvas.drawCircle(Offset(startX, startY), endpointRadius, glidePaint);
-          canvas.drawCircle(Offset(endX, endY), endpointRadius, glidePaint);
-          
-          // Skip the glide end note in the regular loop
-          continue;
-        }
+        final sirenPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4.0
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = noteColor;
+        
+        final sirenGlowPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8.0
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+              .withOpacity(colors.isMagical ? 0.4 : 0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        
+        canvas.drawPath(path, sirenGlowPaint);
+        canvas.drawPath(path, sirenPaint);
       }
       
-      // Skip glide endpoints (they're handled above)
-      if (n.isGlideEnd) continue;
-      
-      // Regular note rendering (non-glide notes)
-      final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
-      final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;
+      // Skip all notes in regular rendering (Sirens uses visual path only)
+      // Audio notes are still used for pitch detection matching
+    } else {
+      // Original glide rendering for non-Sirens exercises
+      for (var i = 0; i < notes.length; i++) {
+        final n = notes[i];
+        if (n.isGlideStart && n.glideEndMidi != null) {
+          // Find the corresponding glide end note
+          ReferenceNote? glideEnd;
+          for (var j = i + 1; j < notes.length; j++) {
+            if (notes[j].isGlideEnd && notes[j].midi == n.glideEndMidi) {
+              glideEnd = notes[j];
+              break;
+            }
+          }
+          
+          if (glideEnd != null) {
+            // Draw continuous curve between start and end
+            final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
+            final endX = playheadX + (glideEnd.endSec - currentTime) * pixelsPerSecond;
+            
+            if (endX < -32 || startX > size.width + 32) continue;
+            
+            final startY = PitchMath.midiToY(
+              midi: n.midi.toDouble(),
+              height: size.height,
+              midiMin: midiMin,
+              midiMax: midiMax,
+            );
+            final endY = PitchMath.midiToY(
+              midi: glideEnd.midi.toDouble(),
+              height: size.height,
+              midiMin: midiMin,
+              midiMax: midiMax,
+            );
+            
+            // Draw glide curve as a smooth path
+            final glidePath = Path();
+            glidePath.moveTo(startX, startY);
+            
+            // Use a cubic bezier for smooth curve (control points create smooth interpolation)
+            final controlPoint1X = startX + (endX - startX) * 0.33;
+            final controlPoint2X = startX + (endX - startX) * 0.67;
+            glidePath.cubicTo(
+              controlPoint1X, startY,
+              controlPoint2X, endY,
+              endX, endY,
+            );
+            
+            final glidePaint = Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 3.0
+              ..strokeCap = StrokeCap.round
+              ..color = noteColor;
+            
+            final glowPaint = Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 6.0
+              ..strokeCap = StrokeCap.round
+              ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+                  .withOpacity(colors.isMagical ? 0.4 : 0.3)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+            
+            canvas.drawPath(glidePath, glowPaint);
+            canvas.drawPath(glidePath, glidePaint);
+            
+            // Draw small endpoint markers
+            final endpointRadius = 4.0;
+            canvas.drawCircle(Offset(startX, startY), endpointRadius, glidePaint);
+            canvas.drawCircle(Offset(endX, endY), endpointRadius, glidePaint);
+            
+            // Skip the glide end note in the regular loop
+            continue;
+          }
+        }
+        
+        // Skip glide endpoints (they're handled above)
+        if (n.isGlideEnd) continue;
+        
+        // Regular note rendering (non-glide notes)
+        final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
+        final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;
       if (endX < -32 || startX > size.width + 32) continue;
       final y = PitchMath.midiToY(
         midi: n.midi.toDouble(),
@@ -268,6 +342,7 @@ class PitchHighwayPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
         )..layout(maxWidth: math.max(0, endX - startX - 8));
         tp.paint(canvas, Offset(startX + 4, y - tp.height / 2));
+      }
       }
     }
 

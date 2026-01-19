@@ -13,6 +13,7 @@ import '../../models/pitch_highway_difficulty.dart';
 import '../../models/pitch_highway_spec.dart';
 import '../../models/pitch_segment.dart';
 import '../../models/reference_note.dart';
+import '../../models/siren_path.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
@@ -207,6 +208,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   late final double _audioLatencyMs;
   final double _pitchInputLatencyMs = 25;
   List<ReferenceNote> _transposedNotes = const [];
+  SirenPath?
+      _sirenVisualPath; // Visual path for Sirens (separate from audio notes)
   bool _notesLoaded = false;
   String? _rangeError;
 
@@ -376,34 +379,85 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     );
 
     List<ReferenceNote> notes;
+    SirenPath? sirenPath;
     if (cachedNotes != null) {
       debugPrint(
           '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
       notes = cachedNotes;
+      // For Sirens, regenerate visual path from cached audio notes
+      // (visual path is not cached, but audio notes are sufficient to regenerate it)
+      if (widget.exercise.id == 'sirens') {
+        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+          exercise: widget.exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+          difficulty: widget.pitchDifficulty,
+        );
+        sirenPath = sirenResult.visualPath;
+        // Use cached audio notes (should match what we just generated)
+        notes = cachedNotes;
+      } else {
+        sirenPath = null;
+      }
     } else {
       // Fallback: generate on the fly if not cached (shouldn't happen if cache is working)
       debugPrint(
           '[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
       final buildStartTime = DateTime.now();
-      notes = TransposedExerciseBuilder.buildTransposedSequence(
-        exercise: widget.exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: _leadInSec,
-        difficulty: widget.pitchDifficulty,
-      );
+
+      // Special handling for Sirens: use visual path + minimal audio notes
+      SirenPath? sirenPath;
+      if (widget.exercise.id == 'sirens') {
+        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+          exercise: widget.exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+          difficulty: widget.pitchDifficulty,
+        );
+        notes = sirenResult.audioNotes; // Only 3 notes for audio
+        sirenPath = sirenResult.visualPath; // High-res path for visual
+      } else {
+        notes = TransposedExerciseBuilder.buildTransposedSequence(
+          exercise: widget.exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+          difficulty: widget.pitchDifficulty,
+        );
+        sirenPath = null;
+      }
+
       final buildEndTime = DateTime.now();
       debugPrint(
           '[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+
+      if (mounted) {
+        setState(() {
+          _sirenVisualPath = sirenPath;
+        });
+      }
     }
 
     if (mounted) {
       setState(() {
         _transposedNotes = notes;
+        _sirenVisualPath =
+            sirenPath; // Set visual path (from cache or generation)
         _notesLoaded = true;
         _rangeError = null;
-        // Update MIDI range based on all notes
-        if (notes.isNotEmpty) {
+        // Update MIDI range based on all notes (or visual path for Sirens)
+        if (widget.exercise.id == 'sirens' &&
+            sirenPath != null &&
+            sirenPath.points.isNotEmpty) {
+          // Use visual path for MIDI range (more accurate for Sirens)
+          final midiValues = sirenPath.points.map((p) => p.midiFloat).toList();
+          _midiMin = (midiValues.reduce((a, b) => a < b ? a : b).floor() - 4)
+              .clamp(36, 127);
+          _midiMax = (midiValues.reduce((a, b) => a > b ? a : b).ceil() + 4)
+              .clamp(36, 127);
+        } else if (notes.isNotEmpty) {
           final midiValues = notes.map((n) => n.midi).toList();
           _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
           _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
@@ -1800,6 +1854,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                             midiMax: _midiMax,
                             colors: colors,
                             runId: _runId, // Pass runId to painter for logging
+                            sirenPath:
+                                _sirenVisualPath, // Pass visual path for Sirens
                           ),
                         );
                       },

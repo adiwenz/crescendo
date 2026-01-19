@@ -81,13 +81,26 @@ class ExerciseCacheService {
 
         // Generate for each difficulty level
         for (final difficulty in PitchHighwayDifficulty.values) {
-          final notes = TransposedExerciseBuilder.buildTransposedSequence(
-            exercise: exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: ExerciseConstants.leadInSec,
-            difficulty: difficulty,
-          );
+          // Special handling for Sirens: cache audio notes only (visual path generated separately)
+          final List<ReferenceNote> notes;
+          if (exercise.id == 'sirens') {
+            final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+              exercise: exercise,
+              lowestMidi: lowestMidi,
+              highestMidi: highestMidi,
+              leadInSec: ExerciseConstants.leadInSec,
+              difficulty: difficulty,
+            );
+            notes = sirenResult.audioNotes; // Cache only audio notes (3 notes)
+          } else {
+            notes = TransposedExerciseBuilder.buildTransposedSequence(
+              exercise: exercise,
+              lowestMidi: lowestMidi,
+              highestMidi: highestMidi,
+              leadInSec: ExerciseConstants.leadInSec,
+              difficulty: difficulty,
+            );
+          }
 
           final difficultyKey = difficulty.name;
           if (!_cache.containsKey(exercise.id)) {
@@ -97,13 +110,25 @@ class ExerciseCacheService {
         }
 
         // Also generate without difficulty (default)
-        final notesDefault = TransposedExerciseBuilder.buildTransposedSequence(
-          exercise: exercise,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: ExerciseConstants.leadInSec,
-          difficulty: null,
-        );
+        final List<ReferenceNote> notesDefault;
+        if (exercise.id == 'sirens') {
+          final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+            exercise: exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: ExerciseConstants.leadInSec,
+            difficulty: null, // Default difficulty for cache
+          );
+          notesDefault = sirenResult.audioNotes;
+        } else {
+          notesDefault = TransposedExerciseBuilder.buildTransposedSequence(
+            exercise: exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: ExerciseConstants.leadInSec,
+            difficulty: null,
+          );
+        }
 
         if (!_cache.containsKey(exercise.id)) {
           _cache[exercise.id] = {};

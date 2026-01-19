@@ -1,8 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../models/pitch_highway_difficulty.dart';
 import '../models/pitch_segment.dart';
 import '../models/reference_note.dart';
+import '../models/siren_exercise_result.dart';
+import '../models/siren_path.dart';
 import '../models/vocal_exercise.dart';
 import '../utils/pitch_highway_tempo.dart';
 import '../utils/exercise_constants.dart';
@@ -51,13 +55,23 @@ class TransposedExerciseBuilder {
     // Continue until the highest note of a repetition equals highestMidi
     final firstRootMidi = patternMin < 0 ? lowestMidi - patternMin : lowestMidi;
     
+    // Special handling for Sirens: generate visual path + minimal audio notes
+    // Note: For Sirens, we need to return a different structure, but for now
+    // we'll keep the same return type and handle it in the caller
+    // TODO: Refactor to return SirenExerciseResult for Sirens
+    if (exercise.id == 'sirens') {
+      // This will be handled separately - return empty for now
+      // The actual Sirens building happens in _buildSirensWithVisualPath
+      return const [];
+    }
+
     // Calculate the duration of one repetition of the pattern
     final patternDurationMs = scaledSegments.isEmpty
         ? 0
         : scaledSegments.map((s) => s.endMs).reduce(math.max);
     final patternDurationSec = patternDurationMs / 1000.0;
-    // Sirens need 2s rest between cycles, others use 0.75s
-    final gapBetweenRepetitionsSec = exercise.id == 'sirens' ? 2.0 : 0.75;
+    // Gap between repetitions
+    final gapBetweenRepetitionsSec = 0.75;
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
@@ -254,4 +268,164 @@ class TransposedExerciseBuilder {
 
     return notes;
   }
+
+  /// Builds a Sirens exercise with separate visual path and minimal audio notes
+  /// Returns visual path (high-res control points) + 3 audio notes (bottom, top, bottom)
+  /// Each cycle is a bell curve: starts at cycleStartMidi, goes up to highestMidi, returns to cycleStartMidi
+  /// Cycles transpose up by 1 semitone: cycle 1 starts at lowestMidi, cycle 2 at lowestMidi+1, etc.
+  static SirenExerciseResult buildSirensWithVisualPath({
+    required VocalExercise exercise,
+    required int lowestMidi,
+    required int highestMidi,
+    required double leadInSec,
+    PitchHighwayDifficulty? difficulty,
+  }) {
+    final spec = exercise.highwaySpec;
+    if (spec == null || spec.segments.isEmpty) {
+      return const SirenExerciseResult(
+        visualPath: SirenPath(points: []),
+        audioNotes: [],
+      );
+    }
+
+    // Extract pattern duration from spec (one cycle: bottom->top->bottom)
+    final patternDurationMs = spec.segments
+        .map((s) => s.endMs)
+        .reduce((a, b) => a > b ? a : b);
+    final patternDurationSec = patternDurationMs / 1000.0;
+    
+    // Apply tempo scaling if difficulty is provided
+    final multiplier = difficulty != null
+        ? PitchHighwayTempo.multiplierFor(difficulty, spec.segments)
+        : 1.0;
+    final scaledPatternDurationSec = patternDurationSec * multiplier;
+    
+    // Fixed siren range: C4 to E5 (approximately 16 semitones)
+    // This gives a consistent range similar to the original pattern
+    const sirenRangeSemitones = 16; // C4 (60) to E5 (76) = 16 semitones
+    
+    // Calculate how many cycles fit: start at lowestMidi, transpose up by 1 semitone each cycle
+    // Continue until (cycleStartMidi + sirenRangeSemitones) > highestMidi
+    // This ensures the transposed highest note doesn't exceed the saved range
+    final cyclesNeeded = (highestMidi - lowestMidi - sirenRangeSemitones + 1).clamp(1, 100);
+    
+    // Timing constants
+    const noteSpacingSec = 1.5; // 1.5 seconds between each note (bottom -> top -> bottom)
+    const gapBetweenCyclesSec = 2.0; // 2 seconds between cycles
+    const noteDurationSec = 0.5; // Each note duration
+    
+    // Calculate cycle duration: 3 notes with 1.5s spacing = 2 gaps of 1.5s = 3.0s
+    // Plus note durations (3 notes * 0.5s = 1.5s)
+    // Total cycle duration: 4.5s, but use pattern duration from spec for visual consistency
+    final cycleDurationSec = scaledPatternDurationSec;
+    
+    // Generate visual path points (60 Hz for smooth curves)
+    const sampleRateHz = 60.0;
+    const sampleIntervalSec = 1.0 / sampleRateHz;
+    
+    final visualPoints = <SirenPoint>[];
+    final audioNotes = <ReferenceNote>[];
+    var currentTimeSec = leadInSec;
+    
+    // Build cycles, each starting one semitone higher
+    for (var cycleIndex = 0; cycleIndex < cyclesNeeded; cycleIndex++) {
+      final cycleStartMidi = lowestMidi + cycleIndex;
+      final cycleEndMidi = cycleStartMidi + sirenRangeSemitones;
+      
+      // Stop if transposed highest note exceeds highestMidi
+      if (cycleEndMidi > highestMidi) break;
+      
+      // Each cycle: cycleStartMidi -> cycleEndMidi -> cycleStartMidi (bell curve)
+      final cycleRange = sirenRangeSemitones;
+      
+      // Generate bell curve for visual path: smooth up and down, symmetric
+      // Use sine wave from 0 to π for smooth bell curve shape
+      final numSamples = (cycleDurationSec / sampleIntervalSec).ceil();
+      for (var i = 0; i < numSamples; i++) {
+        final tNorm = i / (numSamples - 1); // Normalized time [0..1]
+        // Bell curve: sin(π * t) gives us 0 at t=0, 1 at t=0.5, 0 at t=1
+        // Map to MIDI: cycleStartMidi at t=0 and t=1, cycleEndMidi at t=0.5
+        final bellCurve = math.sin(math.pi * tNorm); // 0 -> 1 -> 0
+        final midiFloat = cycleStartMidi + (cycleRange * bellCurve);
+        final tSec = currentTimeSec + (tNorm * cycleDurationSec);
+        visualPoints.add(SirenPoint(tSec: tSec, midiFloat: midiFloat));
+      }
+      
+      // Generate 3 audio notes with 1.5s spacing between each
+      // Bottom note (start)
+      final bottom1StartSec = currentTimeSec;
+      final bottom1EndSec = bottom1StartSec + noteDurationSec;
+      audioNotes.add(ReferenceNote(
+        startSec: bottom1StartSec,
+        endSec: bottom1EndSec,
+        midi: cycleStartMidi,
+        lyric: 'Siren',
+      ));
+      
+      // Top note (peak) - starts 1.5s after bottom1 ends
+      final topStartSec = bottom1EndSec + noteSpacingSec;
+      final topEndSec = topStartSec + noteDurationSec;
+      audioNotes.add(ReferenceNote(
+        startSec: topStartSec,
+        endSec: topEndSec,
+        midi: cycleEndMidi,
+        lyric: 'Siren',
+      ));
+      
+      // Bottom note (end) - starts 1.5s after top ends
+      final bottom2StartSec = topEndSec + noteSpacingSec;
+      final bottom2EndSec = bottom2StartSec + noteDurationSec;
+      audioNotes.add(ReferenceNote(
+        startSec: bottom2StartSec,
+        endSec: bottom2EndSec,
+        midi: cycleStartMidi,
+        lyric: 'Siren',
+      ));
+      
+      // Move to next cycle: start 2s after bottom2 ends
+      currentTimeSec = bottom2EndSec + gapBetweenCyclesSec;
+    }
+    
+    // Debug logging
+    if (audioNotes.isNotEmpty) {
+      final cyclesGenerated = audioNotes.length ~/ 3;
+      debugPrint(
+          '[SirensBuilder] Generated visualPath: ${visualPoints.length} points, '
+          'audioNotes: ${audioNotes.length} notes ($cyclesGenerated cycles), '
+          'range=${sirenRangeSemitones} semitones');
+      if (audioNotes.length >= 3) {
+        final firstCycleNotes = audioNotes.take(3).toList();
+        final firstStartMidi = firstCycleNotes[0].midi;
+        final firstEndMidi = firstCycleNotes[2].midi;
+        final firstTopMidi = firstCycleNotes[1].midi;
+        final bottom1ToTopGap = firstCycleNotes[1].startSec - firstCycleNotes[0].endSec;
+        final topToBottom2Gap = firstCycleNotes[2].startSec - firstCycleNotes[1].endSec;
+        debugPrint(
+            '[SirensAudio] Cycle 1: startMidi=$firstStartMidi topMidi=$firstTopMidi endMidi=$firstEndMidi '
+            '(${firstStartMidi == firstEndMidi ? "start=end ✓" : "MISMATCH"}) '
+            'bottom1@${firstCycleNotes[0].startSec.toStringAsFixed(2)}s, '
+            'top@${firstCycleNotes[1].startSec.toStringAsFixed(2)}s (gap=${bottom1ToTopGap.toStringAsFixed(2)}s), '
+            'bottom2@${firstCycleNotes[2].startSec.toStringAsFixed(2)}s (gap=${topToBottom2Gap.toStringAsFixed(2)}s)');
+        
+        // Validate: start and end notes should be the same, gaps should be ~1.5s
+        if (firstStartMidi != firstEndMidi) {
+          debugPrint(
+              '[SirensBuilder] ERROR: Start and end notes don\'t match: '
+              'start=$firstStartMidi, end=$firstEndMidi');
+        }
+        if ((bottom1ToTopGap - noteSpacingSec).abs() > 0.1 || (topToBottom2Gap - noteSpacingSec).abs() > 0.1) {
+          debugPrint(
+              '[SirensBuilder] WARNING: Note spacing not ~1.5s: '
+              'bottom1->top=${bottom1ToTopGap.toStringAsFixed(2)}s, '
+              'top->bottom2=${topToBottom2Gap.toStringAsFixed(2)}s');
+        }
+      }
+    }
+    
+    return SirenExerciseResult(
+      visualPath: SirenPath(points: visualPoints),
+      audioNotes: audioNotes,
+    );
+  }
+
 }
