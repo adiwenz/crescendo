@@ -90,18 +90,47 @@ class ReferenceMidiSynth {
     // Track when first note actually fires (for debugging)
     bool firstNoteFired = false;
     final sequenceStartTime = DateTime.now();
+    final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
+    
+    // Calculate delay from timeline anchor epoch (if provided) or use current time
+    // This ensures MIDI notes align with the visual timeline
+    final timelineAnchorMs = startEpochMs ?? nowEpochMs;
+    final delayFromAnchorMs = nowEpochMs - timelineAnchorMs;
 
     // Schedule each note using Timer
     for (final note in notes) {
-      // Skip glides for now (flutter_midi_pro doesn't support pitch bend directly)
-      if (note.isGlideStart || note.isGlideEnd) {
-        debugPrint('[ReferenceMidiSynth] Skipping glide note (not supported yet)');
+      // Calculate note duration to distinguish endpoint markers from full notes
+      final noteDuration = note.endSec - note.startSec;
+      
+      // Skip only endpoint markers (very short notes < 0.05s) that are marked as glides
+      // Full-length notes marked as glides (like sirens) should still play
+      if ((note.isGlideStart || note.isGlideEnd) && noteDuration < 0.05) {
+        debugPrint('[ReferenceMidiSynth] Skipping glide endpoint marker: MIDI=${note.midi}, duration=${noteDuration.toStringAsFixed(3)}s');
         continue;
       }
 
-      // Calculate absolute times relative to method call time
-      final noteStartMs = ((note.startSec + leadInSec) * 1000).round();
-      final noteEndMs = ((note.endSec + leadInSec) * 1000).round();
+      // Calculate absolute times relative to timeline anchor epoch
+      // Notes have startSec that includes lead-in, so we schedule them at:
+      // timelineAnchorMs + (note.startSec * 1000) - delayFromAnchorMs
+      // This ensures notes play when the timeline reaches their startSec time
+      final noteStartMsFromAnchor = (note.startSec * 1000).round();
+      final noteEndMsFromAnchor = (note.endSec * 1000).round();
+      final noteStartMs = noteStartMsFromAnchor - delayFromAnchorMs;
+      final noteEndMs = noteEndMsFromAnchor - delayFromAnchorMs;
+      
+      // Guard against negative delays (shouldn't happen if notes have correct startSec)
+      // If noteStartMs is negative, it means the note should have already played,
+      // which indicates a timing issue (e.g., first note startSec is 0 instead of lead-in)
+      if (noteStartMs < 0) {
+        debugPrint(
+            '[ReferenceMidiSynth] ERROR: Negative delay for note MIDI=${note.midi}, '
+            'startSec=${note.startSec}, noteStartMsFromAnchor=$noteStartMsFromAnchor, '
+            'delayFromAnchorMs=$delayFromAnchorMs, noteStartMs=$noteStartMs. '
+            'This indicates first note startSec should include lead-in (~2.0s). '
+            'Scheduling with 0ms delay (immediate playback - TIMING MISALIGNED).');
+        // Don't schedule with negative delay - clamp to 0, but log the error
+        // The sync check in exercise_player_screen should catch this
+      }
 
       // Schedule noteOn
       final noteOnTimer = Timer(Duration(milliseconds: noteStartMs), () {

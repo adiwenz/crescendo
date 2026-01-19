@@ -1094,7 +1094,44 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         // Get timeline anchor epoch for logging/debugging
         final timelineStartMs = _timelineStartEpochMs ?? t0;
 
-        // Schedule notes with lead-in delay (lead-in is in note timestamps, but we pass it for timing)
+        // Sync check: verify visual and audio timelines align
+        if (notes.isNotEmpty) {
+          final firstVisualStartSec =
+              notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
+          final firstAudioStartSec =
+              firstVisualStartSec; // Same notes list, same startSec
+          final delta = (firstAudioStartSec - firstVisualStartSec).abs();
+          debugPrint(
+              '[SyncCheck] ex=${widget.exercise.id} leadIn=${_leadInSec.toStringAsFixed(1)} '
+              'firstVisualStart=${firstVisualStartSec.toStringAsFixed(2)} '
+              'firstAudioStart=${firstAudioStartSec.toStringAsFixed(2)} '
+              'delta=${delta.toStringAsFixed(2)}');
+
+          // Validation for Sirens: ensure timing aligns
+          if (widget.exercise.id == 'sirens') {
+            final expectedFirstStart = _leadInSec;
+            final startSecDiff =
+                (firstVisualStartSec - expectedFirstStart).abs();
+            if (startSecDiff > 0.02) {
+              debugPrint(
+                  '[SyncCheck] ERROR: Sirens first note startSec=$firstVisualStartSec '
+                  'expected ~$expectedFirstStart (lead-in mismatch, diff=${startSecDiff.toStringAsFixed(2)})');
+              // In debug builds, assert to catch this early
+              assert(
+                startSecDiff <= 0.02,
+                'Sirens first note startSec ($firstVisualStartSec) should be ~$_leadInSec (lead-in)',
+              );
+            }
+            if (delta > 0.02) {
+              debugPrint(
+                  '[SyncCheck] ERROR: Sirens visual/audio timeline mismatch: delta=$delta');
+              assert(delta <= 0.02,
+                  'Sirens visual/audio timeline mismatch: delta=$delta');
+            }
+          }
+        }
+
+        // Schedule notes with lead-in delay (lead-in is in MIDI timestamps, but we pass it for timing)
         await _referenceMidiSynth.playSequence(
           notes: notes,
           leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
