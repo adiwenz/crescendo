@@ -145,14 +145,36 @@ class PitchHighwayPainter extends CustomPainter {
 
     // First pass: draw Sirens visual path if provided (separate from audio notes)
     if (sirenPath != null && sirenPath!.points.isNotEmpty) {
-      // Draw Sirens as a single continuous smooth curve through visual path points
-      final path = Path();
-      final sirenPoints = <Offset>[];
+      // Draw Sirens as separate bell curves for each cycle (no connection between cycles)
+      final sirenPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = noteColor;
       
-      // Collect all visible points from visual path
+      final sirenGlowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+            .withOpacity(colors.isMagical ? 0.4 : 0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      
+      // Group points into cycles by detecting time gaps (> 1 second gap = new cycle)
+      final cycleSegments = <List<Offset>>[];
+      List<Offset>? currentSegment;
+      double? lastTimeSec;
+      const gapThresholdSec = 1.0; // If gap > 1s, start a new segment
+      
       for (final point in sirenPath!.points) {
         final x = playheadX + (point.tSec - currentTime) * pixelsPerSecond;
-        if (x < -32 || x > size.width + 32) continue;
+        // Skip points outside visible area
+        if (x < -32 || x > size.width + 32) {
+          lastTimeSec = point.tSec;
+          continue;
+        }
         
         final y = PitchMath.midiToY(
           midi: point.midiFloat,
@@ -160,52 +182,59 @@ class PitchHighwayPainter extends CustomPainter {
           midiMin: midiMin,
           midiMax: midiMax,
         );
-        sirenPoints.add(Offset(x, y));
+        
+        // Check if this point starts a new cycle (large time gap from previous)
+        if (lastTimeSec != null && (point.tSec - lastTimeSec) > gapThresholdSec) {
+          // Save current segment and start a new one
+          if (currentSegment != null && currentSegment.length >= 2) {
+            cycleSegments.add(currentSegment);
+          }
+          currentSegment = [Offset(x, y)];
+        } else {
+          // Continue current segment
+          currentSegment ??= [];
+          currentSegment.add(Offset(x, y));
+        }
+        
+        lastTimeSec = point.tSec;
       }
       
-      if (sirenPoints.length >= 2) {
-        // Build smooth path through all points using quadratic bezier
-        path.moveTo(sirenPoints.first.dx, sirenPoints.first.dy);
+      // Add final segment
+      if (currentSegment != null && currentSegment.length >= 2) {
+        cycleSegments.add(currentSegment);
+      }
+      
+      // Draw each cycle segment as a separate path
+      for (final segment in cycleSegments) {
+        if (segment.length < 2) continue;
         
-        for (var i = 1; i < sirenPoints.length; i++) {
-          final prev = sirenPoints[i - 1];
-          final curr = sirenPoints[i];
+        final path = Path();
+        path.moveTo(segment.first.dx, segment.first.dy);
+        
+        // Build smooth path through this segment's points
+        for (var i = 1; i < segment.length; i++) {
+          final prev = segment[i - 1];
+          final curr = segment[i];
           
           if (i == 1) {
             // First segment: use midpoint for smooth start
             final midX = (prev.dx + curr.dx) / 2;
             final midY = (prev.dy + curr.dy) / 2;
             path.quadraticBezierTo(prev.dx, prev.dy, midX, midY);
-          } else if (i == sirenPoints.length - 1) {
+          } else if (i == segment.length - 1) {
             // Last segment: use midpoint for smooth end
-            final prevPrev = sirenPoints[i - 2];
+            final prevPrev = segment[i - 2];
             final midX = (prevPrev.dx + prev.dx) / 2;
             final midY = (prevPrev.dy + prev.dy) / 2;
             path.quadraticBezierTo(midX, midY, curr.dx, curr.dy);
           } else {
             // Middle segments: use midpoint smoothing
-            final prevPrev = sirenPoints[i - 2];
+            final prevPrev = segment[i - 2];
             final controlX = (prevPrev.dx + prev.dx) / 2;
             final controlY = (prevPrev.dy + prev.dy) / 2;
             path.quadraticBezierTo(controlX, controlY, curr.dx, curr.dy);
           }
         }
-        
-        final sirenPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.0
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = noteColor;
-        
-        final sirenGlowPaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 8.0
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
-              .withOpacity(colors.isMagical ? 0.4 : 0.3)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
         
         canvas.drawPath(path, sirenGlowPaint);
         canvas.drawPath(path, sirenPaint);
