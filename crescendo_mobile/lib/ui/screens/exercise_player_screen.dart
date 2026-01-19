@@ -1382,10 +1382,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final baseRootMidi =
           spec.segments.first.startMidi ?? spec.segments.first.midiNote;
 
-      // Special handling for octave slides: combine bottom note + silence + top note into one segment
+      // Special handling for octave slides and NG slides: combine bottom note + silence + top note into one segment
       final isOctaveSlides = widget.exercise.id == 'octave_slides';
+      final isNgSlides = widget.exercise.id == 'ng_slides';
 
-      if (isOctaveSlides) {
+      if (isOctaveSlides || isNgSlides) {
         // For octave slides, detect pairs of notes that are ~12 semitones apart
         // Pattern: bottom note, ~1s gap, top note (12 semitones higher), then repeat
         var segmentIndex = 0;
@@ -1395,17 +1396,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           final bottomNote = notes[i];
           final bottomMidi = bottomNote.midi.round();
 
-          // Look ahead for the top note (should be ~12 semitones higher and start after ~1s gap)
+          // Look ahead for the top note
+          // For octave slides: ~12 semitones higher, ~1s gap
+          // For NG slides: any higher note, ~1s gap
           int? topNoteIndex;
           for (var j = i + 1; j < notes.length; j++) {
             final candidate = notes[j];
             final gap = candidate.startSec - bottomNote.endSec;
             final midiDiff = candidate.midi.round() - bottomMidi;
 
-            // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
-            if (gap >= 0.8 && gap <= 1.2 && midiDiff >= 11 && midiDiff <= 13) {
-              topNoteIndex = j;
-              break;
+            if (isOctaveSlides) {
+              // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
+              if (gap >= 0.8 &&
+                  gap <= 1.2 &&
+                  midiDiff >= 11 &&
+                  midiDiff <= 13) {
+                topNoteIndex = j;
+                break;
+              }
+            } else if (isNgSlides) {
+              // Top note should be higher and start after ~0.8-1.2s gap
+              if (gap >= 0.8 && gap <= 1.2 && midiDiff > 0) {
+                topNoteIndex = j;
+                break;
+              }
             }
 
             // If we've gone too far (gap > 1.5s or different transposition), stop looking

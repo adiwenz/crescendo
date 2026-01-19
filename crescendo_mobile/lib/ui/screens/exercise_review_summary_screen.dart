@@ -462,10 +462,13 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
       }
     }
     
-    // Special handling for Octave Slides exercise
-    // Octave slides have pattern: bottom note, 1s silence, top note (octave up)
+    // Special handling for Octave Slides and NG Slides exercises
+    // Both have pattern: bottom note, 1s silence, top note
     // But segments might be split at the silence gap, so we need to look for adjacent segments
-    if (widget.exercise.id == 'octave_slides') {
+    final isOctaveSlides = widget.exercise.id == 'octave_slides';
+    final isNgSlides = widget.exercise.id == 'ng_slides';
+    
+    if (isOctaveSlides || isNgSlides) {
       // Find target notes within this segment's time range
       final toleranceMs = 100;
       final segmentTargets = _targets.where((target) {
@@ -496,14 +499,37 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
             final firstNote = allTargets.first;
             final lastNote = allTargets.last;
             
-            // Verify they're an octave apart (or close to it)
-            final midiDiff = (lastNote.midi - firstNote.midi).abs();
-            if (midiDiff >= 10 && midiDiff <= 14) { // Octave is 12 semitones, allow some tolerance
-              final startNote = PitchMath.midiToName(firstNote.midi.round());
-              final endNote = PitchMath.midiToName(lastNote.midi.round());
-              return '$startNote → $endNote';
+            if (isOctaveSlides) {
+              // Verify they're an octave apart (or close to it)
+              final midiDiff = (lastNote.midi - firstNote.midi).abs();
+              if (midiDiff >= 10 && midiDiff <= 14) { // Octave is 12 semitones, allow some tolerance
+                final startNote = PitchMath.midiToName(firstNote.midi.round());
+                final endNote = PitchMath.midiToName(lastNote.midi.round());
+                return '$startNote → $endNote';
+              }
+            } else if (isNgSlides) {
+              // For NG slides, just verify the top note is higher
+              if (lastNote.midi > firstNote.midi) {
+                final startNote = PitchMath.midiToName(firstNote.midi.round());
+                final endNote = PitchMath.midiToName(lastNote.midi.round());
+                return '$startNote → $endNote';
+              }
             }
           }
+        }
+      }
+      
+      // If segments are combined (single segment contains both notes), find bottom and top
+      if (segmentTargets.length >= 2) {
+        segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+        final firstNote = segmentTargets.first;
+        final lastNote = segmentTargets.last;
+        
+        // Verify the pattern: first note should be lower than last note
+        if (lastNote.midi > firstNote.midi) {
+          final startNote = PitchMath.midiToName(firstNote.midi.round());
+          final endNote = PitchMath.midiToName(lastNote.midi.round());
+          return '$startNote → $endNote';
         }
       }
       
