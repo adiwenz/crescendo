@@ -4,9 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 
 import '../../models/reference_note.dart';
-import '../../services/audio_synth_service.dart';
 import '../../services/pitch_service.dart';
 import '../../services/audio_session_manager.dart';
 import '../../ui/route_observer.dart';
@@ -44,7 +44,8 @@ class PianoPitchScreen extends StatefulWidget {
 }
 
 class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, WidgetsBindingObserver {
-  final AudioSynthService _synth = AudioSynthService();
+  final MidiPro _midi = MidiPro();
+  bool _midiReady = false;
   late final PitchService _service;
   late final PitchTracker _tracker;
   StreamSubscription<PitchFrame>? _sub;
@@ -72,10 +73,28 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     _isVisible = true;
     WidgetsBinding.instance.addObserver(this);
     _initAudioSession();
+    _initMidi();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _centerKeyboardInitial();
       _start();
     });
+  }
+
+  Future<void> _initMidi() async {
+    try {
+      debugPrint('[PianoPitchScreen] Loading SoundFont...');
+      await _midi.loadSoundfont(
+        sf2Path: 'assets/soundfonts/default.sf2',
+        name: 'default.sf2',
+      );
+      _midiReady = true;
+      debugPrint('[PianoPitchScreen] MIDI initialized successfully');
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('[PianoPitchScreen] MIDI initialization failed: $e');
+      _midiReady = false;
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _initAudioSession() async {
@@ -259,7 +278,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     routeObserver.unsubscribe(this);
     _sub?.cancel();
     _service.dispose();
-    _synth.stop();
     _keyboardController.dispose();
     _tracker.dispose();
     super.dispose();
@@ -452,7 +470,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
 
   void _handleKeyTap(int midi) {
     _tracker.setManualMidi(midi);
-    unawaited(_playTapTone(midi));
+    _playTapTone(midi);
   }
 
   void _centerKeyboardInitial() {
@@ -486,10 +504,19 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     return white.contains(midi % 12);
   }
 
-  Future<void> _playTapTone(int midi) async {
-    final notes = [ReferenceNote(startSec: 0, endSec: 0.6, midi: midi)];
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
+  void _playTapTone(int midi) {
+    if (!_midiReady) {
+      debugPrint('[PianoPitchScreen] MIDI not ready, cannot play note');
+      return;
+    }
+
+    // Play note immediately
+    _midi.playMidiNote(midi: midi, velocity: 100);
+
+    // Stop note after 600ms (matching the original duration)
+    Future.delayed(const Duration(milliseconds: 600), () {
+      _midi.stopMidiNote(midi: midi, velocity: 127);
+    });
   }
 }
 
