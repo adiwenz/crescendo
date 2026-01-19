@@ -128,13 +128,24 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         _preloading = false;
       });
       
-      // Auto-start playback once preload is complete
+      // Auto-start playback immediately once preload is complete
+      // Use SchedulerBinding to ensure this runs after the frame is built
       if (_notes.isNotEmpty && !_playing) {
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted && !_playing && _preloadComplete) {
+        if (kDebugMode) {
+          debugPrint('[Review] Preload complete, attempting auto-start: notes=${_notes.length}, playing=$_playing');
+        }
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_playing && _preloadComplete && _notes.isNotEmpty) {
+            if (kDebugMode) {
+              debugPrint('[Review] Auto-starting playback: notes=${_notes.length}, preloadComplete=$_preloadComplete');
+            }
             _start();
+          } else if (kDebugMode) {
+            debugPrint('[Review] Auto-start skipped: mounted=$mounted, playing=$_playing, preloadComplete=$_preloadComplete, notesEmpty=${_notes.isEmpty}');
           }
         });
+      } else if (kDebugMode && _notes.isEmpty) {
+        debugPrint('[Review] WARNING: Preload complete but notes are empty!');
       }
     }
   }
@@ -167,18 +178,46 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-    final notes = TransposedExerciseBuilder.buildTransposedSequence(
-      exercise: widget.exercise,
-      lowestMidi: lowestMidi,
-      highestMidi: highestMidi,
-      leadInSec: _leadInSec,
-      difficulty: difficulty,
-    );
+    
+    // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
+    final List<ReferenceNote> notes;
+    if (widget.exercise.id == 'sirens') {
+      final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+        exercise: widget.exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: _leadInSec,
+        difficulty: difficulty,
+      );
+      notes = sirenResult.audioNotes; // Get the 3 audio notes for playback
+    } else {
+      notes = TransposedExerciseBuilder.buildTransposedSequence(
+        exercise: widget.exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: _leadInSec,
+        difficulty: difficulty,
+      );
+    }
+    
     if (mounted) {
       setState(() {
         _notes = notes;
         _durationSec = _computeDuration(notes);
       });
+      
+      // Try to auto-start if preload is already complete
+      // Otherwise, preload completion will trigger auto-start
+      if (notes.isNotEmpty && !_playing && _preloadComplete) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_playing && _notes.isNotEmpty && _preloadComplete) {
+            if (kDebugMode) {
+              debugPrint('[Review] Auto-starting from notes loaded: notes=${_notes.length}');
+            }
+            _start();
+          }
+        });
+      }
     }
   }
 
@@ -426,6 +465,16 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Auto-start playback if preload is complete and not playing yet
+    // This ensures playback starts immediately when screen is first built
+    if (_preloadComplete && !_playing && _notes.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_playing && _preloadComplete && _notes.isNotEmpty) {
+          _start();
+        }
+      });
+    }
+    
     final colors = AppThemeColors.of(context);
     final noteMidis = _notes.map((n) => n.midi.toDouble()).toList();
     final contourMidis = widget.lastTake.frames
