@@ -1441,6 +1441,49 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             i++;
           }
         }
+      } else if (widget.exercise.id == 'sirens') {
+        // Special handling for Sirens: each cycle is 3 notes (bottom, top, bottom)
+        // Group notes into cycles: detect pattern of 3 notes where first and last are the same
+        var segmentIndex = 0;
+        var i = 0;
+
+        while (i < notes.length) {
+          if (i + 2 >= notes.length) break; // Need at least 3 notes for a cycle
+
+          final bottom1 = notes[i];
+          final top = notes[i + 1];
+          final bottom2 = notes[i + 2];
+
+          // Check if this looks like a Sirens cycle: first and last notes should be the same MIDI
+          final bottom1Midi = bottom1.midi.round();
+          final bottom2Midi = bottom2.midi.round();
+          final topMidi = top.midi.round();
+
+          // Verify: bottom1 and bottom2 should be the same, and top should be higher
+          if (bottom1Midi == bottom2Midi && topMidi > bottom1Midi) {
+            // This is a Sirens cycle: bottom → top → bottom
+            final transpose = bottom1Midi - baseRootMidi;
+            segments.add({
+              'segmentIndex': segmentIndex,
+              'startMs': (bottom1.startSec * 1000).round(),
+              'endMs': (bottom2.endSec * 1000).round(),
+              'transposeSemitone': transpose,
+            });
+            segmentIndex++;
+            i += 3; // Move past all 3 notes
+          } else {
+            // Not a valid cycle, treat as regular segment
+            final transpose = bottom1Midi - baseRootMidi;
+            segments.add({
+              'segmentIndex': segmentIndex,
+              'startMs': (bottom1.startSec * 1000).round(),
+              'endMs': (bottom1.endSec * 1000).round(),
+              'transposeSemitone': transpose,
+            });
+            segmentIndex++;
+            i++;
+          }
+        }
       } else {
         // Regular segment detection: find gaps > 0.5 seconds (gap between repetitions)
         var segmentIndex = 0;

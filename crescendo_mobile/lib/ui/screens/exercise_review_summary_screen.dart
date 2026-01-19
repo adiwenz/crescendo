@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/exercise_attempt.dart';
 import '../../models/replay_models.dart';
 import '../../models/vocal_exercise.dart';
+import '../../models/reference_note.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -167,13 +168,26 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         ? pitchHighwayDifficultyFromName(widget.attempt.pitchDifficulty!)
         : PitchHighwayDifficulty.medium;
     
-    final notes = TransposedExerciseBuilder.buildTransposedSequence(
-      exercise: widget.exercise,
-      lowestMidi: lowestMidi,
-      highestMidi: highestMidi,
-      leadInSec: ExerciseConstants.leadInSec,
-      difficulty: difficulty,
-    );
+    // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
+    final List<ReferenceNote> notes;
+    if (widget.exercise.id == 'sirens') {
+      final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+        exercise: widget.exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: ExerciseConstants.leadInSec,
+        difficulty: difficulty,
+      );
+      notes = sirenResult.audioNotes; // Get the 3 notes per cycle
+    } else {
+      notes = TransposedExerciseBuilder.buildTransposedSequence(
+        exercise: widget.exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: ExerciseConstants.leadInSec,
+        difficulty: difficulty,
+      );
+    }
     
     return notes.map((n) {
       return TargetNote(
@@ -379,6 +393,65 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
   }
 
   String _getSegmentLabel(ExerciseSegment segment) {
+    // Special handling for Sirens exercise
+    // Sirens have pattern: bottom note → top note → bottom note (3 notes per cycle)
+    if (widget.exercise.id == 'sirens') {
+      // Find target notes within this segment's time range
+      final toleranceMs = 100;
+      final segmentTargets = _targets.where((target) {
+        final targetMid = (target.startMs + target.endMs) ~/ 2;
+        return targetMid >= (segment.startMs - toleranceMs) && 
+               targetMid <= (segment.endMs + toleranceMs);
+      }).toList();
+      
+      if (segmentTargets.length >= 3) {
+        // Sort by time to get: bottom1, top, bottom2
+        segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+        final bottom1 = segmentTargets.first;
+        final top = segmentTargets[1]; // Middle note should be the top
+        final bottom2 = segmentTargets.last;
+        
+        // Verify pattern: first and last should be same MIDI, middle should be higher
+        final bottom1Midi = bottom1.midi.round();
+        final topMidi = top.midi.round();
+        final bottom2Midi = bottom2.midi.round();
+        
+        if (bottom1Midi == bottom2Midi && topMidi > bottom1Midi) {
+          final startNote = PitchMath.midiToName(bottom1Midi);
+          final topNote = PitchMath.midiToName(topMidi);
+          final endNote = PitchMath.midiToName(bottom2Midi);
+          return '$startNote → $topNote → $endNote';
+        }
+      }
+      
+      // Fallback: if we can't find 3 notes, try to find at least start and top
+      if (segmentTargets.length >= 2) {
+        segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+        final firstNote = segmentTargets.first;
+        final highestNote = segmentTargets.reduce((a, b) => a.midi > b.midi ? a : b);
+        final lastNote = segmentTargets.last;
+        
+        final startNote = PitchMath.midiToName(firstNote.midi.round());
+        final topNote = PitchMath.midiToName(highestNote.midi.round());
+        final endNote = PitchMath.midiToName(lastNote.midi.round());
+        
+        // If first and last are the same, show start → top → end
+        if (firstNote.midi.round() == lastNote.midi.round()) {
+          return '$startNote → $topNote → $endNote';
+        }
+      }
+      
+      // Final fallback: show start → end
+      if (segmentTargets.isNotEmpty) {
+        segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
+        final firstNote = segmentTargets.first;
+        final lastNote = segmentTargets.last;
+        final startNote = PitchMath.midiToName(firstNote.midi.round());
+        final endNote = PitchMath.midiToName(lastNote.midi.round());
+        return '$startNote → $endNote';
+      }
+    }
+    
     // Special handling for Octave Slides exercise
     // Octave slides have pattern: bottom note, 1s silence, top note (octave up)
     // But segments might be split at the silence gap, so we need to look for adjacent segments
