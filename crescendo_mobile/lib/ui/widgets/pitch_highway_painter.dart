@@ -54,7 +54,9 @@ class PitchHighwayPainter extends CustomPainter {
     this.runId,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
-        super(repaint: liveMidi == null ? time : Listenable.merge([time, liveMidi]));
+        // CRITICAL: Always use time as repaint listenable for stability.
+        // liveMidi.value is read directly in paint() method, so repaints happen on time ticks anyway.
+        super(repaint: time);
 
   @override
   void paint(Canvas canvas, Size size) {

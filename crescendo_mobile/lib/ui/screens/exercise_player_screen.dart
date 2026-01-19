@@ -40,6 +40,8 @@ import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
+import '../../debug/debug_log.dart'
+    show DebugLog, kDebugPitchHighway, kDebugFrameTiming;
 
 /// Performance tracing helper for stopwatch + DevTools Timeline spans
 class PerfTrace {
@@ -52,6 +54,7 @@ class PerfTrace {
   void mark(String name) {
     debugPrint('[Perf] $label +${_sw.elapsedMilliseconds}ms :: $name');
   }
+
   void end() {
     dev.Timeline.finishSync();
     debugPrint('[Perf] $label end @${_sw.elapsedMilliseconds}ms');
@@ -101,11 +104,15 @@ class ExercisePlayerScreen extends StatelessWidget {
             ),
       ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
       ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
-      ExerciseType.sustainedPitchHold => SustainedPitchHoldPlayer(exercise: exercise),
-      ExerciseType.pitchMatchListening => PitchMatchListeningPlayer(exercise: exercise),
-      ExerciseType.articulationRhythm => ArticulationRhythmPlayer(exercise: exercise),
+      ExerciseType.sustainedPitchHold =>
+        SustainedPitchHoldPlayer(exercise: exercise),
+      ExerciseType.pitchMatchListening =>
+        PitchMatchListeningPlayer(exercise: exercise),
+      ExerciseType.articulationRhythm =>
+        ArticulationRhythmPlayer(exercise: exercise),
       ExerciseType.dynamicsRamp => DynamicsRampPlayer(exercise: exercise),
-      ExerciseType.cooldownRecovery => CooldownRecoveryPlayer(exercise: exercise),
+      ExerciseType.cooldownRecovery =>
+        CooldownRecoveryPlayer(exercise: exercise),
     };
     return Scaffold(
       appBar: isPitchHighway
@@ -187,32 +194,35 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   List<ReferenceNote> _transposedNotes = const [];
   bool _notesLoaded = false;
   String? _rangeError;
-  
+
   // Instant start state management
   bool _starting = false;
   bool _stopping = false;
   bool _isRunning = false;
   int? _tapEpochMs;
   int? _exerciseStartEpochMs;
-  bool _isImmediateTick = false; // Flag to prevent double logging on immediate tick
+  bool _isImmediateTick =
+      false; // Flag to prevent double logging on immediate tick
   int _runId = 0; // Increment on each start to ignore stale async callbacks
   Key? _pitchHighwayKey; // Key to force remount of pitch highway widget
   bool _loggedFirstTick = false; // Track if we've logged the first ticker tick
   PerfTrace? _startTrace; // Store trace for ticker access
-  
+
   // Per-run start guards to prevent double-starting
   bool _visualsStarted = false; // Visuals (clock/ticker) started for this run
   bool _runningSet = false; // Running flag set for this run
-  int? _timelineStartEpochMs; // Timeline anchor epoch (set once per run, never changed)
+  int?
+      _timelineStartEpochMs; // Timeline anchor epoch (set once per run, never changed)
   int? _lastModelHash; // Track model identity per run
   int? _lastRepaintHash; // Track repaint notifier identity per run
+  double _lastTime = 0.0; // Track last time value for backwards detection
 
   double get _durationSec {
     if (_transposedNotes.isEmpty) {
       // Fallback to old calculation if notes aren't loaded yet
-    final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
-    if (base <= 0) return 0.0;
-    return base + _leadInSec + AudioSynthService.tailSeconds;
+      final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
+      if (base <= 0) return 0.0;
+      return base + _leadInSec + AudioSynthService.tailSeconds;
     }
     // Duration is based on the last note's end time
     final maxEnd = _transposedNotes.map((n) => n.endSec).fold(0.0, math.max);
@@ -223,8 +233,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void initState() {
     super.initState();
     final initStartTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
-    
+    debugPrint(
+        '[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
+
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
     _notesLoaded = false;
@@ -251,92 +262,109 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _isImmediateTick = false;
     _loggedFirstTick = false;
     _runId = 0;
-    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'), src: 'initState'); // Initialize key
-    
+    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'),
+        src: 'initState'); // Initialize key
+
     _ticker = createTicker(_onTick);
     final afterTicker = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] after createTicker: ${afterTicker.difference(initStartTime).inMilliseconds}ms');
-    
+    debugPrint(
+        '[ExercisePlayerScreen] after createTicker: ${afterTicker.difference(initStartTime).inMilliseconds}ms');
+
     _scaledSpec = _buildScaledSpec();
     final afterScaledSpec = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] after _buildScaledSpec: ${afterScaledSpec.difference(initStartTime).inMilliseconds}ms');
-    
-    _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
+    debugPrint(
+        '[ExercisePlayerScreen] after _buildScaledSpec: ${afterScaledSpec.difference(initStartTime).inMilliseconds}ms');
+
+    _pixelsPerSecond =
+        PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
-    
-    // Add frame timing callback to detect jank
-    SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
-    
+
+    // Add frame timing callback to detect jank (only if frame timing debug enabled)
+    // Frame timing is disabled by default to reduce log spam
+    if (kDebugPitchHighway && kDebugFrameTiming) {
+      SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+    }
+
     // Prime audio player to avoid first-play latency
     _primeAudio();
-    
+
     // Schedule heavy work after first frame to avoid blocking UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postFrameTime = DateTime.now();
-      debugPrint('[ExercisePlayerScreen] postFrameCallback at ${postFrameTime.difference(initStartTime).inMilliseconds}ms');
-      
+      debugPrint(
+          '[ExercisePlayerScreen] postFrameCallback at ${postFrameTime.difference(initStartTime).inMilliseconds}ms');
+
       // Initialize recording service (but don't start yet - will start in _start())
       if (_useMic) {
         _recording = RecordingService(owner: 'exercise', bufferSize: 512);
-        debugPrint('[ExercisePlayerScreen] RecordingService created (not started yet)');
+        debugPrint(
+            '[ExercisePlayerScreen] RecordingService created (not started yet)');
       }
-      
+
       // Load transposed notes asynchronously after first frame
       _loadTransposedNotes();
     });
-    
+
     final initEndTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] initState complete: ${initEndTime.difference(initStartTime).inMilliseconds}ms');
+    debugPrint(
+        '[ExercisePlayerScreen] initState complete: ${initEndTime.difference(initStartTime).inMilliseconds}ms');
   }
 
   Future<void> _loadTransposedNotes() async {
     final loadStartTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] _loadTransposedNotes start at ${loadStartTime.millisecondsSinceEpoch}');
-    
+    debugPrint(
+        '[ExercisePlayerScreen] _loadTransposedNotes start at ${loadStartTime.millisecondsSinceEpoch}');
+
     // Show preparing state
     if (mounted) {
       setState(() {
         _notesLoaded = false;
       });
     }
-    
+
     // Ensure range is loaded BEFORE generating exercise notes
     final rangeStartTime = DateTime.now();
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
     final rangeEndTime = DateTime.now();
-    debugPrint('[ExercisePlayerScreen] getRange() took ${rangeEndTime.difference(rangeStartTime).inMilliseconds}ms');
-    
+    debugPrint(
+        '[ExercisePlayerScreen] getRange() took ${rangeEndTime.difference(rangeStartTime).inMilliseconds}ms');
+
     // Validate range - do not proceed with defaults
     if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
-      debugPrint('[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
+      debugPrint(
+          '[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
       if (mounted) {
         setState(() {
           _notesLoaded = false;
-          _rangeError = 'Please set your vocal range in your profile to personalize exercises.';
+          _rangeError =
+              'Please set your vocal range in your profile to personalize exercises.';
         });
       }
       return;
     }
-    
+
     // Validation logging
-    debugPrint('[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
-    
+    debugPrint(
+        '[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
+
     // Try to get cached notes first (instant - no generation needed)
     final cacheService = ExerciseCacheService.instance;
     final cachedNotes = cacheService.getCachedNotes(
       exerciseId: widget.exercise.id,
       difficulty: widget.pitchDifficulty,
     );
-    
+
     List<ReferenceNote> notes;
     if (cachedNotes != null) {
-      debugPrint('[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
+      debugPrint(
+          '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
       notes = cachedNotes;
     } else {
       // Fallback: generate on the fly if not cached (shouldn't happen if cache is working)
-      debugPrint('[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
+      debugPrint(
+          '[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
       final buildStartTime = DateTime.now();
       notes = TransposedExerciseBuilder.buildTransposedSequence(
         exercise: widget.exercise,
@@ -346,9 +374,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         difficulty: widget.pitchDifficulty,
       );
       final buildEndTime = DateTime.now();
-      debugPrint('[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+      debugPrint(
+          '[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
     }
-    
+
     if (mounted) {
       setState(() {
         _transposedNotes = notes;
@@ -359,7 +388,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           final midiValues = notes.map((n) => n.midi).toList();
           _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
           _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
-          
+
           // Initialize pitch ball at first target note so it appears immediately
           // This ensures the pitch ball is visible from the start, even before recording starts
           final firstNoteMidi = notes.first.midi.toDouble();
@@ -372,10 +401,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           );
         }
       });
-      
+
       final loadEndTime = DateTime.now();
-      debugPrint('[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
-      
+      debugPrint(
+          '[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
+
       // Auto-start the exercise immediately once notes are loaded
       // The 2-second lead-in is built into the notes themselves
       if (notes.isNotEmpty && !_playing && !_preparing && !_starting) {
@@ -398,14 +428,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return PitchHighwaySpec(segments: scaledSegments);
   }
 
-  /// Frame timing callback to detect jank
+  /// Frame timing callback to detect jank (only logs slow frames > 50ms)
+  /// Disabled by default via kDebugFrameTiming flag
   void _onFrameTimings(List<FrameTiming> timings) {
+    if (!kDebugPitchHighway || !kDebugFrameTiming) return;
     for (final t in timings) {
       final total = t.totalSpan.inMilliseconds;
-      if (total > 16) {
-        debugPrint('[Frame] total=${total}ms '
-          'build=${t.buildDuration.inMilliseconds}ms '
-          'raster=${t.rasterDuration.inMilliseconds}ms');
+      // Only log frames that are significantly slow (> 50ms)
+      if (total > 50) {
+        DebugLog.logEvent('Frame',
+            'total=${total}ms build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms');
       }
     }
   }
@@ -414,21 +446,23 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void dispose() {
     // ignore: avoid_print
     print('[ExercisePlayerScreen] dispose - cleaning up resources');
-    
-    // Remove frame timing callback
-    SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
-    
+
+    // Remove frame timing callback (only if it was added)
+    if (kDebugPitchHighway && kDebugFrameTiming) {
+      SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
+    }
+
     // Stop ticker and clock first
     _ticker?.stop();
     _ticker?.dispose();
     _clock.pause();
-    
+
     // Cancel subscriptions
     _sub?.cancel();
     _sub = null;
     _audioPosSub?.cancel();
     _audioPosSub = null;
-    
+
     // Stop and dispose recording service
     if (_recording != null) {
       // Stop first, then dispose asynchronously
@@ -447,14 +481,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       });
       _recording = null;
     }
-    
+
     // Cancel timers
     _prepTimer?.cancel();
     _prepTimer = null;
-    
+
     // Stop audio
     _synth.stop();
-    
+
     // Clear all state to prevent old data from persisting
     _transposedNotes = const [];
     _notesLoaded = false;
@@ -479,44 +513,85 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _lastRecordingPath = null;
     _lastContourJson = null;
     _canvasSize = null;
-    
+
     // Clear buffers and state objects
     _captured.clear();
     _tailBuffer.clear();
     _pitchBall.reset();
     _pitchState.reset();
     _visualState.reset();
-    
+
     // Dispose value notifiers
     _time.dispose();
     _liveMidi.dispose();
-    
+
     super.dispose();
   }
 
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    
+
     // Log first ticker callback (not the immediate manual call)
     if (!_isImmediateTick && !_loggedFirstTick) {
       _loggedFirstTick = true;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      debugPrint('[Visuals] FIRST TICK at $nowMs elapsed=$elapsed runId=$_runId');
+      DebugLog.logEvent(
+          'Visuals', 'FIRST TICK at $nowMs elapsed=$elapsed runId=$_runId');
       _startTrace?.mark('ticker first tick fired');
       if (_tapEpochMs != null) {
         final delayMs = nowMs - _tapEpochMs!;
-        debugPrint('[Visuals] FIRST TICK delay from tap: ${delayMs}ms');
+        DebugLog.logEvent('Visuals', 'FIRST TICK delay from tap: ${delayMs}ms');
       }
     }
-    
+
     // Log first tick for instrumentation (but skip if this is the immediate manual call)
-    if (!_isImmediateTick && _tapEpochMs != null && elapsed.inMilliseconds < 20) {
+    if (!_isImmediateTick &&
+        _tapEpochMs != null &&
+        elapsed.inMilliseconds < 20) {
       final firstTickTime = DateTime.now().millisecondsSinceEpoch;
-      debugPrint('[Start] firstTick <= ${firstTickTime - _tapEpochMs!}ms');
+      DebugLog.logEvent(
+          'Start', 'firstTick <= ${firstTickTime - _tapEpochMs!}ms');
     }
     _isImmediateTick = false; // Reset flag after first use
-    
-    final next = _clock.nowSeconds();
+
+    // CRITICAL: Use single-anchor time calculation based on _timelineStartEpochMs
+    // This ensures time is monotonic and never jumps backwards when audio starts
+    final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
+    double next;
+    if (_timelineStartEpochMs != null) {
+      // Single source of truth: time = (now - anchor) / 1000.0
+      next = (nowEpochMs - _timelineStartEpochMs!) / 1000.0;
+    } else {
+      // Fallback to clock if anchor not set (shouldn't happen during play)
+      next = _clock.nowSeconds();
+    }
+
+    // Detect time going backwards (restart/jump to start)
+    if (next < _lastTime - 0.2 && _playing) {
+      // Detailed inputs snapshot for debugging
+      final clockTime = _clock.nowSeconds();
+      final inputs = 'nowEpochMs=$nowEpochMs '
+          '_timelineStartEpochMs=$_timelineStartEpochMs '
+          'computedTimeFromEpoch=$next '
+          '_clock.nowSeconds()=$clockTime '
+          '_audioPositionSec=$_audioPositionSec '
+          '_leadInSec=$_leadInSec '
+          '_playing=$_playing _preparing=$_preparing _isRunning=$_isRunning '
+          'runId=$_runId '
+          'lastTime=$_lastTime';
+      DebugLog.tripwire('time_backwards_inputs',
+          'time went backwards: last=$_lastTime now=$next\n$inputs');
+    }
+
+    // Monotonic clamp safety: prevent UI from jumping backward even if bug remains
+    if (_playing && next < _time.value) {
+      DebugLog.tripwire('time_backwards_clamped',
+          'time clamped: would be $next but clamped to ${_time.value} runId=$_runId');
+      next = _time.value; // Clamp to prevent visible restart
+    }
+
+    _lastTime = next;
+
     final effectiveMidi = _pitchState.effectiveMidi;
     final effectiveHz = _pitchState.effectiveHz;
     _visualState.update(
@@ -563,17 +638,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   /// Called on Start press to ensure a clean slate.
   void _resetRunState() {
     _runId++;
-    
+
     // Stop ticker and clock
     _ticker?.stop();
     _clock.pause();
-    
+
     // Cancel subscriptions (but don't block - will be replaced)
     _sub?.cancel();
     _sub = null;
     _audioPosSub?.cancel();
     _audioPosSub = null;
-    
+
     // Reset all runtime flags
     _playing = false;
     _preparing = false;
@@ -583,75 +658,92 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _captureEnabled = false;
     _audioStarted = false;
     _isImmediateTick = false;
-    
+
     // Reset per-run start guards
     _visualsStarted = false;
     _runningSet = false;
     _lastModelHash = null;
     _lastRepaintHash = null;
-    
+
     // Reset timestamps
     _tapEpochMs = null;
     _exerciseStartEpochMs = null;
-    _setTimelineStartEpochMs(null, src: '_resetRunState'); // Reset timeline anchor
+    _setTimelineStartEpochMs(null,
+        src: '_resetRunState'); // Reset timeline anchor
     _startedAt = null;
     _audioPositionSec = null;
-    
+
     // Reset score and attempt state
     _scorePct = null;
     _attemptSaved = false;
-    
+
     // Reset time to 0 (only allowed here)
     _setTimeValue(0.0, src: '_resetRunState');
     _liveMidi.value = null;
-    
+
     // Clear all buffers and collections
     _captured.clear();
     _tailBuffer.clear();
-    
+
     // Reset state objects
     _pitchBall.reset();
     _pitchState.reset();
     _visualState.reset();
-    
+
     // Cancel prep timer and any other timers
     _prepTimer?.cancel();
     _prepTimer = null;
     _prepRemaining = 0;
-    
+
     // Force pitch highway widget to remount with new key (only allowed in reset)
-    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'), src: '_resetRunState');
-    
+    _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'),
+        src: '_resetRunState');
+
     // Reset first tick logging flag
     _loggedFirstTick = false;
-    
+
     // Log repaint listenable replacement
-    final oldRepaintListenable = _liveMidi == null 
-        ? _time 
-        : Listenable.merge([_time, _liveMidi]);
-    debugPrint('[Reset] Run state cleared, runId=$_runId, repaintListenable=${oldRepaintListenable.hashCode}');
-    
+    // CRITICAL: repaint listenable is always _time (stable, never changes within a run)
+    DebugLog.logEvent('Reset',
+        'Run state cleared, runId=$_runId, repaintListenable=${_time.hashCode}');
+
     // Log model/notifier identities (if we had a model, but we use ValueNotifiers directly)
-    debugPrint('[Reset] timeNotifier=${_time.hashCode} liveMidiNotifier=${_liveMidi.hashCode}');
-    
+    DebugLog.logEvent('Reset',
+        'timeNotifier=${_time.hashCode} liveMidiNotifier=${_liveMidi.hashCode}');
+
     // Log that scroll/time are reset (should only happen here)
-    debugPrint('[Reset] scroll/time reset to 0 (runId=$_runId)');
+    DebugLog.logEvent('Reset', 'scroll/time reset to 0 (runId=$_runId)');
+
+    // Reset time tracking for backwards detection
+    _lastTime = 0.0;
   }
 
   /// Tripwire: Set time value with source tracking
   void _setTimeValue(double v, {required String src}) {
     if (v == 0.0 && _playing) {
-      debugPrint('[TRIPWIRE] time reset to 0 src=$src runId=$_runId\n${StackTrace.current}');
+      DebugLog.tripwire('time_reset', 'time reset to 0 src=$src runId=$_runId');
     }
     _time.value = v;
   }
 
   /// Tripwire: Set timeline start epoch with source tracking
+  /// CRITICAL: This should only be set ONCE per run (in onStartPressed or _ensureVisualsStarted)
+  /// Any change after start is a bug and will cause time to jump backwards
   void _setTimelineStartEpochMs(int? v, {required String src}) {
-    if (v != null && _timelineStartEpochMs != null && _timelineStartEpochMs != v) {
-      debugPrint('[TRIPWIRE] timelineStartEpochMs CHANGED from $_timelineStartEpochMs to $v src=$src runId=$_runId\n${StackTrace.current}');
+    if (v != null &&
+        _timelineStartEpochMs != null &&
+        _timelineStartEpochMs != v) {
+      // This is a bug - timeline anchor should never change after start
+      DebugLog.tripwire('timeline_changed',
+          'timelineStartEpochMs CHANGED from $_timelineStartEpochMs to $v src=$src runId=$_runId');
+    } else if (v != null && _playing) {
+      // Setting timeline anchor while playing is also a bug
+      DebugLog.tripwire('timeline_set_while_playing',
+          'timelineStartEpochMs set to $v src=$src runId=$_runId WHILE PLAYING');
     } else if (v != null) {
-      debugPrint('[TRIPWIRE] timelineStartEpochMs set to $v src=$src runId=$_runId\n${StackTrace.current}');
+      DebugLog.tripwire('timeline_set',
+          'timelineStartEpochMs set to $v src=$src runId=$_runId',
+          includeStack: false);
     }
     _timelineStartEpochMs = v;
   }
@@ -659,9 +751,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   /// Tripwire: Set pitch highway key with source tracking
   void _setPitchHighwayKey(Key key, {required String src}) {
     if (_pitchHighwayKey != null && _pitchHighwayKey != key && _playing) {
-      debugPrint('[TRIPWIRE] pitchHighwayKey CHANGED from $_pitchHighwayKey to $key src=$src runId=$_runId\n${StackTrace.current}');
+      DebugLog.tripwire('key_changed',
+          'pitchHighwayKey CHANGED from $_pitchHighwayKey to $key src=$src runId=$_runId');
     } else if (_pitchHighwayKey != key) {
-      debugPrint('[TRIPWIRE] pitchHighwayKey set to $key src=$src runId=$_runId\n${StackTrace.current}');
+      DebugLog.tripwire(
+          'key_set', 'pitchHighwayKey set to $key src=$src runId=$_runId',
+          includeStack: false);
     }
     _pitchHighwayKey = key;
   }
@@ -672,42 +767,44 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       debugPrint('[Start] Ignored - already starting/running/stopping');
       return;
     }
-    
+
     final tapTime = DateTime.now();
     final t0 = tapTime.millisecondsSinceEpoch;
     debugPrint('[Start] tap at $t0');
-    
+
     // Create performance trace for this start
     final trace = PerfTrace('StartExercise runId=${_runId + 1}');
     trace.mark('tap');
     _startTrace = trace; // Store for ticker access
-    
+
     // CRITICAL: Reset ALL state FIRST in setState to ensure clean UI render
     debugPrint('[Start] BEFORE setState runId=$_runId');
-    
+
     // Compute timeline start epoch ONCE (this is the anchor, never changes)
     final timelineStartMs = t0; // Start immediately at tap time
-    
+
     setState(() {
       _resetRunState(); // Clears all runtime state, increments runId, creates new key
       _tapEpochMs = t0;
-      _exerciseStartEpochMs = t0 + 120; // Small buffer for audio/mic spin up (for reference only)
-      _setTimelineStartEpochMs(timelineStartMs, src: 'onStartPressed'); // Set timeline anchor ONCE
+      _exerciseStartEpochMs =
+          t0 + 120; // Small buffer for audio/mic spin up (for reference only)
+      _setTimelineStartEpochMs(timelineStartMs,
+          src: 'onStartPressed'); // Set timeline anchor ONCE
       _startedAt = tapTime;
       _playing = true; // UI state: show as playing immediately
     });
-    
+
     trace.mark('after reset setState');
     debugPrint('[Start] AFTER setState runId=$_runId');
-    
+
     // Start visuals immediately (no awaits) - idempotent, will only start once
     _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
     trace.mark('after ensureVisualsStarted');
-    
+
     // Start fast engines immediately (recorder, mic access)
     final currentRunId = _runId;
     unawaited(_startFastEngines(runId: currentRunId, t0: t0, trace: trace));
-    
+
     // CRITICAL: Schedule heavy audio preparation AFTER first frame paints
     // This ensures the clean-slate UI is visible immediately before heavy work begins
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -721,55 +818,74 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   /// Must NOT clear scroll, buffers, or reset notifiers - those belong in _resetRunState()
   void _ensureVisualsStarted({required int runId, required int startEpochMs}) {
     if (runId != _runId) {
-      debugPrint('[Visuals] _ensureVisualsStarted ignored - runId mismatch ($runId != $_runId)');
+      debugPrint(
+          '[Visuals] _ensureVisualsStarted ignored - runId mismatch ($runId != $_runId)');
       return;
     }
     if (_visualsStarted) {
-      debugPrint('[Visuals] _ensureVisualsStarted ignored - already started (runId=$runId)');
+      debugPrint(
+          '[Visuals] _ensureVisualsStarted ignored - already started (runId=$runId)');
       return;
     }
-    
+
     _visualsStarted = true;
-    
-    // Set timeline anchor ONCE - tripwire will log if it's being changed
-    _setTimelineStartEpochMs(startEpochMs, src: '_ensureVisualsStarted');
-    
+
+    // CRITICAL: Timeline anchor should already be set in onStartPressed
+    // Only set it here if it's somehow not set (shouldn't happen)
+    if (_timelineStartEpochMs == null) {
+      DebugLog.tripwire('timeline_missing',
+          'timelineStartEpochMs was null in _ensureVisualsStarted, setting to $startEpochMs runId=$runId');
+      _setTimelineStartEpochMs(startEpochMs,
+          src: '_ensureVisualsStarted_fallback');
+    } else if (_timelineStartEpochMs != startEpochMs) {
+      // This is a bug - anchor should match what was set in onStartPressed
+      DebugLog.tripwire('timeline_mismatch',
+          'timelineStartEpochMs mismatch: stored=$_timelineStartEpochMs passed=$startEpochMs runId=$runId');
+    }
+
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    debugPrint('[Visuals] started once runId=$runId startEpoch=$startEpochMs (at $nowMs)');
-    
+    debugPrint(
+        '[Visuals] started once runId=$runId startEpoch=$startEpochMs (at $nowMs)');
+
     // Start clock and ticker immediately (visuals start moving)
     // Clock starts at 0, audio will align naturally (notes have 2s lead-in built in)
     _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
-    
+
     // Tripwire: detect clock restart
-    debugPrint('[TRIPWIRE] _clock.start() called runId=$runId\n${StackTrace.current}');
+    DebugLog.tripwire('clock_start', '_clock.start() called runId=$runId',
+        includeStack: false);
     _clock.start(offsetSec: 0.0, freezeUntilAudio: false);
-    
+
     // Tripwire: detect ticker restart
-    debugPrint('[TRIPWIRE] _ticker.start() called runId=$runId\n${StackTrace.current}');
+    DebugLog.tripwire('ticker_start', '_ticker.start() called runId=$runId',
+        includeStack: false);
     _ticker?.start();
-    
+
     // Log post-frame after ticker.start()
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('[Visuals] postFrame after ticker.start at ${DateTime.now().millisecondsSinceEpoch}');
+      debugPrint(
+          '[Visuals] postFrame after ticker.start at ${DateTime.now().millisecondsSinceEpoch}');
     });
-    
+
     // Force immediate first tick to render visuals right away (don't wait for next frame)
     _isImmediateTick = true; // Mark as immediate to prevent double logging
     _onTick(Duration.zero);
-    
+
     final afterVisuals = DateTime.now();
-    debugPrint('[Visuals] visuals started <= ${afterVisuals.millisecondsSinceEpoch - startEpochMs}ms');
+    debugPrint(
+        '[Visuals] visuals started <= ${afterVisuals.millisecondsSinceEpoch - startEpochMs}ms');
   }
 
   /// Fast engine start: mic access, recording (no heavy CPU work)
   /// This runs immediately to start recording as fast as possible
-  Future<void> _startFastEngines({required int runId, required int t0, required PerfTrace trace}) async {
+  Future<void> _startFastEngines(
+      {required int runId, required int t0, required PerfTrace trace}) async {
     _starting = true;
     try {
       trace.mark('_startEngines begin');
-      debugPrint('[Start] _startEngines called at ${DateTime.now().millisecondsSinceEpoch - t0}ms (runId=$runId)');
-      
+      debugPrint(
+          '[Start] _startEngines called at ${DateTime.now().millisecondsSinceEpoch - t0}ms (runId=$runId)');
+
       // Check runId after each await to ignore stale callbacks
       if (runId != _runId) {
         debugPrint('[Start] Aborted - runId mismatch ($runId != $_runId)');
@@ -777,15 +893,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         trace.end();
         return;
       }
-      
-    if (_useMic) {
+
+      if (_useMic) {
         // Recording service should already be initialized
         if (_recording == null) {
           trace.mark('creating RecordingService');
           debugPrint('[Start] Creating RecordingService in _startEngines()');
           _recording = RecordingService(owner: 'exercise', bufferSize: 512);
         }
-        
+
         // Stop any existing recording first
         trace.mark('before recorder.stop');
         dev.Timeline.startSync('recorder.stop');
@@ -797,77 +913,83 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         }
         dev.Timeline.finishSync();
         trace.mark('after recorder.stop');
-        
+
         if (runId != _runId) {
           debugPrint('[Start] Aborted after stop - runId mismatch');
           trace.mark('abort after recorder.stop');
           trace.end();
           return;
         }
-        
+
         // Start recording - this includes mic access request
         trace.mark('before recorder.start');
         dev.Timeline.startSync('recorder.start');
         final beforeRecorder = DateTime.now();
-      await _recording?.start();
+        await _recording?.start();
         final afterRecorder = DateTime.now();
         dev.Timeline.finishSync();
         trace.mark('after recorder.start');
-        debugPrint('[Start] recorder started at ${afterRecorder.difference(beforeRecorder).inMilliseconds}ms');
-        
+        debugPrint(
+            '[Start] recorder started at ${afterRecorder.difference(beforeRecorder).inMilliseconds}ms');
+
         if (runId != _runId) {
           debugPrint('[Start] Aborted after recorder start - runId mismatch');
           trace.mark('abort after recorder.start');
           trace.end();
           return;
         }
-        
+
         // Cancel any existing subscription
         trace.mark('before cancel subscription');
         await _sub?.cancel();
         trace.mark('after cancel subscription');
-        
+
         // Capture runId in closure to guard against stale callbacks
         final localRunId = runId;
         trace.mark('before listen to stream');
-      _sub = _recording?.liveStream.listen((frame) {
+        _sub = _recording?.liveStream.listen((frame) {
           // Ignore stale data from previous runs
           if (localRunId != _runId) {
-            debugPrint('[Stale] ignored pitch frame from runId=$localRunId current=$_runId');
+            DebugLog.logOncePerMs('stale_pitch_frame',
+                '[Stale] ignored pitch frame from runId=$localRunId current=$_runId',
+                minIntervalMs: 1000);
             return;
           }
-        if (!_captureEnabled) return;
-          
-        final midi = frame.midi ??
-            (frame.hz != null ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2 : null);
-        final now =
-            (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0)).clamp(-2.0, 3600.0);
-        final voiced =
-            midi != null && (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
-        double? filtered;
-        if (voiced) {
+          if (!_captureEnabled) return;
+
+          final midi = frame.midi ??
+              (frame.hz != null
+                  ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2
+                  : null);
+          final now = (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0))
+              .clamp(-2.0, 3600.0);
+          final voiced = midi != null &&
+              (frame.voicedProb ?? 1.0) >= 0.6 &&
+              (frame.rms ?? 1.0) >= 0.02;
+          double? filtered;
+          if (voiced) {
             _pitchBall.addSample(timeSec: now, midi: midi);
             filtered = _pitchBall.lastSampleMidi ?? midi;
-          _pitchState.updateVoiced(timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
-        } else {
-          _pitchState.updateUnvoiced(timeSec: now);
-        }
-        final pf = PitchFrame(
-          time: now,
-          hz: frame.hz,
-          midi: voiced ? filtered : null,
-          voicedProb: frame.voicedProb,
-          rms: frame.rms,
-        );
-        _captured.add(pf);
-      });
+            _pitchState.updateVoiced(
+                timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
+          } else {
+            _pitchState.updateUnvoiced(timeSec: now);
+          }
+          final pf = PitchFrame(
+            time: now,
+            hz: frame.hz,
+            midi: voiced ? filtered : null,
+            voicedProb: frame.voicedProb,
+            rms: frame.rms,
+          );
+          _captured.add(pf);
+        });
         trace.mark('after listen to stream');
       }
-      
+
       // Fast engines started - recording is ready
       trace.mark('fast engines complete');
       debugPrint('[Start] fast engines complete (runId=$runId)');
-      
     } catch (e, stackTrace) {
       debugPrint('[Start] ERROR in _startFastEngines: $e');
       debugPrint('[Start] Stack trace: $stackTrace');
@@ -878,18 +1000,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   /// Heavy audio preparation: render notes, prepare audio (runs in isolate, post-frame)
   /// This is scheduled AFTER the first reset frame paints to avoid blocking UI
-  Future<void> _startHeavyPrepare({required int runId, required int t0, required PerfTrace trace}) async {
+  Future<void> _startHeavyPrepare(
+      {required int runId, required int t0, required PerfTrace trace}) async {
     try {
       trace.mark('_startHeavyPrepare begin');
       debugPrint('[Start] _startHeavyPrepare called (runId=$runId)');
-      
+
       if (runId != _runId) {
         debugPrint('[Start] Aborted - runId mismatch ($runId != $_runId)');
         trace.mark('abort - runId mismatch');
         trace.end();
         return;
       }
-      
+
       // Build reference notes (lightweight - just data structure)
       trace.mark('before buildReferenceNotes');
       final notes = _buildReferenceNotes();
@@ -899,21 +1022,21 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         trace.end();
         return;
       }
-      
+
       // Render audio in isolate (heavy CPU work)
       trace.mark('before audio.render (isolate)');
       dev.Timeline.startSync('audio.render');
       final path = await _synth.renderReferenceNotes(notes);
       dev.Timeline.finishSync();
       trace.mark('after audio.render (isolate)');
-      
+
       if (runId != _runId) {
         debugPrint('[Start] Aborted after render - runId mismatch');
         trace.mark('abort after render');
         trace.end();
         return;
       }
-      
+
       // Play audio (lightweight - just file I/O and player setup)
       trace.mark('before audio.play');
       dev.Timeline.startSync('audio.play');
@@ -931,15 +1054,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       dev.Timeline.finishSync();
       final afterAudio = DateTime.now();
       trace.mark('after audio.play');
-      debugPrint('[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
-      
+      debugPrint(
+          '[Start] audio started at ${afterAudio.difference(beforeAudio).inMilliseconds}ms');
+
       if (runId != _runId) {
         debugPrint('[Start] Aborted after audio - runId mismatch');
         trace.mark('abort after audio');
         trace.end();
         return;
       }
-      
+
       // All engines started - mark as running (idempotent, only set once)
       if (mounted && runId == _runId && !_runningSet) {
         _runningSet = true;
@@ -947,7 +1071,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           _isRunning = true;
           _captureEnabled = true;
         });
-        debugPrint('[Start] set running ONCE (runId=$runId) - no timeline reset');
+        debugPrint(
+            '[Start] set running ONCE (runId=$runId) - no timeline reset');
         trace.mark('set running');
       } else if (_runningSet) {
         debugPrint('[Start] set running ignored - already set (runId=$runId)');
@@ -955,7 +1080,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       }
       trace.end();
       debugPrint('[Start] running (runId=$runId)');
-      
     } catch (e, stackTrace) {
       debugPrint('[Start] ERROR in _startHeavyPrepare: $e');
       debugPrint('[Start] Stack trace: $stackTrace');
@@ -967,7 +1091,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _isRunning = false;
         _ticker?.stop();
         _clock.pause();
-    setState(() {});
+        setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start exercise: $e')),
         );
@@ -981,35 +1105,37 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   Future<void> _stop() async {
     if (_stopping || (!_playing && !_preparing)) return;
-    
+
     _stopping = true;
     _endPrepCountdown();
     _playing = false;
     _isRunning = false;
     _captureEnabled = false;
     _ticker?.stop();
-    
+
     // Stop engines
     await _sub?.cancel();
     _sub = null;
     await _audioPosSub?.cancel();
     _audioPosSub = null;
     debugPrint('[Stop] stopping recording');
-    final recordingResult = _recording == null ? null : await _recording!.stop();
+    final recordingResult =
+        _recording == null ? null : await _recording!.stop();
     // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();
     _tailBuffer.clear();
-    
+
     final audioPath = recordingResult?.audioPath;
     await _saveLastTake(audioPath);
-    _lastRecordingPath = (audioPath != null && audioPath.isNotEmpty) ? audioPath : null;
+    _lastRecordingPath =
+        (audioPath != null && audioPath.isNotEmpty) ? audioPath : null;
     _lastContourJson = _buildContourJson();
     final score = _scorePct ?? _computeScore();
     _scorePct = score;
-    
+
     _stopping = false;
     await _completeAndPop(score, {'intonation': score});
   }
@@ -1050,7 +1176,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (_captured.isEmpty) return null;
     try {
       final sanitized = _captured.map((f) {
-        final midi = f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
+        final midi =
+            f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
         return {
           't': f.time,
           'hz': f.hz,
@@ -1088,56 +1215,57 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (notes.isEmpty) return null;
     try {
       final segments = <Map<String, dynamic>>[];
-      
+
       // Get the base root MIDI from the original exercise spec
       final spec = _scaledSpec;
       if (spec == null || spec.segments.isEmpty) return null;
-      final baseRootMidi = spec.segments.first.startMidi ?? spec.segments.first.midiNote;
-      
+      final baseRootMidi =
+          spec.segments.first.startMidi ?? spec.segments.first.midiNote;
+
       // Special handling for octave slides: combine bottom note + silence + top note into one segment
       final isOctaveSlides = widget.exercise.id == 'octave_slides';
-      
+
       if (isOctaveSlides) {
         // For octave slides, detect pairs of notes that are ~12 semitones apart
         // Pattern: bottom note, ~1s gap, top note (12 semitones higher), then repeat
         var segmentIndex = 0;
         var i = 0;
-        
+
         while (i < notes.length) {
           final bottomNote = notes[i];
           final bottomMidi = bottomNote.midi.round();
-          
+
           // Look ahead for the top note (should be ~12 semitones higher and start after ~1s gap)
           int? topNoteIndex;
           for (var j = i + 1; j < notes.length; j++) {
             final candidate = notes[j];
             final gap = candidate.startSec - bottomNote.endSec;
             final midiDiff = candidate.midi.round() - bottomMidi;
-            
+
             // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
             if (gap >= 0.8 && gap <= 1.2 && midiDiff >= 11 && midiDiff <= 13) {
               topNoteIndex = j;
               break;
             }
-            
+
             // If we've gone too far (gap > 1.5s or different transposition), stop looking
             if (gap > 1.5 || midiDiff < 0) {
               break;
             }
           }
-          
+
           if (topNoteIndex != null) {
             // Found a pair: combine bottom note + gap + top note into one segment
             final topNote = notes[topNoteIndex];
             final transpose = bottomMidi - baseRootMidi;
-            
+
             segments.add({
               'segmentIndex': segmentIndex,
               'startMs': (bottomNote.startSec * 1000).round(),
               'endMs': (topNote.endSec * 1000).round(),
               'transposeSemitone': transpose,
             });
-            
+
             segmentIndex++;
             i = topNoteIndex + 1; // Move past the top note
           } else {
@@ -1157,12 +1285,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         // Regular segment detection: find gaps > 0.5 seconds (gap between repetitions)
         var segmentIndex = 0;
         var currentSegmentStartMs = (notes.first.startSec * 1000).round();
-        
+
         for (var i = 1; i < notes.length; i++) {
           final prevNote = notes[i - 1];
           final currNote = notes[i];
           final gap = currNote.startSec - prevNote.endSec;
-          
+
           // New segment if gap > 0.5s (gap between repetitions)
           if (gap > 0.5) {
             // Save previous segment
@@ -1173,13 +1301,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
               'endMs': (prevNote.endSec * 1000).round(),
               'transposeSemitone': segmentTranspose,
             });
-            
+
             // Start new segment
             segmentIndex++;
             currentSegmentStartMs = (currNote.startSec * 1000).round();
           }
         }
-        
+
         // Add final segment
         if (notes.isNotEmpty) {
           final lastNote = notes.last;
@@ -1192,7 +1320,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           });
         }
       }
-      
+
       return jsonEncode(segments);
     } catch (e) {
       debugPrint('Error building segments JSON: $e');
@@ -1211,7 +1339,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _pitchBall.addSample(timeSec: t, midi: midi);
     final filtered = _pitchBall.lastSampleMidi ?? midi;
     _pitchState.updateVoiced(timeSec: t, pitchHz: hz, pitchMidi: filtered);
-    _visualState.update(timeSec: t, pitchHz: hz, pitchMidi: filtered, voiced: true);
+    _visualState.update(
+        timeSec: t, pitchHz: hz, pitchMidi: filtered, voiced: true);
     final pf = PitchFrame(time: t, hz: hz, midi: filtered);
     _captured.add(pf);
   }
@@ -1263,16 +1392,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final notes = <ReferenceNote>[];
     final isNgSlides = widget.exercise.id == 'ng_slides';
     final isSirens = widget.exercise.id == 'sirens';
-    
+
     for (var i = 0; i < spec.segments.length; i++) {
       final seg = spec.segments[i];
       final isGlide = seg.isGlide;
-      
+
       // For NG Slides and Sirens: create full-length notes for audio, but mark for visual glide
       if ((isNgSlides || isSirens) && isGlide) {
         final endMidi = seg.endMidi ?? seg.midiNote;
         final isFirstSegment = i == 0;
-        
+
         // Create full-length note for audio playback
         notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
@@ -1287,17 +1416,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         // For other glides: create endpoint notes (original behavior)
         final startMidi = seg.startMidi ?? seg.midiNote;
         final endMidi = seg.endMidi ?? seg.midiNote;
-        
+
         // Start endpoint note
-          notes.add(ReferenceNote(
+        notes.add(ReferenceNote(
           startSec: seg.startMs / 1000.0 + _leadInSec,
           endSec: seg.startMs / 1000.0 + _leadInSec + 0.01,
           midi: startMidi,
-            lyric: seg.label,
+          lyric: seg.label,
           isGlideStart: true,
           glideEndMidi: endMidi,
         ));
-        
+
         // End endpoint note
         notes.add(ReferenceNote(
           startSec: seg.endMs / 1000.0 + _leadInSec - 0.01,
@@ -1316,7 +1445,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         ));
       }
     }
-    
+
     // For Sirens: mark the top note (second) as glide end for first glide, and last note as glide end for second glide
     if (isSirens && notes.length >= 3) {
       // First glide: bottom1 -> top (top note should be marked as glide end)
@@ -1340,22 +1469,25 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         isGlideEnd: true, // End of second glide (top -> bottom2)
       );
     }
-    
+
     return notes;
   }
-
 
   double _computeScore() {
     final notes = _buildReferenceNotes();
     if (notes.isEmpty || _captured.isEmpty) return 0.0;
     // Filter out frames captured during lead-in period (do not score during lead-in)
-    final scoredFrames = _captured.where((f) => ExerciseConstants.shouldScoreAtTime(f.time)).toList();
+    final scoredFrames = _captured
+        .where((f) => ExerciseConstants.shouldScoreAtTime(f.time))
+        .toList();
     if (scoredFrames.isEmpty) return 0.0;
-    final result = RobustNoteScoringService().score(notes: notes, frames: scoredFrames);
+    final result =
+        RobustNoteScoringService().score(notes: notes, frames: scoredFrames);
     return result.overallScorePct;
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1374,7 +1506,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     final level = pitchHighwayDifficultyLevel(widget.pitchDifficulty);
@@ -1383,14 +1516,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       level: level,
       score: score.round(),
     );
-    if (score > 90 && level == updated.highestUnlockedLevel && level < ExerciseLevelProgress.maxLevel) {
+    if (score > 90 &&
+        level == updated.highestUnlockedLevel &&
+        level < ExerciseLevelProgress.maxLevel) {
       await _levelProgress.updateUnlockedLevel(
         exerciseId: widget.exercise.id,
         newLevel: level + 1,
       );
     }
     if (!mounted) return;
-    
+
     // Get the saved attempt to navigate to review
     final savedAttempt = await _getSavedAttempt();
     if (savedAttempt != null && mounted) {
@@ -1429,11 +1564,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final notes = _buildReferenceNotes();
     // Update MIDI range if we have notes
     if (notes.isNotEmpty) {
-    final midiValues = notes.map((n) => n.midi).toList();
+      final midiValues = notes.map((n) => n.midi).toList();
       final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
       final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
-    _midiMin = minMidi;
-    _midiMax = maxMidi;
+      _midiMin = minMidi;
+      _midiMax = maxMidi;
     }
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
@@ -1463,7 +1598,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                         'key=${_pitchHighwayKey?.toString() ?? "null"}\n'
                         'playing=$_playing starting=$_starting\n'
                         't=${DateTime.now().millisecondsSinceEpoch}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ),
                   ),
@@ -1471,53 +1607,66 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                 // Only render pitch highway once notes are loaded to prevent showing old data
                 // Use key to force remount on each run to prevent stale painter state
                 if (_notesLoaded)
-                Positioned.fill(
-                    key: _pitchHighwayKey, // Force remount to prevent stale painter state
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
-                        
+                  Positioned.fill(
+                    key:
+                        _pitchHighwayKey, // Force remount to prevent stale painter state
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        _canvasSize =
+                            Size(constraints.maxWidth, constraints.maxHeight);
+
                         // Log repaint listenable identity and model identities
-                        final repaintListenable = _liveMidi == null 
-                            ? _time 
-                            : Listenable.merge([_time, _liveMidi]);
+                        // CRITICAL: Use stable _time as repaint listenable (never Listenable.merge)
                         final modelHash = _time.hashCode;
-                        final repaintHash = repaintListenable.hashCode;
-                        
+                        final repaintHash =
+                            _time.hashCode; // Always equals modelHash (stable)
+
                         // Tripwire: detect model/notifier identity changes within a run
-                        if (_lastModelHash != null && _lastModelHash != modelHash && _playing) {
-                          debugPrint('[TRIPWIRE] modelHash CHANGED from $_lastModelHash to $modelHash runId=$_runId\n${StackTrace.current}');
+                        if (_lastModelHash != null &&
+                            _lastModelHash != modelHash &&
+                            _playing) {
+                          DebugLog.tripwire('model_changed',
+                              'modelHash CHANGED from $_lastModelHash to $modelHash runId=$_runId');
                         }
-                        if (_lastRepaintHash != null && _lastRepaintHash != repaintHash && _playing) {
-                          debugPrint('[TRIPWIRE] repaintHash CHANGED from $_lastRepaintHash to $repaintHash runId=$_runId\n${StackTrace.current}');
+                        // Tripwire: repaintHash should always equal _time.hashCode and never change mid-run
+                        if (_lastRepaintHash != null &&
+                            _lastRepaintHash != repaintHash &&
+                            _playing) {
+                          DebugLog.tripwire('repaint_changed',
+                              'repaintHash CHANGED from $_lastRepaintHash to $repaintHash runId=$_runId (expected=$modelHash)');
                         }
-                        
+                        // Assert: repaintHash must equal _time.hashCode
+                        if (repaintHash != modelHash) {
+                          DebugLog.tripwire('repaint_mismatch',
+                              'repaintHash ($repaintHash) != modelHash ($modelHash) runId=$_runId');
+                        }
+
                         _lastModelHash = modelHash;
                         _lastRepaintHash = repaintHash;
-                        
-                        debugPrint('[Build] PitchHighway repaint listenable = $repaintHash runId=$_runId');
-                        debugPrint('[Build] timeNotifier=$modelHash liveMidiNotifier=${_liveMidi.hashCode}');
-                        
-                      return CustomPaint(
-                        painter: PitchHighwayPainter(
-                          notes: notes,
-                          pitchTail: const [],
-                          tailPoints: _tailBuffer.points,
-                          time: _time,
-                          pixelsPerSecond: _pixelsPerSecond,
-                          liveMidi: _liveMidi,
-                          pitchTailTimeOffsetSec: 0,
+
+                        // Log build rate (throttled)
+                        DebugLog.logBuildRate();
+
+                        return CustomPaint(
+                          painter: PitchHighwayPainter(
+                            notes: notes,
+                            pitchTail: const [],
+                            tailPoints: _tailBuffer.points,
+                            time: _time,
+                            pixelsPerSecond: _pixelsPerSecond,
+                            liveMidi: _liveMidi,
+                            pitchTailTimeOffsetSec: 0,
                             noteTimeOffsetSec: _leadInSec,
-                          drawBackground: false,
+                            drawBackground: false,
                             midiMin: _midiMin,
                             midiMax: _midiMax,
-                          colors: colors,
+                            colors: colors,
                             runId: _runId, // Pass runId to painter for logging
-                        ),
-                      );
-                    },
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
                 if (widget.showBackButton)
                   Positioned(
                     top: 8,
@@ -1534,7 +1683,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(8),
-                          child: Icon(Icons.arrow_back, color: colors.textPrimary),
+                          child:
+                              Icon(Icons.arrow_back, color: colors.textPrimary),
                         ),
                       ),
                     ),
@@ -1543,7 +1693,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                   top: widget.showBackButton ? 52 : 12,
                   left: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: colors.surface2,
                       borderRadius: BorderRadius.circular(999),
@@ -1551,10 +1702,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                     ),
                     child: Text(
                       difficultyLabel,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -1596,9 +1746,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           const SizedBox(height: 16),
                           Text(
                             'Preparing...',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: colors.textSecondary,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
                           ),
                         ],
                       ),
@@ -1618,7 +1771,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.error_outline, color: Colors.red.shade700, size: 48),
+                          Icon(Icons.error_outline,
+                              color: Colors.red.shade700, size: 48),
                           const SizedBox(height: 12),
                           Text(
                             _rangeError!,
@@ -1650,7 +1804,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                           ),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
                               child: Container(
                                 height: 6,
                                 decoration: BoxDecoration(
@@ -1661,14 +1816,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                 child: ValueListenableBuilder<double>(
                                   valueListenable: _time,
                                   builder: (_, v, __) {
-                                    final pct = (v / totalDuration).clamp(0.0, 1.0);
+                                    final pct =
+                                        (v / totalDuration).clamp(0.0, 1.0);
                                     return FractionallySizedBox(
                                       widthFactor: pct,
                                       child: Container(
                                         height: 6,
                                         decoration: BoxDecoration(
                                           color: colors.accentPurple,
-                                          borderRadius: BorderRadius.circular(3),
+                                          borderRadius:
+                                              BorderRadius.circular(3),
                                         ),
                                       ),
                                     );
@@ -1745,7 +1902,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -1779,7 +1937,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
@@ -1817,7 +1976,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     await _synth.playFile(path);
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -1831,7 +1991,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -1860,7 +2021,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
           Text(widget.exercise.description),
           const SizedBox(height: 16),
           if (_preparing) Text('Starting in $_prepRemaining...'),
-          Text(current.label, style: Theme.of(context).textTheme.headlineMedium),
+          Text(current.label,
+              style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 8),
           LinearProgressIndicator(value: phaseProgress),
           if (_scorePct != null) ...[
@@ -1924,7 +2086,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -1958,7 +2121,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
   }
@@ -1996,7 +2160,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     await _synth.playFile(path);
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2010,7 +2175,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -2020,7 +2186,8 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final duration =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     final remaining = math.max(0, duration - _elapsed);
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -2058,7 +2225,8 @@ class SustainedPitchHoldPlayer extends StatefulWidget {
   const SustainedPitchHoldPlayer({super.key, required this.exercise});
 
   @override
-  State<SustainedPitchHoldPlayer> createState() => _SustainedPitchHoldPlayerState();
+  State<SustainedPitchHoldPlayer> createState() =>
+      _SustainedPitchHoldPlayerState();
 }
 
 class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
@@ -2138,7 +2306,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       if (dt > 0) {
         _listeningSec += dt;
       }
-      final voiced = (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
+      final voiced =
+          (frame.voicedProb ?? 1.0) >= 0.6 && (frame.rms ?? 1.0) >= 0.02;
       if (voiced && cents.abs() <= 25) {
         _onPitchSec += dt;
       } else if (dt > 0.2) {
@@ -2201,7 +2370,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     await _synth.playFile(path);
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2215,7 +2385,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -2229,7 +2400,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
     final targetNoteName = PitchMath.midiToName(_targetMidi);
     final inTune = _centsError != null && _centsError!.abs() <= 10;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -2240,7 +2411,10 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
           if (_preparing) Text('Starting in $_prepRemaining...'),
           Text(
             'Target: $targetNoteName',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
           Slider(
             value: _targetMidi.toDouble(),
@@ -2257,11 +2431,13 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
           ),
           const SizedBox(height: 12),
           Text(
-            inTune ? 'In tune' : (_centsError == null ? 'No pitch detected' : 'Adjust pitch'),
+            inTune
+                ? 'In tune'
+                : (_centsError == null ? 'No pitch detected' : 'Adjust pitch'),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: inTune ? Colors.green : Colors.black54,
-            ),
+                  color: inTune ? Colors.green : Colors.black54,
+                ),
           ),
           const SizedBox(height: 24),
           LinearProgressIndicator(value: progress),
@@ -2293,7 +2469,8 @@ class PitchMatchListeningPlayer extends StatefulWidget {
   const PitchMatchListeningPlayer({super.key, required this.exercise});
 
   @override
-  State<PitchMatchListeningPlayer> createState() => _PitchMatchListeningPlayerState();
+  State<PitchMatchListeningPlayer> createState() =>
+      _PitchMatchListeningPlayerState();
 }
 
 class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
@@ -2312,10 +2489,34 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   final List<double> _absErrors = [];
   DateTime? _startedAt;
   bool _attemptSaved = false;
-  
+
   // Interval Training: list of intervals in semitones
-  static const List<int> _intervals = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]; // m2, M2, m3, M3, P4, P5, m6, M6, m7, M7, P8
-  static const List<String> _intervalNames = ['m2', 'M2', 'm3', 'M3', 'P4', 'P5', 'm6', 'M6', 'm7', 'M7', 'P8'];
+  static const List<int> _intervals = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ]; // m2, M2, m3, M3, P4, P5, m6, M6, m7, M7, P8
+  static const List<String> _intervalNames = [
+    'm2',
+    'M2',
+    'm3',
+    'M3',
+    'P4',
+    'P5',
+    'm6',
+    'M6',
+    'm7',
+    'M7',
+    'P8'
+  ];
   int _currentIntervalIndex = 0;
   int _rootMidi = 60; // C4
 
@@ -2360,14 +2561,14 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       setState(() => _targetMidi = intervalMidi);
     } else {
       // For other exercises (call-and-response): single tone
-    final notes = [
-      ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
-    ];
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
+      final notes = [
+        ReferenceNote(startSec: 0, endSec: 1.2, midi: _targetMidi),
+      ];
+      final path = await _synth.renderReferenceNotes(notes);
+      await _synth.playFile(path);
     }
   }
-  
+
   void _nextInterval() {
     if (widget.exercise.id == 'interval_training') {
       setState(() {
@@ -2448,7 +2649,8 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     _prepRemaining = 0;
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2462,7 +2664,8 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -2482,20 +2685,21 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
           const SizedBox(height: 12),
           if (_preparing) Text('Starting in $_prepRemaining...'),
           if (isIntervalTraining) ...[
-            Text('Interval: ${_intervalNames[_currentIntervalIndex]}', 
+            Text('Interval: ${_intervalNames[_currentIntervalIndex]}',
                 style: Theme.of(context).textTheme.titleMedium),
-            Text('Root: C4 (MIDI $_rootMidi) → Target: MIDI $_targetMidi', 
+            Text('Root: C4 (MIDI $_rootMidi) → Target: MIDI $_targetMidi',
                 style: Theme.of(context).textTheme.bodyMedium),
           ] else ...[
-          Text('Target: MIDI $_targetMidi', style: Theme.of(context).textTheme.titleMedium),
-          Slider(
-            value: _targetMidi.toDouble(),
-            min: 48,
-            max: 72,
-            divisions: 24,
-            label: _targetMidi.toString(),
-            onChanged: (v) => setState(() => _targetMidi = v.round()),
-          ),
+            Text('Target: MIDI $_targetMidi',
+                style: Theme.of(context).textTheme.titleMedium),
+            Slider(
+              value: _targetMidi.toDouble(),
+              min: 48,
+              max: 72,
+              divisions: 24,
+              label: _targetMidi.toString(),
+              onChanged: (v) => setState(() => _targetMidi = v.round()),
+            ),
           ],
           const SizedBox(height: 8),
           Text('${_centsError.toStringAsFixed(1)} cents',
@@ -2545,7 +2749,8 @@ class ArticulationRhythmPlayer extends StatefulWidget {
   const ArticulationRhythmPlayer({super.key, required this.exercise});
 
   @override
-  State<ArticulationRhythmPlayer> createState() => _ArticulationRhythmPlayerState();
+  State<ArticulationRhythmPlayer> createState() =>
+      _ArticulationRhythmPlayerState();
 }
 
 class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
@@ -2584,7 +2789,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -2618,7 +2824,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _running = false;
     _ticker?.stop();
     _lastTick = null;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
     unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
   }
@@ -2656,7 +2863,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     await _synth.playFile(path);
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2670,7 +2878,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -2708,7 +2917,8 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
               final active = i == beatIndex && _running;
               return Chip(
                 label: Text(_syllables[i]),
-                backgroundColor: active ? Colors.blue.shade200 : Colors.grey.shade200,
+                backgroundColor:
+                    active ? Colors.blue.shade200 : Colors.grey.shade200,
               );
             }),
           ),
@@ -2794,7 +3004,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     final dt = elapsed - (_lastTick ?? elapsed);
     _lastTick = elapsed;
     final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final target =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     if (next >= target) {
       _elapsed = target;
       _finish();
@@ -2911,11 +3122,13 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
 
   double _computeScore() {
     if (_sampleTimes.isEmpty || _sampleRms.isEmpty) return 0.0;
-    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final duration =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     double sumDiff = 0.0;
     for (var i = 0; i < _sampleTimes.length; i++) {
       final progress = (_sampleTimes[i] / duration).clamp(0.0, 1.0);
-      final target = progress <= 0.5 ? (progress * 2) : (1 - (progress - 0.5) * 2);
+      final target =
+          progress <= 0.5 ? (progress * 2) : (1 - (progress - 0.5) * 2);
       final diff = (target - _sampleRms[i]).abs();
       sumDiff += diff;
     }
@@ -2923,7 +3136,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     return (1.0 - meanDiff.clamp(0.0, 1.0)) * 100.0;
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2937,7 +3151,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
@@ -2947,7 +3162,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final duration = (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
+    final duration =
+        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     final progress = (_elapsed / duration).clamp(0.0, 1.0);
     final ramp = progress <= 0.5 ? (progress * 2) : (1 - (progress - 0.5) * 2);
     return Padding(
@@ -3098,7 +3314,8 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     await _synth.playFile(path);
   }
 
-  Future<void> _saveAttempt({double? score, Map<String, double>? subScores}) async {
+  Future<void> _saveAttempt(
+      {double? score, Map<String, double>? subScores}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -3112,7 +3329,8 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(double score, Map<String, double>? subScores) async {
+  Future<void> _completeAndPop(
+      double score, Map<String, double>? subScores) async {
     await _saveAttempt(score: score, subScores: subScores);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
