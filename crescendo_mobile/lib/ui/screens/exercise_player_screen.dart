@@ -17,7 +17,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
-import '../../services/reference_synth_service.dart';
+import '../../audio/reference_midi_synth.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -26,7 +26,6 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_cache_service.dart';
-import '../../services/reference_audio_cache.dart';
 import '../../services/attempt_repository.dart';
 import '../../models/exercise_attempt.dart';
 import 'exercise_review_summary_screen.dart';
@@ -154,7 +153,7 @@ class PitchHighwayPlayer extends StatefulWidget {
 class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService(); // Keep for review mode
-  final ReferenceSynthService _referenceSynth = ReferenceSynthService();
+  final ReferenceMidiSynth _referenceMidiSynth = ReferenceMidiSynth();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
   final List<PitchFrame> _captured = [];
@@ -230,6 +229,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   int? _lastModelHash; // Track model identity per run
   int? _lastRepaintHash; // Track repaint notifier identity per run
   double _lastTime = 0.0; // Track last time value for backwards detection
+  bool _showDebugOverlay =
+      false; // Toggle for debug overlay (set to true to enable)
 
   double get _durationSec {
     if (_transposedNotes.isEmpty) {
@@ -293,6 +294,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
+
+    // Initialize MIDI synth (load SoundFont once)
+    unawaited(_referenceMidiSynth.init());
     _clock.setLatencyCompensationMs(_audioLatencyMs);
 
     // Add frame timing callback to detect jank (only if frame timing debug enabled)
@@ -421,9 +425,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       debugPrint(
           '[ExercisePlayerScreen] _loadTransposedNotes complete: ${loadEndTime.difference(loadStartTime).inMilliseconds}ms');
 
-      // Initialize reference synth (lightweight - no heavy work)
+      // Initialize MIDI synth (lightweight - ensures SoundFont is loaded)
       if (notes.isNotEmpty) {
-        unawaited(_referenceSynth.start());
+        unawaited(_referenceMidiSynth.init());
       }
 
       // Auto-start the exercise immediately once notes are loaded
@@ -435,52 +439,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
   }
 
-  /// Prewarm reference audio in background after notes are loaded
-  /// This ensures audio is ready (cached) before user taps Start
+  // Note: _prewarmReferenceAudio is kept for compatibility but now just initializes MIDI synth
+
+  /// Prewarm MIDI synth (ensure SoundFont is loaded)
+  /// MIDI playback is instant, so we just ensure initialization
   Future<void> _prewarmReferenceAudio(List<ReferenceNote> notes) async {
     if (!mounted) return;
-    final prewarmStart = DateTime.now();
-    DebugLog.logEvent(
-        'Prewarm', 'Starting audio prewarm for ${notes.length} notes');
-
     try {
-      // Check cache first
-      final cache = ReferenceAudioCache.instance;
-      final cachedPath = cache.getCached(
-        exerciseId: widget.exercise.id,
-        difficulty: widget.pitchDifficulty.name,
-        notes: notes,
-        sampleRate: _synth.sampleRate,
-      );
-
-      if (cachedPath != null) {
-        final prewarmEnd = DateTime.now();
-        DebugLog.logEvent('Prewarm',
-            'Cache HIT - audio ready (${prewarmEnd.difference(prewarmStart).inMilliseconds}ms)');
-        return; // Already cached, no work needed
-      }
-
-      // Cache miss - render in background
+      // Ensure MIDI synth is initialized (idempotent)
+      await _referenceMidiSynth.init();
       DebugLog.logEvent(
-          'Prewarm', 'Cache MISS - rendering audio in background');
-      final path = await _synth.renderReferenceNotes(notes);
-
-      // Store in cache
-      if (mounted) {
-        cache.putCached(
-          exerciseId: widget.exercise.id,
-          difficulty: widget.pitchDifficulty.name,
-          notes: notes,
-          sampleRate: _synth.sampleRate,
-          audioPath: path,
-        );
-        final prewarmEnd = DateTime.now();
-        DebugLog.logEvent('Prewarm',
-            'Audio rendered and cached (${prewarmEnd.difference(prewarmStart).inMilliseconds}ms)');
-      }
+          'Prewarm', 'MIDI synth ready for ${notes.length} notes');
     } catch (e) {
-      DebugLog.logEvent('Prewarm', 'Error prewarming audio: $e');
-      // Non-fatal - will render on Start if needed
+      DebugLog.logEvent('Prewarm', 'Error initializing MIDI synth: $e');
+      // Non-fatal - will retry on Start if needed
     }
   }
 
@@ -1119,11 +1091,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final beforeAudio = DateTime.now();
 
       try {
-        // Schedule notes with 0 lead-in delay (lead-in is in note timestamps)
-        await _referenceSynth.scheduleNotes(
+        // Get timeline anchor epoch for logging/debugging
+        final timelineStartMs = _timelineStartEpochMs ?? t0;
+
+        // Schedule notes with lead-in delay (lead-in is in note timestamps, but we pass it for timing)
+        await _referenceMidiSynth.playSequence(
           notes: notes,
-          leadInSeconds:
-              0.0, // Start immediately, lead-in is in MIDI timestamps
+          leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
+          runId: runId,
+          startEpochMs: timelineStartMs,
         );
 
         dev.Timeline.finishSync();
@@ -1212,7 +1188,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _recording == null ? null : await _recording!.stop();
     // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
-    await _referenceSynth.stop();
+    await _referenceMidiSynth.stop();
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();
@@ -1675,30 +1651,60 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             onTap: isStarting || isRunning ? _stop : onStartPressed,
             child: Stack(
               children: [
-                // DEBUG OVERLAY - Temporary debugging instrumentation
-                Positioned(
-                  top: 40,
-                  left: 16,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Text(
-                        'runId=$_runId\n'
-                        'phase=$_phase\n'
-                        'tap=${_tapEpochMs ?? "null"}\n'
-                        'audioPlayCalled=${_audioPlayCalledEpochMs ?? "null"}\n'
-                        'audioPlaying=${_audioPlayingEpochMs ?? "null"}\n'
-                        't=${DateTime.now().millisecondsSinceEpoch}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
+                // DEBUG OVERLAY - Toggle with _showDebugOverlay flag
+                if (_showDebugOverlay)
+                  Positioned(
+                    top: 40,
+                    left: 16,
+                    child: GestureDetector(
+                      onLongPress: () {
+                        setState(() {
+                          _showDebugOverlay = false;
+                        });
+                      },
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Debug Overlay (long-press to hide)',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'runId: $_runId\n'
+                                'phase: $_phase\n'
+                                'timelineStartEpochMs: ${_timelineStartEpochMs ?? "null"}\n'
+                                'tap: ${_tapEpochMs ?? "null"}\n'
+                                'audioPlayCalled: ${_audioPlayCalledEpochMs ?? "null"}\n'
+                                'audioPlaying: ${_audioPlayingEpochMs ?? "null"}\n'
+                                'MIDI runId: ${_referenceMidiSynth.currentRunId ?? "null"}\n'
+                                'MIDI playing: ${_referenceMidiSynth.isPlaying}\n'
+                                'time: ${_time.value.toStringAsFixed(2)}s\n'
+                                'now: ${DateTime.now().millisecondsSinceEpoch}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
                 // Only render pitch highway once notes are loaded to prevent showing old data
                 // Use key to force remount on each run to prevent stale painter state
                 if (_notesLoaded)

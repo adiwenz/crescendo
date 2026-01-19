@@ -11,11 +11,19 @@ Future<void> main() async {
 
   final session = await AudioSession.instance;
   await session.configure(
-    const AudioSessionConfiguration(
+    AudioSessionConfiguration(
       avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
       avAudioSessionCategoryOptions:
+          AVAudioSessionCategoryOptions.mixWithOthers |
           AVAudioSessionCategoryOptions.defaultToSpeaker,
       avAudioSessionMode: AVAudioSessionMode.measurement, // Better for pitch detection than voiceChat
+      // Android fields ignored on iOS:
+      androidAudioAttributes: const AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.music,
+        usage: AndroidAudioUsage.media,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
+      androidWillPauseWhenDucked: false,
       // Note: PreferredIOBufferDuration is set via AVAudioSession.setPreferredIOBufferDuration
       // The record package should handle this, but we use smaller buffers in RecordingService
     ),
