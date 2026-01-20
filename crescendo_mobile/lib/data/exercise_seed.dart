@@ -414,6 +414,7 @@ List<VocalExercise> seedVocalExercises() {
         tolerance: toleranceBeginner,
         label: 'NG',
       ),
+      isGlide: true, // Continuous pitch movement
       createdAt: createdAt,
     ),
     VocalExercise(
@@ -426,6 +427,7 @@ List<VocalExercise> seedVocalExercises() {
       durationSeconds: 30,
       difficulty: ExerciseDifficulty.beginner,
       tags: const ['release', 'resonance', 'recovery'],
+      isGlide: true, // Descending glide
       createdAt: createdAt,
     ),
     VocalExercise(
@@ -481,6 +483,7 @@ List<VocalExercise> seedVocalExercises() {
         tolerance: toleranceIntermediate,
         label: 'Siren',
       ),
+      isGlide: true, // Continuous pitch movement (bell curve)
       createdAt: createdAt,
     ),
     VocalExercise(
@@ -517,6 +520,7 @@ List<VocalExercise> seedVocalExercises() {
         tolerance: toleranceIntermediate,
         label: 'Octave',
       ),
+      isGlide: true, // Slide/glide exercise
       createdAt: createdAt,
     ),
     VocalExercise(
@@ -604,6 +608,7 @@ List<VocalExercise> seedVocalExercises() {
         tolerance: toleranceIntermediate,
         pattern: const [12, 11, 9, 7, 5, 4, 2, 0],
       ),
+      isGlide: false, // Discrete notes, not a continuous glide
       createdAt: createdAt,
     ),
     VocalExercise(

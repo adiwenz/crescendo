@@ -76,75 +76,45 @@ class PreviewSpecRegistry {
   );
 
   /// Maps exercise ID to preview specification
-  /// Returns null if exercise has no preview or uses real-time generation
+  /// 
+  /// NOTE: This is now primarily for GLIDE exercises (isGlide == true).
+  /// Non-glide exercises use MIDI previews generated at runtime (see MidiPreviewGenerator).
+  /// 
+  /// Returns null if exercise has no preview, uses real-time generation, or uses MIDI previews.
   static PreviewSpec? getPreviewSpec(String exerciseId) {
     switch (exerciseId) {
+      // GLIDE EXERCISES (use WAV previews):
+      
       // Sirens: bell curve, no tail
       case 'sirens':
         return sirenPreview;
 
-      // 5-tone scale exercises (5 notes only, not full octave)
-      case 'five_tone_scales':
-      case 'vv_zz_scales':
-      case 'humming_scales':
-      case 'chest_voice_scales':
-      case 'head_voice_scales':
-        return fiveToneScalePreview;
-
-      // Arpeggio exercises
-      case 'arpeggios':
-        return arpeggioPreview;
-
-      // Slide exercises (octave slides, but NOT ng_slides - that uses real-time)
+      // Slide exercises (octave slides)
       case 'octave_slides':
         return slidesPreview;
 
-      // Warmup exercises (sustained tone)
-      case 'sustained_s_z':
-      case 'lip_trills':
-      case 'sustained_pitch_holds':
-        return warmupPreview;
-
-      // Agility exercises
-      case 'fast_three_note_patterns':
-      case 'staccato_bursts':
-      case 'descending_runs':
-        return agilityPreview;
-
-      // YawnSigh: descending glide
+      // Yawn-Sigh (descending glide)
       case 'yawn_sigh':
         return yawnSighPreview;
-
-      // Interval training: Do->Sol interval
-      case 'interval_training':
-        return intervalPreview;
-
-      // Descending head to chest: descending octave scale
-      case 'descending_head_to_chest':
-        return descendingOctavePreview;
-
-      // Forward Placement (Nay/Nee): 5-tone scale
-      case 'forward_placement':
-        return fiveToneScalePreview;
-
-      // Mask Resonance Buzz: 5-tone scale
-      case 'mask_resonance':
-        return fiveToneScalePreview;
-
-      // Mix Bridging: arpeggio pattern
-      case 'mix_bridging':
-        return arpeggioPreview;
-
-      // Scale Degrees: 5-tone scale
-      case 'scale_degrees':
-        return fiveToneScalePreview;
 
       // NG Slides: special case - uses real-time sine sweep, NOT a WAV file
       case 'ng_slides':
         return null; // Signal to use real-time generation
 
+      // NON-GLIDE EXERCISES (use MIDI previews - return null here):
+      // These exercises now use MidiPreviewGenerator to generate previews at C4:
+      // - five_tone_scales, vv_zz_scales, humming_scales
+      // - chest_voice_scales, head_voice_scales, scale_degrees
+      // - forward_placement, mask_resonance
+      // - arpeggios, mix_bridging
+      // - sustained_s_z, lip_trills, sustained_pitch_holds
+      // - fast_three_note_patterns, staccato_bursts, descending_runs
+      // - interval_training
+      // - descending_head_to_chest
+      // All return null - they use MIDI previews instead
+
       default:
-        return null; // No preview available
+        return null; // No preview available or uses MIDI preview
     }
   }
 
