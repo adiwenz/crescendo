@@ -460,8 +460,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
               .clamp(36, 127);
         } else if (notes.isNotEmpty) {
           final midiValues = notes.map((n) => n.midi).toList();
-          _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
-          _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
+          final rawMin = midiValues.reduce(math.min);
+          final rawMax = midiValues.reduce(math.max);
+          // Use floor/ceil to ensure we capture all notes, including fractional values
+          // Add extra padding (6 semitones) to ensure notes aren't cut off at screen edges
+          _midiMin = (rawMin.floor() - 6).clamp(36, 127);
+          _midiMax = (rawMax.ceil() + 6).clamp(36, 127);
+
+          debugPrint('[ExercisePlayerScreen] MIDI range calculation: '
+              'rawMin=$rawMin, rawMax=$rawMax, '
+              'displayMin=$_midiMin, displayMax=$_midiMax, '
+              'noteCount=${notes.length}');
 
           // Initialize pitch ball at first target note so it appears immediately
           // This ensures the pitch ball is visible from the start, even before recording starts
@@ -1840,8 +1849,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Update MIDI range if we have notes
     if (notes.isNotEmpty) {
       final midiValues = notes.map((n) => n.midi).toList();
-      final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
-      final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
+      // Use floor/ceil to ensure we capture all notes, including fractional values
+      // Add extra padding (6 semitones) to ensure notes aren't cut off at screen edges
+      final minMidi = (midiValues.reduce(math.min).floor() - 6).clamp(36, 127);
+      final maxMidi = (midiValues.reduce(math.max).ceil() + 6).clamp(36, 127);
       _midiMin = minMidi;
       _midiMax = maxMidi;
     }

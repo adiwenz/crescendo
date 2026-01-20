@@ -36,32 +36,59 @@ class TransposedExerciseBuilder {
     final multiplier = difficulty != null
         ? PitchHighwayTempo.multiplierFor(difficulty, spec.segments)
         : 1.0;
-    final scaledSegments = difficulty != null
+    final scaledSegmentsRaw = difficulty != null
         ? PitchHighwayTempo.scaleSegments(spec.segments, multiplier)
         : spec.segments;
 
-    // Find the base root note (first note of the pattern)
-    final baseRootMidi = _getBaseRootMidi(scaledSegments);
+    // CRITICAL: Sort segments by startMs to ensure chronological order
+    // This guarantees that segments[i] corresponds to the i-th chronological event
+    final scaledSegments = List<PitchSegment>.from(scaledSegmentsRaw)
+      ..sort((a, b) => a.startMs.compareTo(b.startMs));
+
+    // CRITICAL: Anchor to the LOWEST note in the pattern (patternMin), not the first chronological note
+    // For descending runs: first chronological note is HIGHEST, last is LOWEST
+    // We want: lowest note = startTargetMidi (B2), first chronological note = startTargetMidi + patternSpan (B3)
     
-    // Extract pattern offsets relative to the root
+    // Extract pattern offsets relative to the first chronological event
+    final firstEvent = scaledSegments.first;
+    final firstEventMidi = firstEvent.midiNote;
+    final baseRootMidi = firstEventMidi; // Use first chronological event as base for offset calculation
+    
     final patternOffsets = _extractPatternOffsets(scaledSegments, baseRootMidi);
     if (patternOffsets.isEmpty) return const [];
 
     // Find the min and max offsets in the pattern
-    final patternMin = patternOffsets.reduce(math.min);
-    final patternMax = patternOffsets.reduce(math.max);
-    final patternSpan = patternMax - patternMin;
+    final patternMin = patternOffsets.reduce(math.min); // Lowest note offset (e.g., -12)
+    final patternMax = patternOffsets.reduce(math.max); // Highest note offset (e.g., 0)
+    final patternSpan = patternMax - patternMin; // Total span (e.g., 12 semitones)
 
     // Calculate a safe start target MIDI near the bottom of the user range
-    // Use 0 padding by default (can be adjusted to 1-2 if margin is desired)
+    // This is the LOWEST note we want in the pattern
     const startPaddingSemitones = 0;
     final startTargetMidi = (lowestMidi + startPaddingSemitones)
         .clamp(lowestMidi, highestMidi - patternSpan);
 
-    // Compute firstRootMidi so that the first target lands on startTargetMidi
-    // firstTargetMidi = firstRootMidi + patternMin
-    // Therefore: firstRootMidi = startTargetMidi - patternMin
+    // ENFORCE INVARIANT: rootMidi anchors the LOWEST note (patternMin) to startTargetMidi
+    // Formula: lowestNote = rootMidi + patternMin = startTargetMidi
+    // Therefore: rootMidi = startTargetMidi - patternMin
+    // For descending runs: patternMin = -12, so rootMidi = startTargetMidi - (-12) = startTargetMidi + 12
+    // First chronological note: rootMidi + patternMax = (startTargetMidi + 12) + 0 = startTargetMidi + 12 ✓
+    // Lowest note: rootMidi + patternMin = (startTargetMidi + 12) + (-12) = startTargetMidi ✓
     final firstRootMidi = startTargetMidi - patternMin;
+    
+    // Verify segments are sorted (sanity check)
+    for (var i = 1; i < scaledSegments.length; i++) {
+      assert(
+        scaledSegments[i - 1].startMs <= scaledSegments[i].startMs,
+        'Segments must be sorted by startMs in chronological order. '
+        'Segment ${i - 1} has startMs=${scaledSegments[i - 1].startMs}, '
+        'segment $i has startMs=${scaledSegments[i].startMs}',
+      );
+    }
+    
+    debugPrint('[TransposedExerciseBuilder] First chronological event: startMs=${firstEvent.startMs}, midiNote=$firstEventMidi');
+    debugPrint('[TransposedExerciseBuilder] Base root MIDI: $baseRootMidi (first chronological event)');
+    debugPrint('[TransposedExerciseBuilder] Pattern offsets: min=$patternMin (lowest), max=$patternMax (highest), span=$patternSpan');
     
     // Special handling for Sirens: generate visual path + minimal audio notes
     // Note: For Sirens, we need to return a different structure, but for now
@@ -72,7 +99,7 @@ class TransposedExerciseBuilder {
       // The actual Sirens building happens in _buildSirensWithVisualPath
       return const [];
     }
-
+    
     // Calculate the duration of one repetition of the pattern
     final patternDurationMs = scaledSegments.isEmpty
         ? 0
@@ -89,8 +116,10 @@ class TransposedExerciseBuilder {
     // Debug logging
     debugPrint('[TransposedExerciseBuilder] Range: lowestMidi=$lowestMidi, highestMidi=$highestMidi');
     debugPrint('[TransposedExerciseBuilder] Pattern: baseRootMidi=$baseRootMidi, patternMin=$patternMin, patternMax=$patternMax, patternSpan=$patternSpan');
-    debugPrint('[TransposedExerciseBuilder] Start target MIDI: $startTargetMidi (lowestMidi=$lowestMidi + padding=$startPaddingSemitones, clamped)');
+    debugPrint('[TransposedExerciseBuilder] Start target MIDI: $startTargetMidi (lowest note in pattern, lowestMidi=$lowestMidi + padding=$startPaddingSemitones)');
     debugPrint('[TransposedExerciseBuilder] First root MIDI: $firstRootMidi (startTargetMidi=$startTargetMidi - patternMin=$patternMin)');
+    debugPrint('[TransposedExerciseBuilder] Expected first chronological note: $firstRootMidi + $patternMax = ${firstRootMidi + patternMax}');
+    debugPrint('[TransposedExerciseBuilder] Expected lowest note: $firstRootMidi + $patternMin = ${firstRootMidi + patternMin}');
 
     while (true) {
       final rootMidi = firstRootMidi + transpositionSemitones;
@@ -146,60 +175,24 @@ class TransposedExerciseBuilder {
       
       debugPrint('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi ($firstNoteName), lastTargetMidi=$lastTargetMidi ($lastNoteName)');
       
-      // Assert: first note should be at or near startTargetMidi
-      // The expected first MIDI is startTargetMidi (which we calculated to anchor to lowestMidi)
-      final expectedFirstMidi = startTargetMidi;
-      final expectedNoteName = PitchMath.midiToName(expectedFirstMidi);
-      final midiDiff = (firstTargetMidi - expectedFirstMidi).abs();
+      // ENFORCE INVARIANT: The LOWEST note in the pattern MUST equal startTargetMidi
+      // For descending runs: first chronological note is HIGHEST, lowest note comes later
+      // Expected first chronological note = rootMidi + patternMax = startTargetMidi - patternMin + patternMax
+      // Expected lowest note = rootMidi + patternMin = startTargetMidi - patternMin + patternMin = startTargetMidi
+      // The first generated note is the first chronological note, which should be: startTargetMidi + patternSpan
+      final expectedFirstChronologicalNote = startTargetMidi + patternSpan;
+      final expectedFirstNoteName = PitchMath.midiToName(expectedFirstChronologicalNote);
+      final firstNoteDiff = (firstTargetMidi - expectedFirstChronologicalNote).abs();
       
-      // Ensure expectedFirstMidi is never lower than lowestMidi
       assert(
-        expectedFirstMidi >= lowestMidi,
-        'Expected first MIDI ($expectedFirstMidi/$expectedNoteName) should not be lower than lowestMidi ($lowestMidi)',
+        firstTargetMidi == expectedFirstChronologicalNote,
+        'Pattern root misaligned: expected first chronological note = $expectedFirstChronologicalNote ($expectedFirstNoteName), '
+        'but got $firstTargetMidi ($firstNoteName). '
+        'Difference: ${firstNoteDiff} semitones. '
+        'Expected: rootMidi = startTargetMidi - patternMin = $startTargetMidi - $patternMin = $firstRootMidi. '
+        'First chronological note = rootMidi + patternMax = $firstRootMidi + $patternMax = $expectedFirstChronologicalNote. '
+        'Lowest note = rootMidi + patternMin = $firstRootMidi + $patternMin = $startTargetMidi.',
       );
-      
-      // Octave tripwire: detect if first note is exactly +12 semitones off
-      if (midiDiff == 12) {
-        debugPrint(
-            '[TransposedExerciseBuilder] ⚠️ OCTAVE SHIFT DETECTED in note generation: '
-            'exerciseId=${exercise.id}, baseRootMidi=$baseRootMidi, '
-            'lowestMidi=$lowestMidi, patternMin=$patternMin, '
-            'expectedFirstMidi=$expectedFirstMidi ($expectedNoteName), '
-            'actualFirstMidi=$firstTargetMidi ($firstNoteName), '
-            'shift=+${midiDiff} semitones (one octave too high)');
-        debugPrint('[TransposedExerciseBuilder] Stack trace: ${StackTrace.current}');
-      }
-      
-      // Replace hard assert with controlled error handling
-      if ((firstTargetMidi - expectedFirstMidi).abs() > 1) {
-        if (midiDiff >= 12) {
-          debugPrint(
-              '[TransposedExerciseBuilder] ⚠️ OCTAVE SHIFT DETECTED: '
-              'First target MIDI ($firstTargetMidi/$firstNoteName) differs from expected ($expectedFirstMidi/$expectedNoteName) by ${midiDiff} semitones. '
-              'Automatically correcting by subtracting 12 semitones from all notes.');
-          
-          // Temporary guard: rebuild list with corrected notes (subtract 12 semitones)
-          final correctedNotes = allNotes.map((note) => ReferenceNote(
-            startSec: note.startSec,
-            endSec: note.endSec,
-            midi: note.midi - 12,
-            lyric: note.lyric,
-            isGlideStart: note.isGlideStart,
-            isGlideEnd: note.isGlideEnd,
-            glideEndMidi: note.glideEndMidi != null ? note.glideEndMidi! - 12 : null,
-          )).toList();
-          
-          allNotes.clear();
-          allNotes.addAll(correctedNotes);
-          
-          debugPrint('[TransposedExerciseBuilder] Corrected first target MIDI: ${allNotes.first.midi.round()}');
-        } else {
-          // Non-octave mismatch: log warning but don't crash
-          debugPrint(
-              '[TransposedExerciseBuilder] WARNING: First target MIDI ($firstTargetMidi/$firstNoteName) differs from expected ($expectedFirstMidi/$expectedNoteName) by ${midiDiff} semitones. '
-              'This may indicate a pattern offset calculation issue.');
-        }
-      }
     } else {
       // If no notes were generated, check if it's due to range constraints
       final patternSpan = patternMax - patternMin;
@@ -213,32 +206,28 @@ class TransposedExerciseBuilder {
     return allNotes;
   }
 
-  /// Gets the base root MIDI note from the segments (the first note's MIDI value)
-  /// Uses midiNote (audio note) rather than startMidi (visual glide start) for transposition calculations
-  /// Throws if segments are empty - range must be validated before calling this
-  static int _getBaseRootMidi(List<PitchSegment> segments) {
-    if (segments.isEmpty) {
-      throw ArgumentError('Cannot get base root MIDI from empty segments');
-    }
-    final first = segments.first;
-    // Use midiNote (audio note) for transposition, not startMidi (visual glide)
-    return first.midiNote;
-  }
 
-  /// Extracts pattern offsets relative to the base root note
+  /// Extracts pattern offsets relative to the base root note, preserving chronological order
   /// Uses only midiNote and endMidi (audio notes), not startMidi (visual glide start)
+  /// Returns offsets in the same order as segments appear (for chronological note generation)
   static List<int> _extractPatternOffsets(List<PitchSegment> segments, int baseRootMidi) {
-    final offsets = <int>{};
+    final offsets = <int>[];
     for (final seg in segments) {
       // Use midiNote (audio note) for pattern offsets
-      offsets.add(seg.midiNote - baseRootMidi);
+      final offset = seg.midiNote - baseRootMidi;
+      if (!offsets.contains(offset)) {
+        offsets.add(offset); // Preserve order, avoid duplicates
+      }
       // Include endMidi if present (for glides, this is the audio end note)
       if (seg.endMidi != null) {
-        offsets.add(seg.endMidi! - baseRootMidi);
+        final endOffset = seg.endMidi! - baseRootMidi;
+        if (!offsets.contains(endOffset)) {
+          offsets.add(endOffset);
+        }
       }
       // Do NOT include startMidi - it's for visual glides only, not audio transposition
     }
-    return offsets.toList();
+    return offsets;
   }
 
   /// Builds reference notes for a single transposition of the exercise
@@ -256,6 +245,8 @@ class TransposedExerciseBuilder {
     final isNgSlides = exerciseId == 'ng_slides';
     final isSirens = exerciseId == 'sirens';
 
+    // Process segments in chronological order (they should already be sorted by startMs)
+    // The first segment (i == 0) corresponds to the first chronological note event
     for (var i = 0; i < segments.length; i++) {
       final seg = segments[i];
       // Segments have absolute times within the pattern (startMs, endMs)
@@ -263,10 +254,23 @@ class TransposedExerciseBuilder {
       final segStartSec = startTimeSec + (seg.startMs / 1000.0);
       final segEndSec = startTimeSec + (seg.endMs / 1000.0);
       
-      // Compute pattern offset: how many semitones this segment is from the base root
+      // Compute pattern offset: how many semitones this segment is from the first chronological event
+      // baseRootMidi = firstEventMidi, so the first segment (i == 0) will have offset = 0
       final patternOffset = seg.midiNote - baseRootMidi;
+      
       // Compute target MIDI: rootMidi + patternOffset
+      // rootMidi = startTargetMidi - firstEventOffset = startTargetMidi - 0 = startTargetMidi
+      // For the first chronological segment (i == 0): patternOffset = 0, so targetMidi = startTargetMidi ✓
       final targetMidi = rootMidi + patternOffset;
+      
+      // Verify the first chronological segment has offset 0 (sanity check)
+      if (i == 0) {
+        assert(
+          patternOffset == 0,
+          'First chronological segment must have offset 0. '
+          'seg.midiNote=${seg.midiNote}, baseRootMidi=$baseRootMidi, patternOffset=$patternOffset',
+        );
+      }
       
       if (seg.isGlide) {
         // For NG Slides and Sirens: create full-length notes for audio, but mark for visual glide
