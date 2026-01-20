@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:audio_session/audio_session.dart';
-import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 
 import '../../design/app_text.dart';
 import '../../models/exercise.dart';
@@ -21,8 +18,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Exercise>? _dailyExercises;
   bool _isLoading = true;
-  bool _midiReady = false;
-  final MidiPro _midi = MidiPro();
 
   @override
   void initState() {
@@ -30,74 +25,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadDailyExercises();
     // Listen to completion changes
     libraryStore.addListener(_onCompletionChanged);
-    // Initialize audio session and MIDI
-    _initAudio();
-  }
-
-  Future<void> _initAudio() async {
-    debugPrint('[HomeScreen] Starting audio initialization...');
-    
-    // 1) Configure iOS audio session for playback + mixing
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.mixWithOthers |
-            AVAudioSessionCategoryOptions.defaultToSpeaker,
-        avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        // Android fields ignored on iOS:
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          usage: AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
-        androidWillPauseWhenDucked: false,
-      ));
-      debugPrint('[HomeScreen] Audio session configured successfully');
-      // Small delay to ensure session is fully ready
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e, stackTrace) {
-      debugPrint('[HomeScreen] Audio session configuration failed: $e');
-      debugPrint('[HomeScreen] Stack trace: $stackTrace');
-      // Continue anyway - MIDI might still work
-    }
-
-    // 2) Load SoundFont for flutter_midi_pro
-    try {
-      debugPrint('[HomeScreen] Loading SoundFont from assets/soundfonts/default.sf2...');
-      final sfId = await _midi.loadSoundfont(
-        sf2Path: 'assets/soundfonts/default.sf2',
-        name: 'default.sf2',
-      );
-      debugPrint('[HomeScreen] SoundFont loaded successfully, ID: $sfId');
-      _midiReady = true;
-    } catch (e, stackTrace) {
-      debugPrint('[HomeScreen] MIDI init failed: $e');
-      debugPrint('[HomeScreen] Error type: ${e.runtimeType}');
-      debugPrint('[HomeScreen] Stack trace: $stackTrace');
-      _midiReady = false;
-    }
-
-    if (mounted) {
-      setState(() {
-        debugPrint('[HomeScreen] MIDI ready: $_midiReady');
-      });
-    }
-  }
-
-  void _playC4() {
-    if (!_midiReady) {
-      debugPrint('MIDI not ready');
-      return;
-    }
-
-    // Note ON - play immediately
-    _midi.playMidiNote(midi: 60, velocity: 100); // C4, velocity 100
-
-    // Note OFF after 400ms
-    Future.delayed(const Duration(milliseconds: 400), () {
-      _midi.stopMidiNote(midi: 60, velocity: 127);
-    });
   }
 
   @override
@@ -161,22 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text('Today\'s Progress', style: AppText.h2),
                     const SizedBox(height: 12),
                     _TodaysProgressCard(dailyExercises: _dailyExercises),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _midiReady ? _playC4 : null,
-                      child: Text(_midiReady ? 'Play C4' : 'Loading MIDI...'),
-                    ),
-                    if (!_midiReady)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          'Initializing MIDI synthesizer...',
-                          style: AppText.body.copyWith(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
                     const SizedBox(height: 24),
                     Text('Today\'s Exercises', style: AppText.h2),
                     const SizedBox(height: 12),

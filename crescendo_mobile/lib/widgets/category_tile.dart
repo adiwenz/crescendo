@@ -4,7 +4,6 @@ import '../ui/theme/app_theme.dart';
 
 class CategoryTile extends StatelessWidget {
   final String title;
-  final String description;
   final int bannerStyleId;
   final int exerciseCount;
   final VoidCallback? onTap;
@@ -13,7 +12,6 @@ class CategoryTile extends StatelessWidget {
   const CategoryTile({
     super.key,
     required this.title,
-    required this.description,
     required this.bannerStyleId,
     this.exerciseCount = 0,
     this.onTap,
@@ -55,11 +53,13 @@ class CategoryTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
+                      flex: 1,
+                      fit: FlexFit.loose,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
@@ -69,23 +69,15 @@ class CategoryTile extends StatelessWidget {
                                 ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.left,
                           ),
-                          if (description.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              description,
-                              style: Theme.of(context).textTheme.bodySmall,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
                         ],
                       ),
                     ),
                     // Exercise count
                     if (exerciseCount > 0)
                       Padding(
-                        padding: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           '$exerciseCount ${exerciseCount == 1 ? 'exercise' : 'exercises'}',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(

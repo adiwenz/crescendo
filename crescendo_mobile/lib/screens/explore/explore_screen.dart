@@ -14,7 +14,6 @@ class ExploreScreen extends StatefulWidget {
 
 class _ExploreScreenState extends State<ExploreScreen> {
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
-  bool _showMoreCategories = false;
 
   // Define primary categories (Start here)
   static const Set<String> _primaryCategoryIds = {
@@ -130,39 +129,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     isPrimary: false,
                   ),
                   const SizedBox(height: 24),
-                  // Show more button / More section with animation
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: _showMoreCategories
-                        ? Column(
-                            children: [
-                              _CategorySection(
-                                title: 'More',
-                                categories: advancedCategories,
-                                exerciseCounts: exerciseCounts,
-                                categoryIndexMap: categoryIndexMap,
-                                allCategories: categories,
-                                isPrimary: false,
-                              ),
-                            ],
-                          )
-                        : Center(
-                            child: TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _showMoreCategories = true;
-                                });
-                              },
-                              child: Text(
-                                'Show more categories',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                              ),
-                            ),
-                          ),
-                  ),
+                  // More section (always shown)
+                  if (advancedCategories.isNotEmpty)
+                    _CategorySection(
+                      title: 'More',
+                      categories: advancedCategories,
+                      exerciseCounts: exerciseCounts,
+                      categoryIndexMap: categoryIndexMap,
+                      allCategories: categories,
+                      isPrimary: false,
+                    ),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -229,7 +205,6 @@ class _CategorySection extends StatelessWidget {
 
             return CategoryTile(
               title: category.title,
-              description: category.description,
               bannerStyleId: bannerStyleId,
               exerciseCount: exerciseCount,
               isPrimary: isPrimary,
