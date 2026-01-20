@@ -173,25 +173,29 @@ class TransposedExerciseBuilder {
       final firstNoteName = PitchMath.midiToName(firstTargetMidi);
       final lastNoteName = PitchMath.midiToName(lastTargetMidi);
       
+      // Find the actual lowest and highest notes in the generated sequence
+      final allMidis = allNotes.map((n) => n.midi.round()).toList();
+      final actualLowestMidi = allMidis.reduce((a, b) => a < b ? a : b);
+      final actualHighestMidi = allMidis.reduce((a, b) => a > b ? a : b);
+      
       debugPrint('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi ($firstNoteName), lastTargetMidi=$lastTargetMidi ($lastNoteName)');
+      debugPrint('[TransposedExerciseBuilder] Actual range: lowest=$actualLowestMidi, highest=$actualHighestMidi');
       
       // ENFORCE INVARIANT: The LOWEST note in the pattern MUST equal startTargetMidi
-      // For descending runs: first chronological note is HIGHEST, lowest note comes later
-      // Expected first chronological note = rootMidi + patternMax = startTargetMidi - patternMin + patternMax
+      // This works for both ascending (first chronological = lowest) and descending (first chronological = highest) patterns
       // Expected lowest note = rootMidi + patternMin = startTargetMidi - patternMin + patternMin = startTargetMidi
-      // The first generated note is the first chronological note, which should be: startTargetMidi + patternSpan
-      final expectedFirstChronologicalNote = startTargetMidi + patternSpan;
-      final expectedFirstNoteName = PitchMath.midiToName(expectedFirstChronologicalNote);
-      final firstNoteDiff = (firstTargetMidi - expectedFirstChronologicalNote).abs();
+      final expectedLowestMidi = startTargetMidi;
+      final expectedLowestName = PitchMath.midiToName(expectedLowestMidi);
+      final lowestDiff = (actualLowestMidi - expectedLowestMidi).abs();
       
       assert(
-        firstTargetMidi == expectedFirstChronologicalNote,
-        'Pattern root misaligned: expected first chronological note = $expectedFirstChronologicalNote ($expectedFirstNoteName), '
-        'but got $firstTargetMidi ($firstNoteName). '
-        'Difference: ${firstNoteDiff} semitones. '
+        actualLowestMidi == expectedLowestMidi,
+        'Pattern root misaligned: expected lowest note = $expectedLowestMidi ($expectedLowestName), '
+        'but got $actualLowestMidi (${PitchMath.midiToName(actualLowestMidi)}). '
+        'Difference: ${lowestDiff} semitones. '
         'Expected: rootMidi = startTargetMidi - patternMin = $startTargetMidi - $patternMin = $firstRootMidi. '
-        'First chronological note = rootMidi + patternMax = $firstRootMidi + $patternMax = $expectedFirstChronologicalNote. '
-        'Lowest note = rootMidi + patternMin = $firstRootMidi + $patternMin = $startTargetMidi.',
+        'Lowest note = rootMidi + patternMin = $firstRootMidi + $patternMin = $expectedLowestMidi. '
+        'First chronological note = $firstTargetMidi (may be lowest or highest depending on pattern direction).',
       );
     } else {
       // If no notes were generated, check if it's due to range constraints
