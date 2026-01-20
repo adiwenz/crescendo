@@ -20,6 +20,7 @@ const double amplitude = 0.2; // Safe volume level (no clipping)
 
 void main() async {
   print('Generating preview audio assets...');
+  print('');
   
   // Ensure output directory exists
   final outputDir = Directory('assets/audio/previews');
@@ -29,35 +30,49 @@ void main() async {
   }
   
   // Generate each preview file
-  await _generateSirenPreview(outputDir);
-  await _generateScalesPreview(outputDir);
-  await _generateArpeggioPreview(outputDir);
-  await _generateSlidesPreview(outputDir);
-  await _generateWarmupPreview(outputDir);
-  await _generateAgilityPreview(outputDir);
+  final manifest = <String, double>{};
   
-  print('\n✓ All preview assets generated successfully!');
+  manifest['siren_preview.wav'] = await _generateSirenPreview(outputDir);
+  manifest['five_tone_scale_preview.wav'] = await _generateFiveToneScalePreview(outputDir);
+  manifest['arpeggio_preview.wav'] = await _generateArpeggioPreview(outputDir);
+  manifest['slides_preview.wav'] = await _generateSlidesPreview(outputDir);
+  manifest['warmup_preview.wav'] = await _generateWarmupPreview(outputDir);
+  manifest['agility_preview.wav'] = await _generateAgilityPreview(outputDir);
+  manifest['yawn_sigh_preview.wav'] = await _generateYawnSighPreview(outputDir);
+  manifest['interval_preview.wav'] = await _generateIntervalPreview(outputDir);
+  manifest['descending_octave_preview.wav'] = await _generateDescendingOctavePreview(outputDir);
+  
+  print('');
+  print('✓ All preview assets generated successfully!');
+  print('');
+  print('Generated files:');
+  for (final entry in manifest.entries) {
+    print('  ${entry.key}: ${entry.value.toStringAsFixed(2)}s');
+  }
+  print('');
   print('Files are in: ${outputDir.path}');
-  print('\nNext steps:');
+  print('');
+  print('Next steps:');
   print('1. Verify the files sound correct');
   print('2. Commit the WAV files to git');
   print('3. Ensure pubspec.yaml includes: assets/audio/previews/');
 }
 
 /// Generate siren preview: continuous glide up then down (bell curve shape)
-Future<void> _generateSirenPreview(Directory outputDir) async {
+/// FIX: No extra tail - hard cut at end with 20ms fade-out
+Future<double> _generateSirenPreview(Directory outputDir) async {
   print('Generating siren_preview.wav...');
   
   const durationSeconds = 4.0; // 4 seconds total
   const startMidi = 60.0; // C4
   const endMidi = 76.0; // E5
-  const fadeSeconds = 0.05;
+  const fadeOutMs = 0.02; // 20ms fade-out at end (no extra tail)
   
   // Generate bell curve: up then down
-  final samples = Float32List((durationSeconds * sampleRate).round());
-  final halfDuration = durationSeconds / 2.0;
+  final totalFrames = (durationSeconds * sampleRate).round();
+  final samples = Float32List(totalFrames);
   
-  for (var i = 0; i < samples.length; i++) {
+  for (var i = 0; i < totalFrames; i++) {
     final t = i / sampleRate;
     final tNorm = t / durationSeconds; // Normalized [0..1]
     
@@ -70,11 +85,15 @@ Future<void> _generateSirenPreview(Directory outputDir) async {
     final phase = 2.0 * math.pi * hz * t;
     var sample = math.sin(phase) * amplitude;
     
-    // Apply fade in/out
-    if (t < fadeSeconds) {
-      sample *= t / fadeSeconds;
-    } else if (t > durationSeconds - fadeSeconds) {
-      sample *= (durationSeconds - t) / fadeSeconds;
+    // Apply fade in at start (10ms)
+    if (t < 0.01) {
+      sample *= t / 0.01;
+    }
+    
+    // Apply fade-out at end (20ms) - hard cut, no extra tail
+    if (t > durationSeconds - fadeOutMs) {
+      final fadeProgress = (durationSeconds - t) / fadeOutMs;
+      sample *= fadeProgress;
     }
     
     samples[i] = sample;
@@ -83,15 +102,17 @@ Future<void> _generateSirenPreview(Directory outputDir) async {
   final wavBytes = _encodeWav16Mono(samples);
   final file = File(p.join(outputDir.path, 'siren_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s');
+  return durationSeconds;
 }
 
-/// Generate scales preview: ascending scale pattern
-Future<void> _generateScalesPreview(Directory outputDir) async {
-  print('Generating scales_preview.wav...');
+/// Generate 5-tone scale preview: Do-Re-Mi-Fa-Sol (5 notes only, NOT full octave)
+/// FIX: Stop after 5 notes, do not continue to Do' or full octave
+Future<double> _generateFiveToneScalePreview(Directory outputDir) async {
+  print('Generating five_tone_scale_preview.wav...');
   
-  // C major scale: C4, D4, E4, F4, G4, A4, B4, C5
-  final scaleMidis = [60, 62, 64, 65, 67, 69, 71, 72];
+  // C major 5-tone scale: C4, D4, E4, F4, G4 (Do-Re-Mi-Fa-Sol)
+  final scaleMidis = [60, 62, 64, 65, 67]; // 5 notes only
   const noteDurationSeconds = 0.4;
   const silenceDurationSeconds = 0.1;
   
@@ -102,20 +123,24 @@ Future<void> _generateScalesPreview(Directory outputDir) async {
     final noteSamples = _generateTone(midi.toDouble(), noteDurationSeconds);
     allSamples.addAll(noteSamples);
     
-    // Add silence between notes
-    final silenceFrames = (silenceDurationSeconds * sampleRate).round();
-    allSamples.addAll(List.filled(silenceFrames, 0.0));
+    // Add silence between notes (except after last note)
+    if (midi != scaleMidis.last) {
+      final silenceFrames = (silenceDurationSeconds * sampleRate).round();
+      allSamples.addAll(List.filled(silenceFrames, 0.0));
+    }
   }
   
+  final durationSeconds = allSamples.length / sampleRate;
   final samples = Float32List.fromList(allSamples);
   final wavBytes = _encodeWav16Mono(samples);
-  final file = File(p.join(outputDir.path, 'scales_preview.wav'));
+  final file = File(p.join(outputDir.path, 'five_tone_scale_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s (5 notes)');
+  return durationSeconds;
 }
 
 /// Generate arpeggio preview: arpeggiated chord pattern
-Future<void> _generateArpeggioPreview(Directory outputDir) async {
+Future<double> _generateArpeggioPreview(Directory outputDir) async {
   print('Generating arpeggio_preview.wav...');
   
   // C major arpeggio: C4, E4, G4, C5
@@ -129,19 +154,23 @@ Future<void> _generateArpeggioPreview(Directory outputDir) async {
     final noteSamples = _generateTone(midi.toDouble(), noteDurationSeconds);
     allSamples.addAll(noteSamples);
     
-    final silenceFrames = (silenceDurationSeconds * sampleRate).round();
-    allSamples.addAll(List.filled(silenceFrames, 0.0));
+    if (midi != arpeggioMidis.last) {
+      final silenceFrames = (silenceDurationSeconds * sampleRate).round();
+      allSamples.addAll(List.filled(silenceFrames, 0.0));
+    }
   }
   
+  final durationSeconds = allSamples.length / sampleRate;
   final samples = Float32List.fromList(allSamples);
   final wavBytes = _encodeWav16Mono(samples);
   final file = File(p.join(outputDir.path, 'arpeggio_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s');
+  return durationSeconds;
 }
 
 /// Generate slides preview: upward glide (octave slide pattern)
-Future<void> _generateSlidesPreview(Directory outputDir) async {
+Future<double> _generateSlidesPreview(Directory outputDir) async {
   print('Generating slides_preview.wav...');
   
   const startMidi = 60.0; // C4
@@ -153,11 +182,12 @@ Future<void> _generateSlidesPreview(Directory outputDir) async {
   final wavBytes = _encodeWav16Mono(samples);
   final file = File(p.join(outputDir.path, 'slides_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s');
+  return durationSeconds;
 }
 
 /// Generate warmup preview: sustained tone (for warmup exercises)
-Future<void> _generateWarmupPreview(Directory outputDir) async {
+Future<double> _generateWarmupPreview(Directory outputDir) async {
   print('Generating warmup_preview.wav...');
   
   const midi = 60.0; // C4
@@ -168,11 +198,12 @@ Future<void> _generateWarmupPreview(Directory outputDir) async {
   final wavBytes = _encodeWav16Mono(samples);
   final file = File(p.join(outputDir.path, 'warmup_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s');
+  return durationSeconds;
 }
 
 /// Generate agility preview: fast three-note pattern
-Future<void> _generateAgilityPreview(Directory outputDir) async {
+Future<double> _generateAgilityPreview(Directory outputDir) async {
   print('Generating agility_preview.wav...');
   
   // Fast three-note pattern: C4, E4, G4 repeated
@@ -193,11 +224,93 @@ Future<void> _generateAgilityPreview(Directory outputDir) async {
     }
   }
   
+  final durationSeconds = allSamples.length / sampleRate;
   final samples = Float32List.fromList(allSamples);
   final wavBytes = _encodeWav16Mono(samples);
   final file = File(p.join(outputDir.path, 'agility_preview.wav'));
   await file.writeAsBytes(wavBytes);
-  print('  ✓ Generated ${wavBytes.length} bytes');
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s');
+  return durationSeconds;
+}
+
+/// Generate YawnSigh preview: descending glide (smooth downward sweep)
+/// FIX: Single continuous descending glide, not stepped notes, not octave run
+Future<double> _generateYawnSighPreview(Directory outputDir) async {
+  print('Generating yawn_sigh_preview.wav...');
+  
+  const startMidi = 72.0; // C5 (start high)
+  const endMidi = 60.0; // C4 (descend to lower)
+  const durationSeconds = 2.0; // 2 second smooth glide down
+  const fadeSeconds = 0.05;
+  
+  final samples = _generateSweep(startMidi, endMidi, durationSeconds, fadeSeconds);
+  final wavBytes = _encodeWav16Mono(samples);
+  final file = File(p.join(outputDir.path, 'yawn_sigh_preview.wav'));
+  await file.writeAsBytes(wavBytes);
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s (descending glide)');
+  return durationSeconds;
+}
+
+/// Generate interval preview: Do->Sol interval (2 notes: C4 then G4)
+/// FIX: Replace octave-scale preview with simple interval demo
+Future<double> _generateIntervalPreview(Directory outputDir) async {
+  print('Generating interval_preview.wav...');
+  
+  // Interval demo: Do (C4) then Sol (G4)
+  final intervalMidis = [60, 67]; // C4, G4
+  const noteDurationSeconds = 0.6;
+  const silenceDurationSeconds = 0.15;
+  
+  final allSamples = <double>[];
+  
+  for (var midi in intervalMidis) {
+    final noteSamples = _generateTone(midi.toDouble(), noteDurationSeconds);
+    allSamples.addAll(noteSamples);
+    
+    if (midi != intervalMidis.last) {
+      final silenceFrames = (silenceDurationSeconds * sampleRate).round();
+      allSamples.addAll(List.filled(silenceFrames, 0.0));
+    }
+  }
+  
+  final durationSeconds = allSamples.length / sampleRate;
+  final samples = Float32List.fromList(allSamples);
+  final wavBytes = _encodeWav16Mono(samples);
+  final file = File(p.join(outputDir.path, 'interval_preview.wav'));
+  await file.writeAsBytes(wavBytes);
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s (Do->Sol interval)');
+  return durationSeconds;
+}
+
+/// Generate descending octave preview: descending octave scale (C5 down to C4)
+/// FIX: Explicitly descending octave scale
+Future<double> _generateDescendingOctavePreview(Directory outputDir) async {
+  print('Generating descending_octave_preview.wav...');
+  
+  // Descending octave scale: C5, B4, A4, G4, F4, E4, D4, C4
+  final descendingMidis = [72, 71, 69, 67, 65, 64, 62, 60];
+  const noteDurationSeconds = 0.4;
+  const silenceDurationSeconds = 0.1;
+  
+  final allSamples = <double>[];
+  
+  for (var midi in descendingMidis) {
+    final noteSamples = _generateTone(midi.toDouble(), noteDurationSeconds);
+    allSamples.addAll(noteSamples);
+    
+    if (midi != descendingMidis.last) {
+      final silenceFrames = (silenceDurationSeconds * sampleRate).round();
+      allSamples.addAll(List.filled(silenceFrames, 0.0));
+    }
+  }
+  
+  final durationSeconds = allSamples.length / sampleRate;
+  final samples = Float32List.fromList(allSamples);
+  final wavBytes = _encodeWav16Mono(samples);
+  final file = File(p.join(outputDir.path, 'descending_octave_preview.wav'));
+  await file.writeAsBytes(wavBytes);
+  print('  ✓ Generated ${wavBytes.length} bytes, ${durationSeconds.toStringAsFixed(2)}s (descending octave scale)');
+  return durationSeconds;
 }
 
 /// Generate a steady tone
