@@ -7,6 +7,7 @@ import 'dart:io' show Platform;
 import 'ui/app.dart';
 import 'state/library_store.dart';
 import 'services/exercise_cache_service.dart';
+import 'services/audio_route_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,10 @@ Future<void> main() async {
   // Pre-generate exercise cache for current range (if set)
   // This allows exercises to start instantly without generation delay
   ExerciseCacheService.instance.loadCache();
+
+  // Initialize audio route service (uses flutter_audio_output)
+  // This is the single source of truth for audio route detection
+  await AudioRouteService().initialize();
 
   runApp(const CrescendoApp());
 }

@@ -12,7 +12,11 @@ class AudioSessionConfigurator {
     private var configChangeObserver: NSObjectProtocol?
     
     private init() {
-        setupObservers()
+        // Route change observers disabled - using flutter_audio_output instead
+        // setupObservers() // Commented out - flutter_audio_output handles route changes
+        #if DEBUG
+        print("[AudioSessionConfigurator] Route change observers disabled (using flutter_audio_output)")
+        #endif
     }
     
     /// Configure audio session for review playback (MIDI + recorded audio)

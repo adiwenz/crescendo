@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 import '../models/reference_note.dart';
 import 'midi_playback_config.dart';
-import '../services/ios_audio_session_service.dart';
+import '../services/audio_session_service.dart';
 
 /// Real-time MIDI synthesizer for reference audio playback using flutter_midi_pro
 /// Plays MIDI notes directly without rendering to WAV files
@@ -20,6 +20,53 @@ class ReferenceMidiSynth {
   final Set<int> _activeNotes = {}; // Track notes that are currently playing (noteOn sent, noteOff not yet sent)
   int? _currentRunId;
   static const int _defaultVelocity = 100;
+  
+  // Route change resilience
+  bool _engineRebuildNeeded = false;
+  
+  /// Ensure engine is running (rebuild if needed after route changes)
+  Future<void> ensureEngineRunning({String tag = 'ensureEngine'}) async {
+    if (_engineRebuildNeeded || !_initialized || _sfId == null) {
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiSynth] [$tag] Rebuilding engine (rebuildNeeded=$_engineRebuildNeeded, initialized=$_initialized, sfId=${_sfId != null})');
+      }
+      await init(force: true);
+      _engineRebuildNeeded = false;
+    }
+  }
+  
+  /// Mark that engine rebuild is needed (called on route changes)
+  void markEngineRebuildNeeded() {
+    _engineRebuildNeeded = true;
+    if (kDebugMode) {
+      debugPrint('[ReferenceMidiSynth] Engine rebuild marked as needed');
+    }
+  }
+  
+  /// Resync MIDI playback to current audio position (after route change)
+  /// Clears played notes and re-triggers notes near the current position
+  void resyncToAudioPosition(double audioSec, int runId) {
+    if (_currentRunId != runId) {
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiSynth] Resync ignored - runId mismatch ($runId != $_currentRunId)');
+      }
+      return;
+    }
+    
+    if (kDebugMode) {
+      debugPrint('[ReferenceMidiSynth] Resyncing to audio position: ${audioSec.toStringAsFixed(3)}s, runId=$runId');
+    }
+    
+    // Clear played notes so they can be re-triggered
+    _notesPlayedForAudioPosition.clear();
+    _activeNotes.clear();
+    _activeNoteIndexByMidi.clear();
+    
+    // Immediately check for notes that should play at this position
+    if (_notesForAudioPosition != null) {
+      updateAudioPosition(audioSec, runId);
+    }
+  }
 
   /// Initialize flutter_midi_pro and load SoundFont (idempotent)
   /// Should be called once at app startup or once per screen lifetime
@@ -303,7 +350,7 @@ class ReferenceMidiSynth {
 
     // Ensure iOS audio session is configured for MIDI playback (especially with headphones)
     // This must be called BEFORE initializing the SoundFont/engine
-    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'midi_playback');
+    await AudioSessionService.applyReviewSession(tag: 'midi_playback');
 
     // Force reinitialize the MIDI engine to ensure it picks up the new audio session configuration
     // This is especially important after route changes (headphones connect/disconnect)
@@ -339,6 +386,18 @@ class ReferenceMidiSynth {
   /// Check audio position and trigger MIDI notes that should play now
   /// Call this periodically (e.g., from audio position stream callback)
   void updateAudioPosition(double audioTimeSec, int runId) {
+    // Check if engine rebuild is needed (route change may have disrupted engine)
+    if (_engineRebuildNeeded) {
+      // Rebuild asynchronously - don't await here to avoid blocking
+      ensureEngineRunning(tag: 'updateAudioPosition').then((_) {
+        // After rebuild, retry this update
+        if (_isPlaying && _currentRunId == runId && _notesForAudioPosition != null) {
+          updateAudioPosition(audioTimeSec, runId);
+        }
+      });
+      return;
+    }
+    
     // Log first few calls to verify this method is being invoked
     _updateAudioPositionCallCount++;
     if (_updateAudioPositionCallCount <= 5) {

@@ -6,7 +6,7 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 
 import '../../models/pitch_frame.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -18,7 +18,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
-import '../../audio/reference_midi_synth.dart';
+import '../../services/reference_midi_engine.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -43,6 +43,7 @@ import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
+import '../../services/audio_session_service.dart';
 
 /// Single source of truth for exercise start state
 enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
@@ -153,7 +154,7 @@ class PitchHighwayPlayer extends StatefulWidget {
 class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
   final AudioSynthService _synth = AudioSynthService(); // Keep for review mode
-  final ReferenceMidiSynth _referenceMidiSynth = ReferenceMidiSynth();
+  final ReferenceMidiEngine _midiEngine = ReferenceMidiEngine();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
   final List<PitchFrame> _captured = [];
@@ -253,6 +254,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     debugPrint(
         '[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
 
+    // Initialize MIDI engine (sets up route change listeners automatically)
+    unawaited(_midiEngine.initialize());
+
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
     _notesLoaded = false;
@@ -273,12 +277,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioPlayCalledEpochMs = null;
     _audioPlayingEpochMs = null;
     _setTimelineStartEpochMs(null, src: 'initState');
-    _visualsStarted = false;
     _lastModelHash = null;
     _lastRepaintHash = null;
+    _visualsStarted = false;
+    _captureEnabled = false;
     _isImmediateTick = false;
-    _loggedFirstTick = false;
+    _prepRemaining = 0;
+    _prepTimer = null;
     _runId = 0;
+    _liveMidi.value = null;
     _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'),
         src: 'initState'); // Initialize key
 
@@ -298,7 +305,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _clock.setAudioPositionProvider(() => _audioPositionSec);
 
     // Initialize MIDI synth (load SoundFont once)
-    unawaited(_referenceMidiSynth.init());
+    // Engine initializes automatically on first use
     _clock.setLatencyCompensationMs(_audioLatencyMs);
 
     // Add frame timing callback to detect jank (only if frame timing debug enabled)
@@ -331,6 +338,31 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final initEndTime = DateTime.now();
     debugPrint(
         '[ExercisePlayerScreen] initState complete: ${initEndTime.difference(initStartTime).inMilliseconds}ms');
+  }
+
+  // Route change handlers removed - ReferenceMidiEngine handles route changes automatically via flutter_headset_detector
+  // The engine will automatically resume playback using the registered playback context
+
+  /// Handle route change or interruption during exercise
+  Future<void> _handleRouteChangeDuringExercise() async {
+    if (_phase != StartPhase.running) return;
+
+    final currentTimeSec = _time.value;
+
+    if (kDebugMode) {
+      debugPrint(
+          '[Exercise] Handling route change during exercise at time ${currentTimeSec.toStringAsFixed(3)}s');
+    }
+
+    // Re-apply audio session configuration
+    await AudioSessionService.applyExerciseSession(
+        tag: 'routeChangeDuringExercise');
+
+    // Ensure MIDI engine is running (rebuild if needed)
+    // Route changes handled automatically by ReferenceMidiEngine
+
+    // Note: Timer-based scheduling will continue automatically after engine rebuild
+    // The timers are already scheduled, so they should fire correctly once engine is rebuilt
   }
 
   Future<void> _loadTransposedNotes() async {
@@ -480,7 +512,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
       // Initialize MIDI synth (lightweight - ensures SoundFont is loaded)
       if (notes.isNotEmpty) {
-        unawaited(_referenceMidiSynth.init());
+        // Engine initializes automatically on first use
       }
 
       // Auto-start the exercise immediately once notes are loaded
@@ -500,10 +532,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (!mounted) return;
     try {
       // Ensure MIDI synth is initialized (idempotent)
-      await _referenceMidiSynth.init();
-      DebugLog.log(LogCat.midi, 'MIDI synth ready for ${notes.length} notes');
+      await _midiEngine.ensureReady(tag: 'exercise-start');
+      DebugLog.log(LogCat.midi, 'MIDI engine ready for ${notes.length} notes');
     } catch (e) {
-      DebugLog.log(LogCat.error, 'Error initializing MIDI synth: $e');
+      DebugLog.log(LogCat.error, 'Error initializing MIDI engine: $e');
       // Non-fatal - will retry on Start if needed
     }
   }
@@ -683,6 +715,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
 
     _lastTime = next;
+
+    // Update MIDI engine position for route change resumption
+    if (_phase == StartPhase.running) {
+      _midiEngine.updatePosition(next, runId: _runId);
+    }
 
     final effectiveMidi = _pitchState.effectiveMidi;
     final effectiveHz = _pitchState.effectiveHz;
@@ -1192,12 +1229,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         }
 
         // Schedule notes with lead-in delay (lead-in is in MIDI timestamps, but we pass it for timing)
-        await _referenceMidiSynth.playSequence(
+        await _midiEngine.playSequence(
           notes: notes,
           leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
           runId: runId,
           startEpochMs: timelineStartMs,
+          mode: 'exercise',
         );
+
+        // Update position tracking as playback progresses (will be updated in ticker)
+        // Initial position is 0, will be updated by ticker
 
         dev.Timeline.finishSync();
         final afterAudio = DateTime.now();
@@ -1286,7 +1327,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _recording == null ? null : await _recording!.stop();
     // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
-    await _referenceMidiSynth.stop();
+    await _midiEngine.stopAll(tag: 'exercise-stop');
+    _midiEngine.clearContext(runId: _runId);
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();
@@ -1830,8 +1872,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                 'tap: ${_tapEpochMs ?? "null"}\n'
                                 'audioPlayCalled: ${_audioPlayCalledEpochMs ?? "null"}\n'
                                 'audioPlaying: ${_audioPlayingEpochMs ?? "null"}\n'
-                                'MIDI runId: ${_referenceMidiSynth.currentRunId ?? "null"}\n'
-                                'MIDI playing: ${_referenceMidiSynth.isPlaying}\n'
+                                'MIDI runId: ${_runId}\n'
+                                'MIDI playing: ${_phase == StartPhase.running}\n'
                                 'time: ${_time.value.toStringAsFixed(2)}s\n'
                                 'now: ${DateTime.now().millisecondsSinceEpoch}',
                                 style: const TextStyle(

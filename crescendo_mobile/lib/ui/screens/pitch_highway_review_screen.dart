@@ -12,7 +12,7 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
-import '../../audio/reference_midi_synth.dart';
+import '../../services/reference_midi_engine.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../audio/midi_playback_config.dart';
 import '../../services/transposed_exercise_builder.dart';
@@ -23,7 +23,7 @@ import '../../utils/performance_clock.dart';
 import '../../utils/exercise_constants.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/sync_diagnostic_service.dart';
-import '../../services/ios_audio_session_service.dart';
+import '../../services/audio_session_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -49,7 +49,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
   // Enable mixing mode to play both recorded audio and reference notes simultaneously
   final AudioSynthService _synth = AudioSynthService(enableMixing: true);
-  final ReferenceMidiSynth _referenceMidiSynth = ReferenceMidiSynth();
+  final ReferenceMidiEngine _midiEngine = ReferenceMidiEngine();
   final VocalRangeService _vocalRangeService = VocalRangeService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final PerformanceClock _clock = PerformanceClock();
@@ -90,6 +90,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   @override
   void initState() {
     super.initState();
+    
+    // Initialize MIDI engine (sets up route change listeners automatically)
+    unawaited(_midiEngine.initialize());
     
     // Set debug context
     _reviewRunId++;
@@ -149,18 +152,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Step 1: Load transposed notes
     await _loadTransposedNotes(difficulty);
     
-    // Step 2: Pre-render reference notes audio (for backward compatibility with WAV path)
-    // NOTE: Review now uses ReferenceMidiSynth for real-time playback (same as exercise),
-    // but we still render WAV as fallback or for mixing with recorded audio
-    if (_notes.isNotEmpty) {
-      _referenceAudioPath = await _synth.renderReferenceNotes(_notes);
-      if (kDebugMode) {
-        debugPrint('[Review Preload] Reference audio rendered (WAV fallback): ${_referenceAudioPath}');
-        debugPrint('[Review Preload] Review will use ReferenceMidiSynth for real-time MIDI (same as exercise)');
-      }
-    }
-    
-    // Step 3: Check recorded audio
+    // Step 2: Check recorded audio (fast file check)
     final audioPath = widget.lastTake.audioPath;
     if (audioPath != null && audioPath.isNotEmpty) {
       final file = File(audioPath);
@@ -172,8 +164,17 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       }
     }
     
-    // Step 4: Warm up audio engine (silent warmup)
-    await _warmupAudioEngine();
+    // Step 3: Initialize MIDI engine (fast, no WAV rendering needed)
+    // This is much faster than WAV rendering and is what we actually use for playback
+    await _midiEngine.ensureReady(tag: 'review-preload');
+    
+    // Step 4: Skip WAV rendering - we use ReferenceMidiSynth for real-time MIDI playback
+    // WAV rendering was causing 10+ second delays. MIDI synth is instant.
+    // Only render WAV in background if needed for mixing (but don't block on it)
+    if (_notes.isNotEmpty) {
+      // Render WAV asynchronously in background (non-blocking)
+      unawaited(_renderReferenceAudioInBackground());
+    }
     
     final preloadCompleteTime = DateTime.now().millisecondsSinceEpoch;
     if (kDebugMode) {
@@ -208,28 +209,17 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
   }
   
-  /// Warm up the audio engine to eliminate first-play latency
-  Future<void> _warmupAudioEngine() async {
+  /// Render reference audio in background (non-blocking)
+  /// This is only used as a fallback - MIDI synth is the primary playback method
+  Future<void> _renderReferenceAudioInBackground() async {
     try {
-      // Render a very short silent audio clip to warm up the engine
-      final warmupNotes = [
-        ReferenceNote(startSec: 0, endSec: 0.05, midi: 60), // 50ms silent note
-      ];
-      final warmupPath = await _synth.renderReferenceNotes(warmupNotes);
-      // Play it at very low volume (or we could just load it without playing)
-      // Actually, just loading it should warm up the engine
-      // We'll dispose of it immediately
-      final warmupFile = File(warmupPath);
-      if (await warmupFile.exists()) {
-        // Just touch the file to ensure it's ready - the act of rendering already warmed up
-        await warmupFile.delete(); // Clean up
-      }
+      _referenceAudioPath = await _synth.renderReferenceNotes(_notes);
       if (kDebugMode) {
-        debugPrint('[Review Preload] Audio engine warmed up');
+        debugPrint('[Review Preload] Reference audio rendered in background (WAV fallback): ${_referenceAudioPath}');
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[Review Preload] Warmup error (non-fatal): $e');
+        debugPrint('[Review Preload] Background WAV rendering error (non-fatal): $e');
       }
     }
   }
@@ -348,6 +338,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
   }
 
+  // Route change handlers removed - ReferenceMidiEngine handles route changes automatically
+  // The engine will automatically resume playback using the registered playback context
+  
   @override
   void dispose() {
     DebugLog.event(
@@ -360,13 +353,17 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     );
     DebugLog.resetContext();
     
+    // Dispose route change listeners
+    // Audio session service doesn't need disposal
+    
     _ticker?.dispose();
     _audioPosSub?.cancel();
     _audioCompleteSub?.cancel();
     _playerStateSub?.cancel();
     _positionWatchdog?.cancel();
     _synth.stop();
-    _referenceMidiSynth.stop(); // Stop MIDI playback when navigating away
+    _midiEngine.stopAll(tag: 'review-dispose');
+    _midiEngine.clearContext(runId: _reviewRunId);
     _time.dispose();
     super.dispose();
   }
@@ -384,6 +381,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Visual time is driven directly by audio position (master clock)
     final visualTimeMs = _audioPositionSec! * 1000.0;
     _time.value = _audioPositionSec!;
+    
+    // Update MIDI engine position for route change resumption
+    if (_playing) {
+      _midiEngine.updatePosition(_audioPositionSec!, runId: _reviewRunId);
+    }
     
     // Debug logging (temporary) - log every 250-500ms
     if (kDebugMode) {
@@ -445,7 +447,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // Ensure iOS audio session is configured for MIDI playback (especially with headphones)
     // This must be called BEFORE starting audio/MIDI playback
-    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'review_start');
+    await AudioSessionService.applyReviewSession(tag: 'review_start');
     
     // Start audio playback immediately (everything is preloaded)
     // Audio will be sought to startOffsetSec in _playAudio()
@@ -533,7 +535,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _clock.pause();
     // Stop audio immediately - this will stop audio position updates
     await _synth.stop();
-    await _referenceMidiSynth.stop(); // Stop MIDI playback
+    await _midiEngine.stopAll(tag: 'review-stop');
+    _midiEngine.clearContext(runId: _reviewRunId);
     await _audioPosSub?.cancel();
     _audioPosSub = null;
     await _audioCompleteSub?.cancel();
@@ -561,7 +564,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // Ensure iOS audio session is configured before starting playback
     // This is especially important for MIDI playback with headphones
-    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'play_audio');
+    await AudioSessionService.applyReviewSession(tag: 'play_audio');
     
     // Seek to the start time before playing (if startTimeSec > 0)
     final startOffsetSec = widget.startTimeSec;
@@ -775,13 +778,14 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // Start MIDI playback using timer-based scheduling with offset compensation
     // The offset will be applied when scheduling each note
-    await _referenceMidiSynth.playSequence(
+    await _midiEngine.playSequence(
       notes: notesToPlay,
       leadInSec: 0.0, // Notes already include lead-in in their startSec
       runId: currentRunId,
       startEpochMs: _playbackStartEpoch?.millisecondsSinceEpoch,
       config: reviewConfig,
       offsetMs: totalOffsetMs, // Apply sync offset to delay MIDI notes
+      mode: 'review',
     );
     
     if (kDebugMode) {

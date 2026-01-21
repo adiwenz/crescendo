@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 
@@ -6,6 +7,8 @@ import '../../models/exercise.dart';
 import '../../screens/explore/exercise_preview_screen.dart';
 import '../../services/daily_exercise_service.dart';
 import '../../services/sync_diagnostic_service.dart';
+import '../../services/reference_midi_engine.dart';
+import '../../models/reference_note.dart';
 import '../../state/library_store.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import 'styles.dart';
@@ -137,6 +140,8 @@ class _DebugSectionState extends State<_DebugSection> {
   bool _running = false;
   String? _statusMessage;
   int? _savedOffset;
+  bool _testPlaying = false;
+  int _testRunId = 0;
 
   @override
   void initState() {
@@ -195,6 +200,82 @@ class _DebugSectionState extends State<_DebugSection> {
     }
   }
 
+  Future<void> _runRouteChangeTest() async {
+    if (_testPlaying) return;
+
+    setState(() {
+      _testPlaying = true;
+      _testRunId++;
+      _statusMessage = 'Playing 5-note scale... Unplug headphones to test resumption';
+    });
+
+    try {
+      final engine = ReferenceMidiEngine();
+      await engine.initialize();
+
+      // Create a 5-note scale: C4, D4, E4, F4, G4 (MIDI 60, 62, 64, 65, 67)
+      // Each note plays for 0.5s with 0.5s spacing (total 5 seconds)
+      final notes = [
+        ReferenceNote(startSec: 0.0, endSec: 0.5, midi: 60), // C4
+        ReferenceNote(startSec: 1.0, endSec: 1.5, midi: 62), // D4
+        ReferenceNote(startSec: 2.0, endSec: 2.5, midi: 64), // E4
+        ReferenceNote(startSec: 3.0, endSec: 3.5, midi: 65), // F4
+        ReferenceNote(startSec: 4.0, endSec: 4.5, midi: 67), // G4
+      ];
+
+      // Track position for route change resumption
+      final startTime = DateTime.now();
+      Timer? positionTimer;
+      
+      positionTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+        if (!_testPlaying) {
+          timer.cancel();
+          return;
+        }
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
+        engine.updatePosition(elapsed, runId: _testRunId);
+      });
+
+      await engine.playSequence(
+        notes: notes,
+        leadInSec: 0.0,
+        runId: _testRunId,
+        mode: 'exercise',
+      );
+
+      // Wait for playback to complete (5 seconds total)
+      await Future.delayed(const Duration(milliseconds: 5500));
+
+      positionTimer.cancel();
+
+      if (mounted && _testRunId == _testRunId) {
+        setState(() {
+          _testPlaying = false;
+          _statusMessage = 'Test complete';
+        });
+        engine.clearContext(runId: _testRunId);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testPlaying = false;
+          _statusMessage = 'Test error: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _stopTest() async {
+    final engine = ReferenceMidiEngine();
+    await engine.stopAll(tag: 'test-stop');
+    engine.clearContext(runId: _testRunId);
+    if (mounted) {
+      setState(() {
+        _testPlaying = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -233,6 +314,30 @@ class _DebugSectionState extends State<_DebugSection> {
             Text(
               _statusMessage!,
               style: AppText.body.copyWith(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ],
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text(
+            'Route Change Test',
+            style: AppText.h2.copyWith(color: Colors.red.shade700, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Plays a 5-note scale (C4-D4-E4-F4-G4). Unplug headphones mid-play to test automatic resumption.',
+            style: AppText.body.copyWith(fontSize: 11, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: _testPlaying ? _stopTest : _runRouteChangeTest,
+            child: Text(_testPlaying ? 'Stop Test' : 'Test Route Change'),
+          ),
+          if (_testPlaying) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Playing... Unplug headphones to test resumption',
+              style: AppText.body.copyWith(fontSize: 11, color: Colors.orange.shade700),
             ),
           ],
         ],

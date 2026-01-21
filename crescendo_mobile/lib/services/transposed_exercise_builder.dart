@@ -86,9 +86,7 @@ class TransposedExerciseBuilder {
       );
     }
     
-    debugPrint('[TransposedExerciseBuilder] First chronological event: startMs=${firstEvent.startMs}, midiNote=$firstEventMidi');
-    debugPrint('[TransposedExerciseBuilder] Base root MIDI: $baseRootMidi (first chronological event)');
-    debugPrint('[TransposedExerciseBuilder] Pattern offsets: min=$patternMin (lowest), max=$patternMax (highest), span=$patternSpan');
+    // Debug logs removed to reduce noise on app restart
     
     // Special handling for Sirens: generate visual path + minimal audio notes
     // Note: For Sirens, we need to return a different structure, but for now
@@ -113,13 +111,7 @@ class TransposedExerciseBuilder {
     var transpositionSemitones = 0;
     var currentTimeSec = effectiveLeadInSec;
 
-    // Debug logging
-    debugPrint('[TransposedExerciseBuilder] Range: lowestMidi=$lowestMidi, highestMidi=$highestMidi');
-    debugPrint('[TransposedExerciseBuilder] Pattern: baseRootMidi=$baseRootMidi, patternMin=$patternMin, patternMax=$patternMax, patternSpan=$patternSpan');
-    debugPrint('[TransposedExerciseBuilder] Start target MIDI: $startTargetMidi (lowest note in pattern, lowestMidi=$lowestMidi + padding=$startPaddingSemitones)');
-    debugPrint('[TransposedExerciseBuilder] First root MIDI: $firstRootMidi (startTargetMidi=$startTargetMidi - patternMin=$patternMin)');
-    debugPrint('[TransposedExerciseBuilder] Expected first chronological note: $firstRootMidi + $patternMax = ${firstRootMidi + patternMax}');
-    debugPrint('[TransposedExerciseBuilder] Expected lowest note: $firstRootMidi + $patternMin = ${firstRootMidi + patternMin}');
+    // Debug logs removed to reduce noise on app restart
 
     while (true) {
       final rootMidi = firstRootMidi + transpositionSemitones;
@@ -147,14 +139,7 @@ class TransposedExerciseBuilder {
       
       allNotes.addAll(repetitionNotes);
       
-      // Debug: log first few generated notes to verify math
-      if (transpositionSemitones == 0 && repetitionNotes.isNotEmpty) {
-        final firstFew = repetitionNotes.take(5).toList();
-        for (var note in firstFew) {
-          final patternOffset = note.midi.round() - rootMidi;
-          debugPrint('[GenCheck] root=$rootMidi offset=$patternOffset -> target=${note.midi.round()}');
-        }
-      }
+      // Debug logs removed to reduce noise on app restart
       
       // Update time for next repetition - add pattern duration plus gap
       currentTimeSec += patternDurationSec + gapBetweenRepetitionsSec;
@@ -169,17 +154,12 @@ class TransposedExerciseBuilder {
     // Validation assertions
     if (allNotes.isNotEmpty) {
       final firstTargetMidi = allNotes.first.midi.round();
-      final lastTargetMidi = allNotes.last.midi.round();
-      final firstNoteName = PitchMath.midiToName(firstTargetMidi);
-      final lastNoteName = PitchMath.midiToName(lastTargetMidi);
       
       // Find the actual lowest and highest notes in the generated sequence
       final allMidis = allNotes.map((n) => n.midi.round()).toList();
       final actualLowestMidi = allMidis.reduce((a, b) => a < b ? a : b);
-      final actualHighestMidi = allMidis.reduce((a, b) => a > b ? a : b);
       
-      debugPrint('[TransposedExerciseBuilder] Generated notes: firstTargetMidi=$firstTargetMidi ($firstNoteName), lastTargetMidi=$lastTargetMidi ($lastNoteName)');
-      debugPrint('[TransposedExerciseBuilder] Actual range: lowest=$actualLowestMidi, highest=$actualHighestMidi');
+      // Debug logs removed to reduce noise on app restart
       
       // ENFORCE INVARIANT: The LOWEST note in the pattern MUST equal startTargetMidi
       // This works for both ascending (first chronological = lowest) and descending (first chronological = highest) patterns
