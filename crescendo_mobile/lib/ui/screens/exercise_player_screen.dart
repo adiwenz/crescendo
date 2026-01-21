@@ -19,7 +19,6 @@ import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
 import '../../audio/reference_midi_synth.dart';
-import '../../audio/midi_playback_config.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -251,30 +250,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void initState() {
     super.initState();
     final initStartTime = DateTime.now();
-
-    // Set debug context
-    DebugLog.setContext(
-      exerciseId: widget.exercise.id,
-      mode: 'exercise',
-    );
-
-    // Log lifecycle event
-    final isSimulator = Platform.isIOS && !Platform.isAndroid; // Best guess
-    DebugLog.event(
-      LogCat.lifecycle,
-      'initState',
-      fields: {
-        'exerciseId': widget.exercise.id,
-        'difficulty': widget.pitchDifficulty.name,
-        'totalDuration': widget.exercise.durationSeconds,
-        'leadInSec': _leadInSec,
-        'pixelsPerSecond':
-            PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty),
-        'platform': Platform.operatingSystem,
-        'isSimulator': isSimulator,
-        'useMic': _useMic,
-      },
-    );
+    debugPrint(
+        '[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
 
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
@@ -481,17 +458,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
               .clamp(36, 127);
         } else if (notes.isNotEmpty) {
           final midiValues = notes.map((n) => n.midi).toList();
-          final rawMin = midiValues.reduce(math.min);
-          final rawMax = midiValues.reduce(math.max);
-          // Use floor/ceil to ensure we capture all notes, including fractional values
-          // Add extra padding (6 semitones) to ensure notes aren't cut off at screen edges
-          _midiMin = (rawMin.floor() - 6).clamp(36, 127);
-          _midiMax = (rawMax.ceil() + 6).clamp(36, 127);
-
-          debugPrint('[ExercisePlayerScreen] MIDI range calculation: '
-              'rawMin=$rawMin, rawMax=$rawMax, '
-              'displayMin=$_midiMin, displayMax=$_midiMax, '
-              'noteCount=${notes.length}');
+          _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
+          _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
 
           // Initialize pitch ball at first target note so it appears immediately
           // This ensures the pitch ball is visible from the start, even before recording starts
@@ -533,11 +501,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     try {
       // Ensure MIDI synth is initialized (idempotent)
       await _referenceMidiSynth.init();
-      DebugLog.event(LogCat.midi, 'midi_synth_ready',
-          fields: {'notesCount': notes.length});
+      DebugLog.log(LogCat.midi, 'MIDI synth ready for ${notes.length} notes');
     } catch (e) {
-      DebugLog.event(LogCat.midi, 'midi_synth_error',
-          fields: {'error': e.toString()});
+      DebugLog.log(LogCat.error, 'Error initializing MIDI synth: $e');
       // Non-fatal - will retry on Start if needed
     }
   }
@@ -555,29 +521,22 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return PitchHighwaySpec(segments: scaledSegments);
   }
 
-  /// Frame timing callback to detect jank (disabled to reduce log spam)
-  // void _onFrameTimings(List<FrameTiming> timings) {
-  //   // Frame timing disabled to reduce spam
-  // }
+  /// Frame timing callback to detect jank (only logs slow frames > 50ms)
+  void _onFrameTimings(List<FrameTiming> timings) {
+    for (final t in timings) {
+      final total = t.totalSpan.inMilliseconds;
+      // Only log frames that are significantly slow (> 50ms)
+      if (total > 50) {
+        DebugLog.log(LogCat.perf,
+            'Frame total=${total}ms build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms');
+      }
+    }
+  }
 
   @override
   void dispose() {
-    // Log lifecycle event
-    DebugLog.event(
-      LogCat.lifecycle,
-      'dispose',
-      runId: _runId,
-      fields: {
-        'phase': _phase.name,
-        'isPlaying': _playing,
-        'isRecording': _recording != null,
-        'notesLoaded': _notesLoaded,
-        'notesCount': _transposedNotes.length,
-      },
-    );
-
-    // Reset debug context
-    DebugLog.resetContext();
+    // ignore: avoid_print
+    print('[ExercisePlayerScreen] dispose - cleaning up resources');
 
     // Remove frame timing callback (only if it was added)
     // Frame timing disabled to reduce log spam
@@ -665,17 +624,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (!_isImmediateTick && !_loggedFirstTick) {
       _loggedFirstTick = true;
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      DebugLog.event(
-        LogCat.ui,
-        'ticker_first_tick',
-        runId: _runId,
-        fields: {
-          'nowMs': nowMs,
-          'elapsedMs': elapsed.inMilliseconds,
-          if (_tapEpochMs != null) 'deltaFromTapMs': nowMs - _tapEpochMs!,
-        },
-      );
+      DebugLog.log(
+          LogCat.ui, 'FIRST TICK at $nowMs elapsed=$elapsed runId=$_runId');
       _startTrace?.mark('ticker first tick fired');
+      if (_tapEpochMs != null) {
+        final delayMs = nowMs - _tapEpochMs!;
+        DebugLog.log(LogCat.ui, 'FIRST TICK delay from tap: ${delayMs}ms');
+      }
     }
 
     // Log first tick for instrumentation (but skip if this is the immediate manual call)
@@ -683,14 +638,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _tapEpochMs != null &&
         elapsed.inMilliseconds < 20) {
       final firstTickTime = DateTime.now().millisecondsSinceEpoch;
-      DebugLog.event(
-        LogCat.ui,
-        'ticker_first_tick_early',
-        runId: _runId,
-        fields: {
-          'deltaFromTapMs': firstTickTime - _tapEpochMs!,
-        },
-      );
+      DebugLog.log(
+          LogCat.lifecycle, 'firstTick <= ${firstTickTime - _tapEpochMs!}ms');
     }
     _isImmediateTick = false; // Reset flag after first use
 
@@ -719,35 +668,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           '_playing=$_playing _preparing=$_preparing phase=$_phase '
           'runId=$_runId '
           'lastTime=$_lastTime';
-      DebugLog.tripwire(
-        LogCat.ui,
-        'time_backwards',
-        runId: _runId,
-        fields: {
-          'lastTime': _lastTime,
-          'nowTime': next,
-          'phase': _phase.name,
-          'nowEpochMs': nowEpochMs,
-          'timelineStartEpochMs': _timelineStartEpochMs,
-          'clockTime': clockTime,
-          'audioPositionSec': _audioPositionSec,
-        },
-        message: 'Time went backwards',
-      );
+      DebugLog.tripwire(LogCat.error, 'time_backwards_inputs',
+          message: 'time went backwards: last=$_lastTime now=$next\n$inputs',
+          runId: _runId);
     }
 
     // Monotonic clamp safety: prevent UI from jumping backward even if bug remains
     if (isRunning && next < _time.value) {
-      DebugLog.tripwire(
-        LogCat.ui,
-        'time_backwards_clamped',
-        runId: _runId,
-        fields: {
-          'wouldBe': next,
-          'clampedTo': _time.value,
-        },
-        message: 'Time clamped to prevent backwards jump',
-      );
+      DebugLog.tripwire(LogCat.error, 'time_backwards_clamped',
+          message:
+              'time clamped: would be $next but clamped to ${_time.value} runId=$_runId',
+          runId: _runId);
       next = _time.value; // Clamp to prevent visible restart
     }
 
@@ -862,16 +793,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Log repaint listenable replacement
     // CRITICAL: repaint listenable is always _time (stable, never changes within a run)
-    DebugLog.event(
-      LogCat.lifecycle,
-      'reset_run_state',
-      runId: _runId,
-      fields: {
-        'repaintListenable': _time.hashCode,
-        'timeNotifier': _time.hashCode,
-        'liveMidiNotifier': _liveMidi.hashCode,
-      },
-    );
+    DebugLog.log(LogCat.lifecycle,
+        'Run state cleared, runId=$_runId, repaintListenable=${_time.hashCode}');
+
+    // Log model/notifier identities (if we had a model, but we use ValueNotifiers directly)
+    DebugLog.log(LogCat.lifecycle,
+        'timeNotifier=${_time.hashCode} liveMidiNotifier=${_liveMidi.hashCode}');
+
+    // Log that scroll/time are reset (should only happen here)
+    DebugLog.log(LogCat.lifecycle, 'scroll/time reset to 0 (runId=$_runId)');
 
     // Reset time tracking for backwards detection
     _lastTime = 0.0;
@@ -881,12 +811,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void _setTimeValue(double v, {required String src}) {
     if (v == 0.0 && _playing) {
       DebugLog.tripwire(
-        LogCat.ui,
-        'time_reset',
-        runId: _runId,
-        fields: {'src': src, 'wasPlaying': _playing},
-        message: 'Time reset to 0 while playing',
-      );
+          LogCat.lifecycle, 'time reset to 0 src=$src runId=$_runId');
     }
     _time.value = v;
   }
@@ -899,33 +824,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _timelineStartEpochMs != null &&
         _timelineStartEpochMs != v) {
       // This is a bug - timeline anchor should never change after start
-      DebugLog.tripwire(
-        LogCat.ui,
-        'timeline_changed',
-        runId: _runId,
-        fields: {
-          'oldValue': _timelineStartEpochMs,
-          'newValue': v,
-          'src': src,
-        },
-        message: 'Timeline anchor changed after start',
-      );
+      DebugLog.tripwire(LogCat.error, 'timeline_changed',
+          message:
+              'timelineStartEpochMs CHANGED from $_timelineStartEpochMs to $v src=$src runId=$_runId',
+          runId: _runId);
     } else if (v != null && _playing) {
       // Setting timeline anchor while playing is also a bug
-      DebugLog.tripwire(
-        LogCat.ui,
-        'timeline_set_while_playing',
-        runId: _runId,
-        fields: {'value': v, 'src': src},
-        message: 'Timeline anchor set while playing',
-      );
+      DebugLog.tripwire(LogCat.error, 'timeline_set_while_playing',
+          message:
+              'timelineStartEpochMs set to $v src=$src runId=$_runId WHILE PLAYING',
+          runId: _runId);
     } else if (v != null) {
-      DebugLog.event(
-        LogCat.lifecycle,
-        'timeline_set',
-        runId: _runId,
-        fields: {'value': v, 'src': src},
-      );
+      DebugLog.event(LogCat.lifecycle, 'timeline_set',
+          runId: _runId, fields: {'value': v, 'src': src});
     }
     _timelineStartEpochMs = v;
   }
@@ -933,24 +844,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   /// Tripwire: Set pitch highway key with source tracking
   void _setPitchHighwayKey(Key key, {required String src}) {
     if (_pitchHighwayKey != null && _pitchHighwayKey != key && _playing) {
-      DebugLog.tripwire(
-        LogCat.ui,
-        'key_changed',
-        runId: _runId,
-        fields: {
-          'oldKey': _pitchHighwayKey.toString(),
-          'newKey': key.toString(),
-          'src': src,
-        },
-        message: 'Pitch highway key changed while playing',
-      );
+      DebugLog.tripwire(LogCat.error, 'key_changed',
+          message:
+              'pitchHighwayKey CHANGED from $_pitchHighwayKey to $key src=$src runId=$_runId',
+          runId: _runId);
     } else if (_pitchHighwayKey != key) {
-      DebugLog.event(
-        LogCat.lifecycle,
-        'key_set',
-        runId: _runId,
-        fields: {'key': key.toString(), 'src': src},
-      );
+      DebugLog.event(LogCat.lifecycle, 'key_set',
+          runId: _runId, fields: {'key': key.toString(), 'src': src});
     }
     _pitchHighwayKey = key;
   }
@@ -958,29 +858,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   /// Called immediately when user taps Start - no awaits, instant UI response
   void onStartPressed() {
     if (isStarting || isRunning || _phase == StartPhase.stopping) {
-      DebugLog.event(
-        LogCat.lifecycle,
-        'start_ignored',
-        runId: _runId,
-        fields: {'phase': _phase.name},
-      );
+      debugPrint('[Start] Ignored - phase=$_phase');
       return;
     }
 
     final tapTime = DateTime.now();
     final t0 = tapTime.millisecondsSinceEpoch;
-
-    // Log start pressed event
-    DebugLog.event(
-      LogCat.lifecycle,
-      'start_pressed',
-      runId: _runId + 1, // Next runId
-      fields: {
-        'tapEpochMs': t0,
-        'leadInSec': _leadInSec,
-        'expectedFirstAudibleSec': _leadInSec,
-      },
-    );
+    debugPrint('[Start] tap at $t0');
 
     // Create performance trace for this start
     final trace = PerfTrace('StartExercise runId=${_runId + 1}');
@@ -1003,35 +887,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       _startedAt = tapTime;
       _phase = StartPhase
           .starting; // Set phase to starting - stays true until audio plays
+      DebugLog.event(LogCat.lifecycle, 'phase_starting',
+          runId: _runId, fields: {'tap': t0});
     });
 
-    // Update debug context with new runId
-    DebugLog.setContext(
-      runId: _runId,
-      exerciseId: widget.exercise.id,
-      mode: 'exercise',
-    );
-
-    // Log state after reset
-    DebugLog.event(
-      LogCat.lifecycle,
-      'start_state_reset',
-      runId: _runId,
-      fields: {
-        'timelineStartEpochMs': timelineStartMs,
-        'timeValue': _time.value,
-        'notesLoaded': _notesLoaded,
-        'notesCount': _transposedNotes.length,
-        if (_transposedNotes.isNotEmpty)
-          'firstNoteStartSec': _transposedNotes.first.startSec,
-        if (_transposedNotes.isNotEmpty)
-          'firstNoteMidi': _transposedNotes.first.midi.round(),
-        if (_transposedNotes.isNotEmpty)
-          'lastNoteEndSec': _transposedNotes.last.endSec,
-      },
-    );
-
     trace.mark('after reset setState');
+    debugPrint('[Start] AFTER setState runId=$_runId phase=$_phase');
 
     // Start visuals immediately (no awaits) - idempotent, will only start once
     _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
@@ -1069,27 +930,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // CRITICAL: Timeline anchor should already be set in onStartPressed
     // Only set it here if it's somehow not set (shouldn't happen)
     if (_timelineStartEpochMs == null) {
-      DebugLog.tripwire(
-        LogCat.ui,
-        'timeline_missing',
-        runId: runId,
-        fields: {'startEpochMs': startEpochMs},
-        message: 'Timeline anchor was null in _ensureVisualsStarted',
-      );
+      DebugLog.tripwire(LogCat.error, 'timeline_missing',
+          message:
+              'timelineStartEpochMs was null in _ensureVisualsStarted, setting to $startEpochMs runId=$runId',
+          runId: runId);
       _setTimelineStartEpochMs(startEpochMs,
           src: '_ensureVisualsStarted_fallback');
     } else if (_timelineStartEpochMs != startEpochMs) {
       // This is a bug - anchor should match what was set in onStartPressed
-      DebugLog.tripwire(
-        LogCat.ui,
-        'timeline_mismatch',
-        runId: runId,
-        fields: {
-          'stored': _timelineStartEpochMs,
-          'passed': startEpochMs,
-        },
-        message: 'Timeline anchor mismatch',
-      );
+      DebugLog.tripwire(LogCat.error, 'timeline_mismatch',
+          message:
+              'timelineStartEpochMs mismatch: stored=$_timelineStartEpochMs passed=$startEpochMs runId=$runId',
+          runId: runId);
     }
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -1101,20 +953,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
 
     // Tripwire: detect clock restart
-    DebugLog.event(
-      LogCat.lifecycle,
-      'clock_start',
-      runId: runId,
-      fields: {'offsetSec': 0.0},
-    );
+    DebugLog.event(LogCat.lifecycle, 'clock_start', runId: runId);
     _clock.start(offsetSec: 0.0, freezeUntilAudio: false);
 
     // Tripwire: detect ticker restart
-    DebugLog.event(
-      LogCat.lifecycle,
-      'ticker_start',
-      runId: runId,
-    );
+    DebugLog.event(LogCat.lifecycle, 'ticker_start', runId: runId);
     _ticker?.start();
 
     // Log post-frame after ticker.start()
@@ -1206,17 +1049,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _sub = _recording?.liveStream.listen((frame) {
           // Ignore stale data from previous runs
           if (localRunId != _runId) {
-            DebugLog.log(
-              LogCat.recorder,
-              'stale_pitch_frame',
-              key: 'stale_pitch_frame',
-              throttleMs: 1000,
-              runId: _runId,
-              extraMap: {
-                'localRunId': localRunId,
-                'currentRunId': _runId,
-              },
-            );
+            DebugLog.log(LogCat.recorder,
+                '[Stale] ignored pitch frame from runId=$localRunId current=$_runId',
+                key: 'stale_pitch_frame', throttleMs: 1000, runId: localRunId);
             return;
           }
           if (!_captureEnabled) return;
@@ -1288,27 +1123,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
         final maxEndSec =
             notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
-        DebugLog.event(
-          LogCat.audio,
-          'building_notes',
-          runId: runId,
-          fields: {
-            'count': notes.length,
-            'minStartSec': minStartSec,
-            'maxEndSec': maxEndSec,
-          },
-        );
+        DebugLog.log(LogCat.audio,
+            'Building notes: count=${notes.length}, minStartSec=$minStartSec, maxEndSec=$maxEndSec');
+        DebugLog.log(LogCat.audio, 'First 3 notes:');
+        for (var i = 0; i < notes.length && i < 3; i++) {
+          final n = notes[i];
+          DebugLog.log(LogCat.audio,
+              '  note[$i]: startSec=${n.startSec}, durationSec=${n.endSec - n.startSec}, midi=${n.midi}');
+        }
         // Check if lead-in is in note timestamps
         final leadInSec = _leadInSec;
-        DebugLog.event(
-          LogCat.audio,
-          'lead_in_check',
-          runId: runId,
-          fields: {
-            'leadInSec': leadInSec,
-            'firstNoteStartSec': minStartSec,
-          },
-        );
+        DebugLog.log(LogCat.audio, 'leadInSec=$leadInSec (from _leadInSec)');
+        DebugLog.log(LogCat.audio,
+            'First note startSec=$minStartSec (should be ~$leadInSec if lead-in applied)');
       }
 
       if (notes.isEmpty) {
@@ -1364,69 +1191,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           }
         }
 
-        // Octave tripwire validation: check for +12 semitone shift
-        if (notes.isNotEmpty) {
-          final firstNote = notes.first;
-          final scheduledMidi = firstNote.midi.round();
-          final noteName = PitchMath.midiToName(scheduledMidi);
-          final hz = 440.0 * math.pow(2.0, (scheduledMidi - 69) / 12.0);
-
-          // Get expected MIDI from the same source as review (for comparison)
-          // This should match what review playback uses
-          final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-          final expectedNotes = widget.exercise.id == 'sirens'
-              ? TransposedExerciseBuilder.buildSirensWithVisualPath(
-                  exercise: widget.exercise,
-                  lowestMidi: lowestMidi,
-                  highestMidi: highestMidi,
-                  leadInSec: _leadInSec,
-                  difficulty: widget.pitchDifficulty,
-                ).audioNotes
-              : TransposedExerciseBuilder.buildTransposedSequence(
-                  exercise: widget.exercise,
-                  lowestMidi: lowestMidi,
-                  highestMidi: highestMidi,
-                  leadInSec: _leadInSec,
-                  difficulty: widget.pitchDifficulty,
-                );
-
-          if (expectedNotes.isNotEmpty) {
-            final expectedMidi = expectedNotes.first.midi.round();
-            final expectedNoteName = PitchMath.midiToName(expectedMidi);
-            final midiDiff = (scheduledMidi - expectedMidi).abs();
-
-            debugPrint('[OctaveTripwire] EXERCISE playback: '
-                'exerciseId=${widget.exercise.id}, difficulty=${widget.pitchDifficulty}, runId=$runId, '
-                'scheduledMidi=$scheduledMidi ($noteName), hz=${hz.toStringAsFixed(1)}, '
-                'expectedMidi=$expectedMidi ($expectedNoteName), diff=$midiDiff semitones');
-
-            // Tripwire: detect exactly +12 semitone shift
-            if (midiDiff == 12) {
-              final spec = _scaledSpec;
-              final baseRootMidi = spec?.segments.first.midiNote ?? 0;
-              debugPrint('[OctaveTripwire] ⚠️ OCTAVE SHIFT DETECTED: '
-                  'exerciseId=${widget.exercise.id}, runId=$runId, '
-                  'difficulty=${widget.pitchDifficulty}, '
-                  'baseRootMidi=$baseRootMidi, '
-                  'lowestMidi=$lowestMidi, highestMidi=$highestMidi, '
-                  'expectedMidi=$expectedMidi ($expectedNoteName), '
-                  'scheduledMidi=$scheduledMidi ($noteName), '
-                  'shift=+${midiDiff} semitones (one octave too high)');
-              // Stack trace for debugging
-              debugPrint('[OctaveTripwire] Stack trace: ${StackTrace.current}');
-            }
-          }
-        }
-
         // Schedule notes with lead-in delay (lead-in is in MIDI timestamps, but we pass it for timing)
-        // Use exercise config to ensure consistent audio pipeline
-        final exerciseConfig = MidiPlaybackConfig.exercise();
         await _referenceMidiSynth.playSequence(
           notes: notes,
           leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
           runId: runId,
           startEpochMs: timelineStartMs,
-          config: exerciseConfig,
         );
 
         dev.Timeline.finishSync();
@@ -1451,12 +1221,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             _phase = StartPhase.running;
             _captureEnabled = true;
           });
-          DebugLog.event(
-            LogCat.lifecycle,
-            'phase_running',
-            runId: runId,
-            fields: {'elapsedFromTapMs': elapsedFromTap},
-          );
+          DebugLog.event(LogCat.lifecycle, 'phase_running',
+              runId: runId, fields: {'elapsedFromTap': elapsedFromTap});
           trace.mark('set running');
         }
       } catch (e) {
@@ -1470,11 +1236,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             _captureEnabled = true;
             // Audio will be disabled implicitly
           });
-          DebugLog.event(
-            LogCat.lifecycle,
-            'phase_running_audio_failed',
-            runId: runId,
-          );
+          DebugLog.event(LogCat.lifecycle, 'phase_running_audio_failed',
+              runId: runId);
         }
       }
       trace.end();
@@ -1494,12 +1257,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start exercise: $e')),
         );
-        DebugLog.event(
-          LogCat.lifecycle,
-          'phase_idle_error',
-          runId: runId,
-          fields: {'error': e.toString()},
-        );
+        DebugLog.event(LogCat.error, 'phase_idle_error',
+            runId: runId, fields: {'error': e.toString()});
       }
     }
   }
@@ -1512,11 +1271,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     setState(() {
       _phase = StartPhase.stopping;
     });
-    DebugLog.event(
-      LogCat.lifecycle,
-      'phase_stopping',
-      runId: _runId,
-    );
+    DebugLog.event(LogCat.lifecycle, 'phase_stopping', runId: _runId);
     _endPrepCountdown();
     _captureEnabled = false;
     _ticker?.stop();
@@ -1548,11 +1303,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     setState(() {
       _phase = StartPhase.done;
     });
-    DebugLog.event(
-      LogCat.lifecycle,
-      'phase_done',
-      runId: _runId,
-    );
+    DebugLog.event(LogCat.lifecycle, 'phase_done', runId: _runId);
     await _completeAndPop(score, {'intonation': score});
   }
 
@@ -1638,11 +1389,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final baseRootMidi =
           spec.segments.first.startMidi ?? spec.segments.first.midiNote;
 
-      // Special handling for octave slides and NG slides: combine bottom note + silence + top note into one segment
+      // Special handling for octave slides: combine bottom note + silence + top note into one segment
       final isOctaveSlides = widget.exercise.id == 'octave_slides';
-      final isNgSlides = widget.exercise.id == 'ng_slides';
 
-      if (isOctaveSlides || isNgSlides) {
+      if (isOctaveSlides) {
         // For octave slides, detect pairs of notes that are ~12 semitones apart
         // Pattern: bottom note, ~1s gap, top note (12 semitones higher), then repeat
         var segmentIndex = 0;
@@ -1652,30 +1402,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           final bottomNote = notes[i];
           final bottomMidi = bottomNote.midi.round();
 
-          // Look ahead for the top note
-          // For octave slides: ~12 semitones higher, ~1s gap
-          // For NG slides: any higher note, ~1s gap
+          // Look ahead for the top note (should be ~12 semitones higher and start after ~1s gap)
           int? topNoteIndex;
           for (var j = i + 1; j < notes.length; j++) {
             final candidate = notes[j];
             final gap = candidate.startSec - bottomNote.endSec;
             final midiDiff = candidate.midi.round() - bottomMidi;
 
-            if (isOctaveSlides) {
-              // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
-              if (gap >= 0.8 &&
-                  gap <= 1.2 &&
-                  midiDiff >= 11 &&
-                  midiDiff <= 13) {
-                topNoteIndex = j;
-                break;
-              }
-            } else if (isNgSlides) {
-              // Top note should be higher and start after ~0.8-1.2s gap
-              if (gap >= 0.8 && gap <= 1.2 && midiDiff > 0) {
-                topNoteIndex = j;
-                break;
-              }
+            // Top note should be ~12 semitones higher and start after ~0.8-1.2s gap
+            if (gap >= 0.8 && gap <= 1.2 && midiDiff >= 11 && midiDiff <= 13) {
+              topNoteIndex = j;
+              break;
             }
 
             // If we've gone too far (gap > 1.5s or different transposition), stop looking
@@ -2038,10 +1775,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Update MIDI range if we have notes
     if (notes.isNotEmpty) {
       final midiValues = notes.map((n) => n.midi).toList();
-      // Use floor/ceil to ensure we capture all notes, including fractional values
-      // Add extra padding (6 semitones) to ensure notes aren't cut off at screen edges
-      final minMidi = (midiValues.reduce(math.min).floor() - 6).clamp(36, 127);
-      final maxMidi = (midiValues.reduce(math.max).ceil() + 6).clamp(36, 127);
+      final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
+      final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
       _midiMin = minMidi;
       _midiMax = maxMidi;
     }
@@ -2132,52 +1867,30 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                         if (_lastModelHash != null &&
                             _lastModelHash != modelHash &&
                             _playing) {
-                          DebugLog.tripwire(
-                            LogCat.ui,
-                            'model_changed',
-                            runId: _runId,
-                            fields: {
-                              'oldHash': _lastModelHash,
-                              'newHash': modelHash,
-                            },
-                            message: 'Model hash changed during playback',
-                          );
+                          DebugLog.tripwire(LogCat.error, 'model_changed',
+                              message:
+                                  'modelHash CHANGED from $_lastModelHash to $modelHash runId=$_runId',
+                              runId: _runId);
                         }
                         // Tripwire: repaintHash should always equal _time.hashCode and never change mid-run
                         if (_lastRepaintHash != null &&
                             _lastRepaintHash != repaintHash &&
                             _playing) {
-                          DebugLog.tripwire(
-                            LogCat.ui,
-                            'repaint_changed',
-                            runId: _runId,
-                            fields: {
-                              'oldHash': _lastRepaintHash,
-                              'newHash': repaintHash,
-                              'expectedHash': modelHash,
-                            },
-                            message: 'Repaint hash changed during playback',
-                          );
+                          DebugLog.tripwire(LogCat.error, 'repaint_changed',
+                              message:
+                                  'repaintHash CHANGED from $_lastRepaintHash to $repaintHash runId=$_runId (expected=$modelHash)',
+                              runId: _runId);
                         }
                         // Assert: repaintHash must equal _time.hashCode
                         if (repaintHash != modelHash) {
-                          DebugLog.tripwire(
-                            LogCat.ui,
-                            'repaint_mismatch',
-                            runId: _runId,
-                            fields: {
-                              'repaintHash': repaintHash,
-                              'modelHash': modelHash,
-                            },
-                            message: 'Repaint hash mismatch',
-                          );
+                          DebugLog.tripwire(LogCat.error, 'repaint_mismatch',
+                              message:
+                                  'repaintHash ($repaintHash) != modelHash ($modelHash) runId=$_runId',
+                              runId: _runId);
                         }
 
                         _lastModelHash = modelHash;
                         _lastRepaintHash = repaintHash;
-
-                        // Log build rate (throttled)
-                        // Build rate logging disabled to reduce spam
 
                         return CustomPaint(
                           painter: PitchHighwayPainter(

@@ -226,7 +226,7 @@ class ReferenceMidiSynth {
   /// Stop playback immediately
   /// Cancels all scheduled timers and stops all active notes
   Future<void> stop() async {
-    if (!_isPlaying && _activeNotes.isEmpty) return;
+    if (!_isPlaying && _activeNotes.isEmpty && _notesForAudioPosition == null) return;
 
     _isPlaying = false;
     final timerCount = _activeTimers.length;
@@ -250,6 +250,10 @@ class ReferenceMidiSynth {
       }
     }
 
+    // Clear audio-position-based playback state
+    _notesForAudioPosition = null;
+    _notesPlayedForAudioPosition.clear();
+
     debugPrint(
         '[ReferenceMidiSynth] Stopped playback (cancelled $timerCount timers, stopped $activeNoteCount active notes)');
   }
@@ -259,4 +263,151 @@ class ReferenceMidiSynth {
 
   /// Get current run ID (for debugging)
   int? get currentRunId => _currentRunId;
+
+  /// Play a sequence of reference notes synchronized to audio position
+  /// This method is used for review playback where audio position is available
+  /// 
+  /// [notes] - List of reference notes to play
+  /// [runId] - Run ID to guard against stale callbacks
+  /// [config] - MIDI playback configuration (defaults to exercise config)
+  /// 
+  /// Notes are triggered when updateAudioPosition() is called with audio position >= note.startSec.
+  /// This ensures perfect synchronization with recorded audio playback.
+  void playSequenceWithAudioPosition({
+    required List<ReferenceNote> notes,
+    required int runId,
+    MidiPlaybackConfig? config,
+  }) {
+    final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
+    if (notes.isEmpty) {
+      debugPrint('[ReferenceMidiSynth] No notes to play (audio-position mode)');
+      return;
+    }
+
+    // Stop any existing playback
+    stop();
+
+    // Ensure initialized with the correct SoundFont
+    init(config: effectiveConfig).then((_) {
+      if (_sfId == null) {
+        debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
+        return;
+      }
+
+      // Set current run ID and reset state
+      _currentRunId = runId;
+      _isPlaying = true;
+      _activeNotes.clear();
+
+      // Store notes for checking
+      _notesForAudioPosition = notes;
+      _notesPlayedForAudioPosition = <int>{};
+
+      debugPrint(
+          '[ReferenceMidiSynth] Playing sequence with audio position: ${notes.length} notes, '
+          'firstNote=${notes.first.midi}@${notes.first.startSec.toStringAsFixed(2)}s, '
+          'runId=$runId');
+    });
+  }
+
+  // State for audio-position-based playback
+  List<ReferenceNote>? _notesForAudioPosition;
+  Set<int> _notesPlayedForAudioPosition = {}; // Track which note indices have been played
+
+  /// Check audio position and trigger MIDI notes that should play now
+  /// Call this periodically (e.g., from audio position stream callback)
+  void updateAudioPosition(double audioTimeSec, int runId) {
+    if (!_isPlaying || _currentRunId != runId || _notesForAudioPosition == null) {
+      return;
+    }
+
+    final notes = _notesForAudioPosition!;
+    
+    // Check each note to see if it should play now
+    for (int i = 0; i < notes.length; i++) {
+      if (_notesPlayedForAudioPosition.contains(i)) {
+        continue; // Already played
+      }
+
+      final note = notes[i];
+      
+      // Calculate note duration to distinguish endpoint markers from full notes
+      final noteDuration = note.endSec - note.startSec;
+      
+      // Skip only endpoint markers (very short notes < 0.05s) that are marked as glides
+      if ((note.isGlideStart || note.isGlideEnd) && noteDuration < 0.05) {
+        _notesPlayedForAudioPosition.add(i); // Mark as "played" (skipped)
+        continue;
+      }
+
+      // Check if note should start now (with small tolerance for timing)
+      if (audioTimeSec >= note.startSec - 0.01) {
+        // Play noteOn
+        try {
+          _midi.playMidiNote(midi: note.midi, velocity: _defaultVelocity);
+          _activeNotes.add(note.midi);
+          _notesPlayedForAudioPosition.add(i);
+          
+          if (i == 0) {
+            debugPrint(
+                '[ReferenceMidiSynth] First note ON (audio-position): MIDI=${note.midi} '
+                'at audioTime=${audioTimeSec.toStringAsFixed(3)}s, scheduled=${note.startSec.toStringAsFixed(3)}s');
+          }
+        } catch (e) {
+          debugPrint('[ReferenceMidiSynth] Error playing note ${note.midi}: $e');
+        }
+      }
+
+      // Check if note should end now (for notes that have already started)
+      if (_activeNotes.contains(note.midi) && audioTimeSec >= note.endSec - 0.01) {
+        try {
+          _midi.stopMidiNote(midi: note.midi, velocity: 127);
+          _activeNotes.remove(note.midi);
+        } catch (e) {
+          debugPrint('[ReferenceMidiSynth] Error stopping note ${note.midi}: $e');
+        }
+      }
+    }
+  }
+
+  /// Play a sharp click sound (high-pitched, short duration MIDI note)
+  /// Used for sync diagnostics to create a detectable event in recorded audio
+  /// 
+  /// [midiNote] - MIDI note number (default: 108 = C8, very high pitch)
+  /// [velocity] - Note velocity (default: 127 = maximum)
+  /// [durationMs] - Duration in milliseconds (default: 20ms)
+  /// [runId] - Run ID for cancellation guards
+  Future<void> playClick({
+    int midiNote = 108, // C8
+    int velocity = 127,
+    int durationMs = 20,
+    required int runId,
+  }) async {
+    if (_sfId == null || !_initialized) {
+      debugPrint('[ReferenceMidiSynth] Cannot play click: not initialized');
+      return;
+    }
+
+    try {
+      // Play note on
+      _midi.playMidiNote(midi: midiNote, velocity: velocity);
+      _activeNotes.add(midiNote);
+
+      // Schedule note off after duration
+      Timer(Duration(milliseconds: durationMs), () {
+        if (_currentRunId == runId && _activeNotes.contains(midiNote)) {
+          try {
+            _midi.stopMidiNote(midi: midiNote, velocity: 127);
+            _activeNotes.remove(midiNote);
+          } catch (e) {
+            debugPrint('[ReferenceMidiSynth] Error stopping click note: $e');
+          }
+        }
+      });
+
+      debugPrint('[ReferenceMidiSynth] Click played: MIDI=$midiNote, velocity=$velocity, duration=${durationMs}ms');
+    } catch (e) {
+      debugPrint('[ReferenceMidiSynth] Error playing click: $e');
+    }
+  }
 }

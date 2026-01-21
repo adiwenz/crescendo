@@ -126,7 +126,7 @@ class RecordingService {
     });
   }
 
-  Future<RecordingResult> stop() async {
+  Future<RecordingResult> stop({String? customPath}) async {
     if (!_isRecording) return RecordingResult('', const []);
     debugPrint('[RecordingService] Stopping recording (owner: $_owner)...');
     debugPrint('[RecordingService] Mic stopped - reason: normal stop');
@@ -145,7 +145,7 @@ class RecordingService {
     debugPrint('[RecordingService] Released microphone access');
 
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final path = customPath ?? p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
     final floats = Float64List.fromList(_samples);
     final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
     final bytes = wav.write();

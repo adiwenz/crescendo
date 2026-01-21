@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../design/app_text.dart';
 import '../../models/exercise.dart';
 import '../../screens/explore/exercise_preview_screen.dart';
 import '../../services/daily_exercise_service.dart';
+import '../../services/sync_diagnostic_service.dart';
 import '../../state/library_store.dart';
 import '../../widgets/home/home_category_banner_row.dart';
 import 'styles.dart';
@@ -95,12 +97,145 @@ class _HomeScreenState extends State<HomeScreen> {
                       exercises: _dailyExercises,
                       isLoading: _isLoading,
                     ),
+                    // Debug section (only in debug mode)
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 24),
+                      _DebugSection(),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Debug section with sync diagnostic button
+/// 
+/// How to use:
+/// 1. Tap "Run Sync Diagnostic" button
+/// 2. Test runs: 2s lead-in, then plays a sharp click at t=2.0s, records for 5s total
+/// 3. After recording, analyzes WAV to find click onset
+/// 4. Computes offsetMs = detectedClickMs - scheduledClickMs (2000ms)
+/// 5. Saves offsetMs to SharedPreferences for use in review playback compensation
+/// 
+/// Interpreting offsetMs:
+/// - Positive offsetMs: recorded audio is LATE relative to scheduled reference (MIDI plays too early)
+/// - Negative offsetMs: recorded audio is EARLY relative to scheduled reference (MIDI plays too late)
+/// - Typical values: 0-100ms (good sync), 100-300ms (noticeable drift), >300ms (significant issue)
+class _DebugSection extends StatefulWidget {
+  const _DebugSection();
+
+  @override
+  State<_DebugSection> createState() => _DebugSectionState();
+}
+
+class _DebugSectionState extends State<_DebugSection> {
+  bool _running = false;
+  String? _statusMessage;
+  int? _savedOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedOffset();
+  }
+
+  Future<void> _loadSavedOffset() async {
+    final offset = await SyncDiagnosticService.getSavedOffset();
+    if (mounted) {
+      setState(() {
+        _savedOffset = offset;
+      });
+    }
+  }
+
+  Future<void> _runDiagnostic() async {
+    if (_running) return;
+
+    setState(() {
+      _running = true;
+      _statusMessage = 'Running diagnostic...';
+    });
+
+    try {
+      final offsetMs = await SyncDiagnosticService.runDiagnostic();
+      
+      if (mounted) {
+        setState(() {
+          _running = false;
+          if (offsetMs != null) {
+            _statusMessage = 'Offset: ${offsetMs}ms';
+            _savedOffset = offsetMs;
+          } else {
+            _statusMessage = 'Diagnostic failed - check logs';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _running = false;
+          _statusMessage = 'Error: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _clearOffset() async {
+    await SyncDiagnosticService.clearSavedOffset();
+    if (mounted) {
+      setState(() {
+        _savedOffset = null;
+        _statusMessage = 'Offset cleared';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Debug Tools',
+            style: AppText.h2.copyWith(color: Colors.red.shade700),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: _running ? null : _runDiagnostic,
+            child: Text(_running ? 'Running...' : 'Run Sync Diagnostic'),
+          ),
+          if (_savedOffset != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Saved offset: ${_savedOffset}ms',
+              style: AppText.body.copyWith(fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: _clearOffset,
+              child: const Text('Clear Offset'),
+            ),
+          ],
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _statusMessage!,
+              style: AppText.body.copyWith(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ],
+        ],
       ),
     );
   }
