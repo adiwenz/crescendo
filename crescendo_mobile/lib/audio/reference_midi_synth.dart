@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 import '../models/reference_note.dart';
 import 'midi_playback_config.dart';
+import '../services/ios_audio_session_service.dart';
 
 /// Real-time MIDI synthesizer for reference audio playback using flutter_midi_pro
 /// Plays MIDI notes directly without rendering to WAV files
@@ -23,8 +24,18 @@ class ReferenceMidiSynth {
   /// Initialize flutter_midi_pro and load SoundFont (idempotent)
   /// Should be called once at app startup or once per screen lifetime
   /// [config] - MIDI playback configuration (if provided, ensures correct SoundFont is loaded)
-  Future<void> init({MidiPlaybackConfig? config}) async {
+  /// [force] - If true, force reinitialization even if already initialized (useful after route changes)
+  Future<void> init({MidiPlaybackConfig? config, bool force = false}) async {
     final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
+    
+    // If forcing reinit, clear state first
+    if (force) {
+      _initialized = false;
+      _sfId = null;
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiSynth] Force reinitializing MIDI engine (likely due to route change)');
+      }
+    }
     
     // If already initialized with the same SoundFont, skip
     if (_initialized && _sfId != null) {
@@ -65,6 +76,7 @@ class ReferenceMidiSynth {
   /// [runId] - Run ID to guard against stale callbacks (must match current runId)
   /// [startEpochMs] - Timeline anchor epoch in milliseconds (for logging/debugging)
   /// [config] - MIDI playback configuration (defaults to exercise config)
+  /// [offsetMs] - Additional offset in milliseconds to delay all notes (for sync compensation)
   /// 
   /// Notes are scheduled relative to the current time, using the startEpochMs
   /// as a reference point for logging purposes only. Actual playback timing
@@ -75,6 +87,7 @@ class ReferenceMidiSynth {
     required int runId,
     int? startEpochMs,
     MidiPlaybackConfig? config,
+    int offsetMs = 0,
   }) async {
     final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
     if (notes.isEmpty) {
@@ -149,12 +162,12 @@ class ReferenceMidiSynth {
 
       // Calculate absolute times relative to timeline anchor epoch
       // Notes have startSec that includes lead-in, so we schedule them at:
-      // timelineAnchorMs + (note.startSec * 1000) - delayFromAnchorMs
-      // This ensures notes play when the timeline reaches their startSec time
+      // timelineAnchorMs + (note.startSec * 1000) - delayFromAnchorMs + offsetMs
+      // This ensures notes play when the timeline reaches their startSec time, with optional offset compensation
       final noteStartMsFromAnchor = (note.startSec * 1000).round();
       final noteEndMsFromAnchor = (note.endSec * 1000).round();
-      final noteStartMs = noteStartMsFromAnchor - delayFromAnchorMs;
-      final noteEndMs = noteEndMsFromAnchor - delayFromAnchorMs;
+      final noteStartMs = noteStartMsFromAnchor - delayFromAnchorMs + offsetMs;
+      final noteEndMs = noteEndMsFromAnchor - delayFromAnchorMs + offsetMs;
       
       // Guard against negative delays (shouldn't happen if notes have correct startSec)
       // If noteStartMs is negative, it means the note should have already played,
@@ -253,6 +266,7 @@ class ReferenceMidiSynth {
     // Clear audio-position-based playback state
     _notesForAudioPosition = null;
     _notesPlayedForAudioPosition.clear();
+    _activeNoteIndexByMidi.clear();
 
     debugPrint(
         '[ReferenceMidiSynth] Stopped playback (cancelled $timerCount timers, stopped $activeNoteCount active notes)');
@@ -273,11 +287,11 @@ class ReferenceMidiSynth {
   /// 
   /// Notes are triggered when updateAudioPosition() is called with audio position >= note.startSec.
   /// This ensures perfect synchronization with recorded audio playback.
-  void playSequenceWithAudioPosition({
+  Future<void> playSequenceWithAudioPosition({
     required List<ReferenceNote> notes,
     required int runId,
     MidiPlaybackConfig? config,
-  }) {
+  }) async {
     final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
     if (notes.isEmpty) {
       debugPrint('[ReferenceMidiSynth] No notes to play (audio-position mode)');
@@ -285,48 +299,114 @@ class ReferenceMidiSynth {
     }
 
     // Stop any existing playback
-    stop();
+    await stop();
 
-    // Ensure initialized with the correct SoundFont
-    init(config: effectiveConfig).then((_) {
-      if (_sfId == null) {
-        debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
-        return;
-      }
+    // Ensure iOS audio session is configured for MIDI playback (especially with headphones)
+    // This must be called BEFORE initializing the SoundFont/engine
+    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'midi_playback');
 
-      // Set current run ID and reset state
-      _currentRunId = runId;
-      _isPlaying = true;
-      _activeNotes.clear();
+    // Force reinitialize the MIDI engine to ensure it picks up the new audio session configuration
+    // This is especially important after route changes (headphones connect/disconnect)
+    await init(config: effectiveConfig, force: true);
+    if (_sfId == null) {
+      debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
+      return;
+    }
 
-      // Store notes for checking
-      _notesForAudioPosition = notes;
-      _notesPlayedForAudioPosition = <int>{};
+    // Set current run ID and reset state
+    _currentRunId = runId;
+    _isPlaying = true;
+    _activeNotes.clear();
+    _activeNoteIndexByMidi.clear();
 
-      debugPrint(
-          '[ReferenceMidiSynth] Playing sequence with audio position: ${notes.length} notes, '
-          'firstNote=${notes.first.midi}@${notes.first.startSec.toStringAsFixed(2)}s, '
-          'runId=$runId');
-    });
+    // Store notes for checking
+    _notesForAudioPosition = notes;
+    _notesPlayedForAudioPosition = <int>{};
+
+    debugPrint(
+        '[ReferenceMidiSynth] Playing sequence with audio position: ${notes.length} notes, '
+        'firstNote=${notes.first.midi}@${notes.first.startSec.toStringAsFixed(2)}s, '
+        'runId=$runId, initialized=true');
   }
 
   // State for audio-position-based playback
   List<ReferenceNote>? _notesForAudioPosition;
   Set<int> _notesPlayedForAudioPosition = {}; // Track which note indices have been played
+  final Map<int, int> _activeNoteIndexByMidi = {}; // Map MIDI note -> note index that started it (to handle duplicate MIDI notes)
+  final Map<String, int> _lastMidNotReadyLog = {}; // Throttle debug logs for updateAudioPosition
+  int _updateAudioPositionCallCount = 0; // Track calls for debug logging
 
   /// Check audio position and trigger MIDI notes that should play now
   /// Call this periodically (e.g., from audio position stream callback)
   void updateAudioPosition(double audioTimeSec, int runId) {
-    if (!_isPlaying || _currentRunId != runId || _notesForAudioPosition == null) {
+    // Log first few calls to verify this method is being invoked
+    _updateAudioPositionCallCount++;
+    if (_updateAudioPositionCallCount <= 5) {
+      debugPrint('[ReferenceMidiSynth] updateAudioPosition CALLED #$_updateAudioPositionCallCount: audioTimeSec=${audioTimeSec.toStringAsFixed(3)}, runId=$runId, _isPlaying=$_isPlaying, _currentRunId=$_currentRunId, _sfId=${_sfId != null ? "loaded" : "null"}, notesCount=${_notesForAudioPosition?.length ?? 0}');
+    }
+    
+    if (!_isPlaying || _currentRunId != runId || _notesForAudioPosition == null || _sfId == null) {
+      if (kDebugMode && _notesForAudioPosition != null && _notesForAudioPosition!.isNotEmpty) {
+        // Log why MIDI isn't playing (throttled to avoid spam)
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final key = 'midi_not_ready_$runId';
+        if (!_lastMidNotReadyLog.containsKey(key) || (now - _lastMidNotReadyLog[key]!) > 2000) {
+          _lastMidNotReadyLog[key] = now;
+          if (!_isPlaying) {
+            debugPrint('[ReferenceMidiSynth] updateAudioPosition: _isPlaying=false, skipping');
+          } else if (_currentRunId != runId) {
+            debugPrint('[ReferenceMidiSynth] updateAudioPosition: runId mismatch (current=$_currentRunId, requested=$runId), skipping');
+          } else if (_sfId == null) {
+            debugPrint('[ReferenceMidiSynth] updateAudioPosition: SoundFont not loaded (_sfId=null), skipping');
+          } else if (_notesForAudioPosition == null) {
+            debugPrint('[ReferenceMidiSynth] updateAudioPosition: _notesForAudioPosition is null, skipping');
+          }
+        }
+      }
       return;
     }
 
     final notes = _notesForAudioPosition!;
     
-    // Check each note to see if it should play now
+    // Log first few position updates with note timing info
+    if (_updateAudioPositionCallCount <= 10 && notes.isNotEmpty) {
+      final firstNote = notes.first;
+      debugPrint('[ReferenceMidiSynth] updateAudioPosition: audioTimeSec=${audioTimeSec.toStringAsFixed(3)}, firstNote.startSec=${firstNote.startSec.toStringAsFixed(3)}, diff=${(audioTimeSec - firstNote.startSec).toStringAsFixed(3)}, shouldPlay=${audioTimeSec >= firstNote.startSec - 0.01}');
+    }
+    
+    // First pass: Stop any notes that should end now (check ALL notes, not just unplayed ones)
+    // This ensures notes are stopped at their exact end time, even if we missed checking them earlier
+    for (int i = 0; i < notes.length; i++) {
+      final note = notes[i];
+      
+      // Only stop this note if:
+      // 1. It should have ended by now (audioTimeSec >= note.endSec)
+      // 2. This MIDI note is currently active
+      // 3. The active note was started by THIS note index (not a different note with the same MIDI)
+      final activeNoteIndex = _activeNoteIndexByMidi[note.midi];
+      if (audioTimeSec >= note.endSec - 0.01 && 
+          _activeNotes.contains(note.midi) && 
+          activeNoteIndex == i) {
+        try {
+          _midi.stopMidiNote(midi: note.midi, velocity: 127);
+          _activeNotes.remove(note.midi);
+          _activeNoteIndexByMidi.remove(note.midi);
+          if (kDebugMode && i < 5) {
+            debugPrint(
+                '[ReferenceMidiSynth] Note OFF (audio-position): index=$i MIDI=${note.midi} '
+                'at audioTime=${audioTimeSec.toStringAsFixed(3)}s, scheduled=${note.endSec.toStringAsFixed(3)}s, '
+                'duration=${(note.endSec - note.startSec).toStringAsFixed(3)}s');
+          }
+        } catch (e) {
+          debugPrint('[ReferenceMidiSynth] Error stopping note ${note.midi}: $e');
+        }
+      }
+    }
+    
+    // Second pass: Start notes that should play now
     for (int i = 0; i < notes.length; i++) {
       if (_notesPlayedForAudioPosition.contains(i)) {
-        continue; // Already played
+        continue; // Already played (or skipped)
       }
 
       final note = notes[i];
@@ -341,30 +421,58 @@ class ReferenceMidiSynth {
       }
 
       // Check if note should start now (with small tolerance for timing)
-      if (audioTimeSec >= note.startSec - 0.01) {
+      final shouldPlay = audioTimeSec >= note.startSec - 0.01;
+      
+      // Log first few notes to see if condition is being met
+      if (i < 3 && _updateAudioPositionCallCount <= 10) {
+        debugPrint('[ReferenceMidiSynth] Note $i check: audioTimeSec=${audioTimeSec.toStringAsFixed(3)}, note.startSec=${note.startSec.toStringAsFixed(3)}, note.endSec=${note.endSec.toStringAsFixed(3)}, duration=${noteDuration.toStringAsFixed(3)}, shouldPlay=$shouldPlay');
+      }
+      
+      if (shouldPlay) {
+        // If this MIDI note is already active (from a previous note), stop it first
+        // This handles cases where the same MIDI note appears multiple times in sequence
+        // Only stop if it's a different note index (not the same note being re-checked)
+        final existingNoteIndex = _activeNoteIndexByMidi[note.midi];
+        if (_activeNotes.contains(note.midi) && existingNoteIndex != null && existingNoteIndex != i) {
+          try {
+            _midi.stopMidiNote(midi: note.midi, velocity: 127);
+            _activeNotes.remove(note.midi);
+            _activeNoteIndexByMidi.remove(note.midi);
+            if (kDebugMode && i < 5) {
+              debugPrint('[ReferenceMidiSynth] Stopping previous instance (index=$existingNoteIndex) of MIDI=${note.midi} before starting new one (index=$i)');
+            }
+          } catch (e) {
+            debugPrint('[ReferenceMidiSynth] Error stopping previous note ${note.midi}: $e');
+          }
+        }
+        
         // Play noteOn
         try {
+          if (_sfId == null) {
+            debugPrint('[ReferenceMidiSynth] ERROR: Cannot play note ${note.midi} - SoundFont not loaded (_sfId=null)');
+            continue;
+          }
+          
+          // Tripwire log: first 5 notes to confirm MIDI is actually playing
+          if (i < 5) {
+            debugPrint('[ReferenceMidiSynth] TRIPWIRE: Playing noteOn: index=$i MIDI=${note.midi} at audioTime=${audioTimeSec.toStringAsFixed(3)}s (scheduled=${note.startSec.toStringAsFixed(3)}s, duration=${noteDuration.toStringAsFixed(3)}s)');
+          }
+          
+          debugPrint('[ReferenceMidiSynth] CALLING playMidiNote: MIDI=${note.midi}, velocity=$_defaultVelocity, _sfId=$_sfId');
           _midi.playMidiNote(midi: note.midi, velocity: _defaultVelocity);
           _activeNotes.add(note.midi);
+          _activeNoteIndexByMidi[note.midi] = i; // Track which note index started this MIDI note
           _notesPlayedForAudioPosition.add(i);
           
-          if (i == 0) {
+          if (i < 5) {
             debugPrint(
-                '[ReferenceMidiSynth] First note ON (audio-position): MIDI=${note.midi} '
-                'at audioTime=${audioTimeSec.toStringAsFixed(3)}s, scheduled=${note.startSec.toStringAsFixed(3)}s');
+                '[ReferenceMidiSynth] ✓ Note ON SUCCESS (audio-position): index=$i MIDI=${note.midi} '
+                'at audioTime=${audioTimeSec.toStringAsFixed(3)}s, scheduled=${note.startSec.toStringAsFixed(3)}s, '
+                'duration=${noteDuration.toStringAsFixed(3)}s, willEndAt=${note.endSec.toStringAsFixed(3)}s');
           }
-        } catch (e) {
-          debugPrint('[ReferenceMidiSynth] Error playing note ${note.midi}: $e');
-        }
-      }
-
-      // Check if note should end now (for notes that have already started)
-      if (_activeNotes.contains(note.midi) && audioTimeSec >= note.endSec - 0.01) {
-        try {
-          _midi.stopMidiNote(midi: note.midi, velocity: 127);
-          _activeNotes.remove(note.midi);
-        } catch (e) {
-          debugPrint('[ReferenceMidiSynth] Error stopping note ${note.midi}: $e');
+        } catch (e, stackTrace) {
+          debugPrint('[ReferenceMidiSynth] ✗ ERROR playing note ${note.midi}: $e');
+          debugPrint('[ReferenceMidiSynth] Stack trace: $stackTrace');
         }
       }
     }

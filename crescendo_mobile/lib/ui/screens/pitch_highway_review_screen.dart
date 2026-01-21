@@ -23,6 +23,7 @@ import '../../utils/performance_clock.dart';
 import '../../utils/exercise_constants.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/sync_diagnostic_service.dart';
+import '../../services/ios_audio_session_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -58,6 +59,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   StreamSubscription<void>? _audioCompleteSub;
   StreamSubscription<PlayerState>? _playerStateSub;
   Timer? _positionWatchdog;
+  Timer? _midiOnlyTimer; // Timer for MIDI-only playback when there's no recorded audio
   int? _lastPositionUpdateMs;
   double? _audioPositionSec;
   bool _audioStarted = false;
@@ -77,12 +79,13 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   DateTime? _playbackStartEpoch; // Exact moment playback truly starts
   int _lastSyncLogTime = 0;
   int _reviewRunId = 0; // Run ID for review MIDI playback
+  int? _midiOnlyStartTime; // Start time for MIDI-only timer (set after MIDI sequence is initialized)
   
   // Sync compensation (debug only)
   static const bool kEnableSyncCompensation = true; // Set to false to disable compensation
   int? _syncOffsetMs; // Cached sync offset from diagnostic
   int _manualOffsetMs = 0; // Manual offset adjustment (can be positive or negative)
-  bool _compensationEnabled = false; // Toggle to enable/disable compensation
+  bool _compensationEnabled = true; // Toggle to enable/disable compensation (default: enabled)
 
   @override
   void initState() {
@@ -440,6 +443,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Start ticker - it will update visuals from audio position
     _ticker?.start();
     
+    // Ensure iOS audio session is configured for MIDI playback (especially with headphones)
+    // This must be called BEFORE starting audio/MIDI playback
+    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'review_start');
+    
     // Start audio playback immediately (everything is preloaded)
     // Audio will be sought to startOffsetSec in _playAudio()
     // Capture exact playback start moment AFTER seek completes (this is the master clock anchor)
@@ -476,6 +483,31 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // Check runId after async call
     if (!mounted || currentRunId != _reviewRunId) return;
+    
+    // For MIDI-only playback (no recorded audio), use a timer to drive visuals
+    // MIDI notes are already scheduled with timers, so we just need to update visuals
+    if (_recordedAudioPath == null && _midiOnlyTimer == null) {
+      _midiOnlyStartTime = DateTime.now().millisecondsSinceEpoch;
+      final startOffsetSec = widget.startTimeSec;
+      _midiOnlyTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+        if (!_playing || _reviewRunId != currentRunId) {
+          timer.cancel();
+          _midiOnlyTimer = null;
+          return;
+        }
+        
+        // Calculate elapsed time since MIDI playback started
+        final elapsedMs = DateTime.now().millisecondsSinceEpoch - (_midiOnlyStartTime ?? 0);
+        final newPositionSec = (elapsedMs / 1000.0) + startOffsetSec;
+        
+        _audioPositionSec = newPositionSec;
+        _time.value = newPositionSec;
+      });
+      
+      if (kDebugMode) {
+        debugPrint('[Review] Started MIDI-only timer for visual updates');
+      }
+    }
     
     final midiEngineStartTime = DateTime.now().millisecondsSinceEpoch;
     if (kDebugMode) {
@@ -526,6 +558,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   Future<void> _playAudio() async {
     final currentRunId = _reviewRunId;
+    
+    // Ensure iOS audio session is configured before starting playback
+    // This is especially important for MIDI playback with headphones
+    await IOSAudioSessionService.ensureReviewAudioSession(tag: 'play_audio');
     
     // Seek to the start time before playing (if startTimeSec > 0)
     final startOffsetSec = widget.startTimeSec;
@@ -591,7 +627,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         );
       }
     } else if (!willPlayRecording) {
-      // No recorded audio - MIDI will be started from _start() after this method completes
+      // No recorded audio - MIDI-only playback
       // Skip recording seek if we're not playing recording
       if (startOffsetSec > 0) {
         DebugLog.event(
@@ -608,80 +644,19 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       // Debug: log when audio actually starts
       if (kDebugMode) {
         final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
-        debugPrint('[Review Start] t0_audioStart=$t0AudioStart (recorded audio + reference notes playback began)');
+        debugPrint('[Review Start] t0_audioStart=$t0AudioStart (MIDI-only playback, no recorded audio)');
       }
       
-      // Use primary player's position (recorded audio) as master clock
+      // For MIDI-only playback, use a timer-based clock since there's no audio player
       await _audioPosSub?.cancel();
       await _playerStateSub?.cancel();
       _positionWatchdog?.cancel();
       _lastPositionUpdateMs = null;
+      _audioPositionSec = startOffsetSec; // Initialize to start offset
+      _audioStarted = true;
       
-      // Also listen to player state changes to detect if playback stops
-      _playerStateSub = _synth.onPlayerStateChanged.listen((state) {
-        DebugLog.event(
-          LogCat.audio,
-          'player_state_changed',
-          runId: _reviewRunId,
-          fields: {
-            'state': state.toString(),
-            'isPlaying': state == PlayerState.playing,
-          },
-        );
-        
-        // If player stopped/paused, cancel watchdog
-        if (state != PlayerState.playing) {
-          _positionWatchdog?.cancel();
-        }
-      });
-      
-      _audioPosSub = _synth.onPositionChanged.listen((pos) {
-        _lastPositionUpdateMs = DateTime.now().millisecondsSinceEpoch;
-        
-        if (!_audioStarted && pos > Duration.zero) {
-          _audioStarted = true;
-          DebugLog.event(
-            LogCat.audio,
-            'audio_position_first_update',
-            runId: _reviewRunId,
-            fields: {
-              'posMs': pos.inMilliseconds,
-              'startOffsetSec': startOffsetSec,
-            },
-          );
-        }
-        
-        if (_audioStarted) {
-          // Audio position is relative to audio file start
-          // Add the start offset to get the actual timeline position
-          final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
-          
-          // Detect if position is stuck (not advancing)
-          if (_audioPositionSec != null && (newPositionSec - _audioPositionSec!).abs() < 0.001) {
-            DebugLog.log(
-              LogCat.audio,
-              'audio_position_stuck',
-              key: 'position_stuck',
-              throttleMs: 1000,
-              runId: _reviewRunId,
-              extraMap: {
-                'posSec': newPositionSec,
-                'posMs': pos.inMilliseconds,
-              },
-            );
-          }
-          
-          _audioPositionSec = newPositionSec;
-          
-          // Visual time is driven directly by audio position (master clock)
-          // This ensures perfect sync
-          
-          // Update MIDI notes based on audio position (audio-position-based scheduling)
-          if (_playing && _audioPositionSec != null) {
-            _referenceMidiSynth.updateAudioPosition(_audioPositionSec!, _reviewRunId);
-          }
-        }
-      });
+      // Timer will be started AFTER _playReference() initializes the MIDI sequence
+      // (see _start() method after _playReference() completes)
       
       // Watchdog: if position hasn't updated in 500ms, poll manually
       _positionWatchdog = Timer.periodic(const Duration(milliseconds: 500), (timer) {
@@ -762,29 +737,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       return;
     }
     
-    // Apply sync compensation: delay MIDI notes if offset was positive (recorded audio late)
-    // Positive offset (195-200ms) means recorded audio is LATE, so MIDI played too EARLY
-    // To compensate: delay MIDI notes by adding offset to their startSec values
-    // Combine diagnostic offset and manual offset (only if compensation is enabled)
-    int? compensationMs;
+    // Calculate the total offset to apply (diagnostic offset + manual offset)
+    // Only apply if compensation toggle is enabled
+    // Note: We apply offset via offsetMs parameter in playSequence(), not by modifying note times
+    int totalOffsetMs = 0;
     if (_compensationEnabled) {
       final diagnosticOffset = (kDebugMode && kEnableSyncCompensation && _syncOffsetMs != null) ? _syncOffsetMs! : 0;
-      final totalOffsetMs = diagnosticOffset + _manualOffsetMs;
-      if (totalOffsetMs != 0) {
-        compensationMs = totalOffsetMs;
-        final compensationSec = compensationMs / 1000.0;
-        notesToPlay = notesToPlay.map((note) {
-          return ReferenceNote(
-            midi: note.midi,
-            startSec: note.startSec + compensationSec, // Delay note by compensation amount (positive) or advance (negative)
-            endSec: note.endSec + compensationSec,
-            isGlideStart: note.isGlideStart,
-            isGlideEnd: note.isGlideEnd,
-          );
-        }).toList();
-        if (kDebugMode) {
-          debugPrint('[Review] Applied sync compensation: ${totalOffsetMs > 0 ? "delayed" : "advanced"} ${notesToPlay.length} notes by ${compensationSec.abs().toStringAsFixed(3)}s (${compensationMs}ms total: ${diagnosticOffset}ms diagnostic + ${_manualOffsetMs}ms manual)');
-        }
+      totalOffsetMs = diagnosticOffset + _manualOffsetMs;
+      if (kDebugMode && totalOffsetMs != 0) {
+        debugPrint('[Review] Compensation enabled: totalOffsetMs=$totalOffsetMs (${diagnosticOffset}ms diagnostic + ${_manualOffsetMs}ms manual)');
       }
     } else if (kDebugMode) {
       debugPrint('[Review] Compensation disabled - using raw note timing');
@@ -804,50 +765,47 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           'noteCount=${notesToPlay.length} (filtered from ${_notes.length}, startOffsetSec=$startOffsetSec)');
     }
     
-    // Use audio-position-based scheduling instead of Timer-based scheduling
-    // This ensures MIDI notes are synchronized with recorded audio by using the same clock source
-    // Notes will be triggered when audio position reaches their startSec values
+    // Use timer-based scheduling with manual offset compensation
+    // This ensures MIDI notes are delayed by the sync offset to align with recorded audio bleed
     if (kDebugMode) {
-      debugPrint('[Review] MIDI playback (audio-position mode): startOffsetSec=$startOffsetSec, '
+      debugPrint('[Review] MIDI playback (timer-based with offset): startOffsetSec=$startOffsetSec, '
           'notesCount=${notesToPlay.length}, firstNoteStartSec=${notesToPlay.first.startSec.toStringAsFixed(2)}, '
-          'syncOffsetMs=${_syncOffsetMs ?? "none"}, manualOffsetMs=$_manualOffsetMs, compensationApplied=${compensationMs != null && compensationMs != 0 ? "yes (${compensationMs}ms)" : "no"}');
+          'syncOffsetMs=${_syncOffsetMs ?? "none"}, manualOffsetMs=$_manualOffsetMs, compensationEnabled=$_compensationEnabled, totalOffsetMs=$totalOffsetMs');
     }
     
-    // Start MIDI playback using audio-position-based scheduling
-    // Notes will be triggered when updateAudioPosition() is called from audio position stream
-    _referenceMidiSynth.playSequenceWithAudioPosition(
+    // Start MIDI playback using timer-based scheduling with offset compensation
+    // The offset will be applied when scheduling each note
+    await _referenceMidiSynth.playSequence(
       notes: notesToPlay,
+      leadInSec: 0.0, // Notes already include lead-in in their startSec
       runId: currentRunId,
+      startEpochMs: _playbackStartEpoch?.millisecondsSinceEpoch,
       config: reviewConfig,
+      offsetMs: totalOffsetMs, // Apply sync offset to delay MIDI notes
     );
     
-    // Debug: log when reference MIDI playback starts
     if (kDebugMode) {
-      final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
-      debugPrint('[Review Start] t0_audioStart=$t0AudioStart (reference MIDI playback began, using ReferenceMidiSynth)');
+      debugPrint('[Review] MIDI sequence scheduled with timer-based playback, offset=${totalOffsetMs}ms');
     }
     
-    // Only set up position listener if we're not already listening to recorded audio
-    // (i.e., when useSecondaryPlayer is false, meaning we're playing reference only)
+    // Set up position listener for visuals (recorded audio drives visual timeline)
     if (!useSecondaryPlayer) {
-    await _audioPosSub?.cancel();
-    _audioPosSub = _synth.onPositionChanged.listen((pos) {
-      if (!_audioStarted && pos > Duration.zero) {
-        _audioStarted = true;
-          // Debug: log when audio position first becomes available
+      await _audioPosSub?.cancel();
+      _audioPosSub = _synth.onPositionChanged.listen((pos) {
+        if (!_audioStarted && pos > Duration.zero) {
+          _audioStarted = true;
           if (kDebugMode) {
             debugPrint('[Review Start] Audio position stream started, first pos=${pos.inMilliseconds}ms');
           }
-      }
-      if (_audioStarted) {
-          // Audio position is relative to audio file start, which includes lead-in silence
-          // Chart time also includes lead-in, so they should be in sync
-        _audioPositionSec = pos.inMilliseconds / 1000.0;
-          
-          // Visual time is driven directly by audio position (master clock)
-          // This ensures perfect sync
-      }
-    });
+        }
+        
+        // Update audio position for visuals (visuals follow recorded audio)
+        final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
+        _audioPositionSec = newPositionSec;
+        
+        // Visual time is driven directly by audio position (master clock)
+        // MIDI notes are scheduled independently with offset compensation
+      });
     
     // Listen for reference notes completion (when no recorded audio)
     await _audioCompleteSub?.cancel();
@@ -1174,50 +1132,64 @@ class _OffsetAdjustmentControls extends StatelessWidget {
       itemBuilder: (context) => [
         PopupMenuItem(
           enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'MIDI Offset',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: StatefulBuilder(
+            builder: (context, setMenuState) {
+              // Use local state that syncs with parent state
+              bool localEnabled = compensationEnabled;
+              
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Enable Compensation',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    'MIDI Offset',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
-                  Switch(
-                    value: compensationEnabled,
-                    onChanged: onCompensationToggled,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Enable Compensation',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
+                      Switch(
+                        value: localEnabled,
+                        onChanged: (value) {
+                          // Update local state immediately for visual feedback
+                          setMenuState(() {
+                            localEnabled = value;
+                          });
+                          // Update parent state
+                          onCompensationToggled(value);
+                        },
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    localEnabled 
+                        ? 'Total: ${totalOffsetMs > 0 ? "+" : ""}$totalOffsetMs ms'
+                        : 'Compensation OFF (using audio-position sync)',
+                    style: TextStyle(
+                      fontSize: 12, 
+                      color: localEnabled ? Colors.grey[700] : Colors.grey[500],
+                      fontStyle: localEnabled ? FontStyle.normal : FontStyle.italic,
+                    ),
+                  ),
+                  if (localEnabled && diagnosticOffsetMs != null)
+                    Text(
+                      'Diagnostic: ${diagnosticOffsetMs! > 0 ? "+" : ""}${diagnosticOffsetMs!} ms',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                  if (localEnabled)
+                    Text(
+                      'Manual: ${currentOffsetMs > 0 ? "+" : ""}$currentOffsetMs ms',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
                 ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                compensationEnabled 
-                    ? 'Total: ${totalOffsetMs > 0 ? "+" : ""}$totalOffsetMs ms'
-                    : 'Compensation OFF (using audio-position sync)',
-                style: TextStyle(
-                  fontSize: 12, 
-                  color: compensationEnabled ? Colors.grey[700] : Colors.grey[500],
-                  fontStyle: compensationEnabled ? FontStyle.normal : FontStyle.italic,
-                ),
-              ),
-              if (compensationEnabled && diagnosticOffsetMs != null)
-                Text(
-                  'Diagnostic: ${diagnosticOffsetMs! > 0 ? "+" : ""}${diagnosticOffsetMs!} ms',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                ),
-              if (compensationEnabled)
-                Text(
-                  'Manual: ${currentOffsetMs > 0 ? "+" : ""}$currentOffsetMs ms',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                ),
-            ],
+              );
+            },
           ),
         ),
         const PopupMenuDivider(),
