@@ -13,6 +13,7 @@ import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../utils/exercise_constants.dart';
 import '../../utils/pitch_math.dart';
+import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import 'pitch_highway_review_screen.dart';
 import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
@@ -231,11 +232,20 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
     // Start 2 seconds before the segment starts (for context/lead-in)
     // But don't go below 0.0
     final segmentStartSec = segment.startMs / 1000.0;
+    final segmentEndSec = segment.endMs / 1000.0;
     final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
     
-    if (kDebugMode) {
-      debugPrint('[Review] segmentTap index=${segment.segmentIndex} startSec=$segmentStartSec replayStartSec=$replayStartSec');
-    }
+    // Log segment tap
+    DebugLog.event(
+      LogCat.seek,
+      'segment_tap',
+      fields: {
+        'segmentIndex': segment.segmentIndex,
+        'segmentStartSec': segmentStartSec,
+        'segmentEndSec': segmentEndSec,
+        'replayStartSec': replayStartSec,
+      },
+    );
     
     Navigator.push(
       context,

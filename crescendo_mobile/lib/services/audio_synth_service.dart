@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -17,6 +18,8 @@ class AudioSynthService {
   final AudioPlayer _player;
   final AudioPlayer?
       _secondaryPlayer; // For mixing reference notes with recorded audio
+  String? _secondaryPreparedPath; // Track which file secondary player is prepared for
+  bool _secondaryPrepared = false;
 
   AudioSynthService({this.sampleRate = 44100, bool enableMixing = false})
       : _player = AudioPlayer(),
@@ -169,14 +172,143 @@ class AudioSynthService {
 
   Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
-  /// Seek the primary player to a specific position
-  Future<void> seek(Duration position) async {
-    await _player.seek(position);
+  /// Seek the primary player to a specific position (with timeout protection)
+  Future<bool> seek(Duration position, {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
+    final state = _player.state;
+    final hasSource = _player.source != null;
+    final targetSec = position.inMilliseconds / 1000.0;
+    
+    debugPrint('[AudioSynthService] seek: which=primary targetSec=$targetSec hasSource=$hasSource playing=${state == PlayerState.playing} state=$state runId=$runId');
+    
+    try {
+      await _player.seek(position).timeout(
+        timeout,
+        onTimeout: () {
+          debugPrint('[AudioSynthService] seek: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
+          throw TimeoutException('seek timeout', timeout);
+        },
+      );
+      
+      // Get position after seek for logging
+      final pos = await _player.getCurrentPosition();
+      debugPrint('[AudioSynthService] seek: done posMs=${pos?.inMilliseconds} runId=$runId');
+      
+      return true;
+    } catch (e) {
+      debugPrint('[AudioSynthService] seek: error $e runId=$runId');
+      return false;
+    }
   }
 
-  /// Seek the secondary player to a specific position
-  Future<void> seekSecondary(Duration position) async {
-    await _secondaryPlayer?.seek(position);
+  /// Ensure secondary player is prepared for a specific file (iOS workaround)
+  /// Must be called before seekSecondary to avoid timeouts
+  Future<bool> ensureSecondaryPrepared(String path, {int? runId}) async {
+    final player = _secondaryPlayer;
+    if (player == null) {
+      debugPrint('[AudioSynthService] ensureSecondaryPrepared: no secondary player');
+      return false;
+    }
+
+    // If already prepared for this file, skip
+    if (_secondaryPrepared && _secondaryPreparedPath == path) {
+      debugPrint('[AudioSynthService] ensureSecondaryPrepared: already prepared for $path runId=$runId');
+      return true;
+    }
+
+    try {
+      debugPrint('[AudioSynthService] ensureSecondaryPrepared: preparing $path runId=$runId');
+      
+      // Stop and reset
+      await player.stop();
+      _secondaryPrepared = false;
+      _secondaryPreparedPath = null;
+
+      // Set source
+      final file = File(path);
+      if (!await file.exists()) {
+        debugPrint('[AudioSynthService] ensureSecondaryPrepared: file not found $path runId=$runId');
+        return false;
+      }
+
+      await player.setVolume(1.0);
+      try {
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) {
+          debugPrint('[AudioSynthService] ensureSecondaryPrepared: empty file $path runId=$runId');
+          return false;
+        }
+        await player.setSourceBytes(bytes, mimeType: 'audio/wav');
+      } on PlatformException {
+        await player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+      } on AudioPlayerException {
+        await player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+      }
+
+      // Wait for player to be ready
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // iOS warm-up: resume briefly then pause
+      if (Platform.isIOS) {
+        await player.resume();
+        await Future.delayed(const Duration(milliseconds: 50));
+        await player.pause();
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      _secondaryPrepared = true;
+      _secondaryPreparedPath = path;
+      
+      // Get duration for logging
+      final duration = await player.getDuration();
+      debugPrint('[AudioSynthService] ensureSecondaryPrepared: ready durationMs=${duration?.inMilliseconds} runId=$runId');
+      
+      return true;
+    } catch (e) {
+      debugPrint('[AudioSynthService] ensureSecondaryPrepared: error $e runId=$runId');
+      _secondaryPrepared = false;
+      _secondaryPreparedPath = null;
+      return false;
+    }
+  }
+
+  /// Seek the secondary player with timeout (non-blocking)
+  Future<bool> seekSecondary(Duration position, {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
+    final player = _secondaryPlayer;
+    if (player == null) {
+      debugPrint('[AudioSynthService] seekSecondary: no secondary player runId=$runId');
+      return false;
+    }
+
+    if (!_secondaryPrepared) {
+      debugPrint('[AudioSynthService] seekSecondary: secondary not prepared, skipping seek runId=$runId');
+      return false;
+    }
+
+    final targetSec = position.inMilliseconds / 1000.0;
+    final state = player.state;
+    final hasSource = player.source != null;
+    
+    debugPrint('[AudioSynthService] seekSecondary: which=secondary targetSec=$targetSec hasSource=$hasSource prepared=$_secondaryPrepared playing=${state == PlayerState.playing} state=$state runId=$runId');
+
+    try {
+      // Use timeout to prevent hanging
+      await player.seek(position).timeout(
+        timeout,
+        onTimeout: () {
+          debugPrint('[AudioSynthService] seekSecondary: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
+          throw TimeoutException('seekSecondary timeout', timeout);
+        },
+      );
+
+      // Get position after seek for logging
+      final pos = await player.getCurrentPosition();
+      debugPrint('[AudioSynthService] seekSecondary: done posMs=${pos?.inMilliseconds} runId=$runId');
+      
+      return true;
+    } catch (e) {
+      debugPrint('[AudioSynthService] seekSecondary: error $e runId=$runId');
+      return false;
+    }
   }
 
   Future<void> stop() async {

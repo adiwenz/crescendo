@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 
-import '../../models/reference_note.dart';
 import '../../services/pitch_service.dart';
 import '../../services/audio_session_manager.dart';
 import '../../ui/route_observer.dart';
@@ -72,11 +71,14 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     _tracker = PitchTracker();
     _isVisible = true;
     WidgetsBinding.instance.addObserver(this);
-    _initAudioSession();
-    _initMidi();
+    
+    // Defer audio and MIDI initialization until after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initAudioSession();
+      _initMidi();
       _centerKeyboardInitial();
-      _start();
+      // Only start recording when user actually interacts (not auto-start)
+      // _start() will be called when user taps/needs it
     });
   }
 

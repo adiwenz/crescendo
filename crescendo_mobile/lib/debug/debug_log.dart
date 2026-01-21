@@ -1,100 +1,179 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
-/// Enable/disable pitch highway debug logging
-/// Set to false to disable all debug logs including frame timing
-const bool kDebugPitchHighway = true;
+/// Log categories for filtering and organization
+enum LogCat {
+  lifecycle,
+  audio,
+  midi,
+  recorder,
+  replay,
+  seek,
+  route,
+  ui,
+  perf,
+  error,
+}
 
-/// Enable/disable frame timing logs (only logs frames > 50ms)
-/// Set to false to completely disable frame timing spam
-const bool kDebugFrameTiming = false;
-
-/// Debug logging utilities with stack trace filtering and throttling
+/// High-signal diagnostic logging utility with rate limiting and categorization
 class DebugLog {
-  static final Map<String, int> _lastLogTime = {};
-  static int _buildCount = 0;
-  static int _lastBuildLogTime = 0;
-
-  /// Returns a filtered stack trace containing only app code lines
-  /// (package:crescendo_mobile or /lib/)
-  static String appStack({int maxLines = 12}) {
-    final stack = StackTrace.current.toString();
-    final lines = stack.split('\n');
-    final appLines = <String>[];
-
-    for (final line in lines) {
-      if (line.contains('package:crescendo_mobile') || line.contains('/lib/')) {
-        appLines.add(line);
-        if (appLines.length >= maxLines) break;
-      }
-    }
-
-    if (appLines.isEmpty) {
-      // If no app lines found, return first 8 lines
-      return lines.take(8).join('\n');
-    }
-
-    return appLines.join('\n');
+  static bool enabled = kDebugMode;
+  static Set<LogCat> enabledCats = LogCat.values.toSet();
+  
+  // Rate limiting state
+  static final Map<String, int> _countPerKey = {};
+  static final Map<String, int> _lastMsPerKey = {};
+  static final Map<String, Set<int>> _tripwireRunIds = {};
+  
+  // Context state
+  static int? _currentRunId;
+  static String? _currentExerciseId;
+  static String? _currentMode; // "exercise" or "replay"
+  
+  /// Set context for current run
+  static void setContext({int? runId, String? exerciseId, String? mode}) {
+    _currentRunId = runId;
+    _currentExerciseId = exerciseId;
+    _currentMode = mode;
   }
-
-  /// Logs a message once per minimum interval (throttled by key)
-  static void logOncePerMs(String key, String message, {int minIntervalMs = 250}) {
-    if (!kDebugPitchHighway) return;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final lastTime = _lastLogTime[key] ?? 0;
-    final elapsed = now - lastTime;
-
-    if (elapsed >= minIntervalMs) {
-      _lastLogTime[key] = now;
-      debugPrint('[Debug] $message');
-    }
+  
+  /// Get current context
+  static Map<String, dynamic> getContext() {
+    return {
+      if (_currentRunId != null) 'runId': _currentRunId,
+      if (_currentExerciseId != null) 'exerciseId': _currentExerciseId,
+      if (_currentMode != null) 'mode': _currentMode,
+    };
   }
-
-  /// Logs a one-off important event
-  static void logEvent(String tag, String message) {
-    if (!kDebugPitchHighway) return;
-    debugPrint('[$tag] $message');
-  }
-
-  /// Tripwire helper: logs suspicious events with optional stack trace
-  static void tripwire(
-    String tag,
-    String message, {
-    bool includeStack = true,
+  
+  /// Log a message with category and optional rate limiting
+  static void log(
+    LogCat cat,
+    String msg, {
+    String? key,
     int throttleMs = 0,
+    int maxPerRun = 0,
+    int? runId,
+    Map<String, dynamic>? extraMap,
   }) {
-    if (!kDebugPitchHighway) return;
-
-    // Throttle if requested
+    if (!enabled || !enabledCats.contains(cat)) return;
+    
+    final effectiveRunId = runId ?? _currentRunId;
+    final effectiveKey = key ?? msg;
+    
+    // Rate limiting check
     if (throttleMs > 0) {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final lastTime = _lastLogTime['tripwire_$tag'] ?? 0;
-      if (now - lastTime < throttleMs) return;
-      _lastLogTime['tripwire_$tag'] = now;
+      final lastMs = _lastMsPerKey[effectiveKey];
+      if (lastMs != null && (now - lastMs) < throttleMs) {
+        return; // Throttled
+      }
+      _lastMsPerKey[effectiveKey] = now;
     }
-
-    final stackStr = includeStack ? '\n${appStack()}' : '';
-    debugPrint('[TRIPWIRE:$tag] $message$stackStr');
+    
+    // Max per run check
+    if (maxPerRun > 0 && effectiveRunId != null) {
+      final runKey = '${effectiveKey}_run${effectiveRunId}';
+      final count = _countPerKey[runKey] ?? 0;
+      if (count >= maxPerRun) {
+        return; // Max reached for this run
+      }
+      _countPerKey[runKey] = count + 1;
+    }
+    
+    // Build log line
+    final parts = <String>['[${cat.name}]', msg];
+    final ctx = getContext();
+    if (ctx.isNotEmpty) {
+      ctx.forEach((k, v) => parts.add('$k=$v'));
+    }
+    if (extraMap != null) {
+      extraMap.forEach((k, v) => parts.add('$k=$v'));
+    }
+    
+    debugPrint(parts.join(' '));
   }
-
-  /// Increments build counter and logs build rate every second
-  static void logBuildRate() {
-    if (!kDebugPitchHighway) return;
-
-    _buildCount++;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final elapsed = now - _lastBuildLogTime;
-
-    if (elapsed >= 1000) {
-      debugPrint('[BuildRate] builds in last second: $_buildCount');
-      _buildCount = 0;
-      _lastBuildLogTime = now;
+  
+  /// Log a structured event (single line with key=value pairs)
+  static void event(
+    LogCat cat,
+    String name, {
+    int? runId,
+    Map<String, dynamic>? fields,
+  }) {
+    if (!enabled || !enabledCats.contains(cat)) return;
+    
+    final parts = <String>['[${cat.name}]', name];
+    final ctx = getContext();
+    if (runId != null) {
+      parts.add('runId=$runId');
+    } else if (ctx.containsKey('runId')) {
+      parts.add('runId=${ctx['runId']}');
+    }
+    if (fields != null) {
+      fields.forEach((k, v) {
+        if (v != null) {
+          parts.add('$k=$v');
+        }
+      });
+    }
+    // Add other context
+    ctx.forEach((k, v) {
+      if (k != 'runId') parts.add('$k=$v');
+    });
+    
+    debugPrint(parts.join(' '));
+  }
+  
+  /// Tripwire: log with stack trace ONCE per runId for a given name
+  static void tripwire(
+    LogCat cat,
+    String name, {
+    int? runId,
+    Map<String, dynamic>? fields,
+    String? message,
+  }) {
+    if (!enabled || !enabledCats.contains(cat)) return;
+    
+    final effectiveRunId = runId ?? _currentRunId;
+    if (effectiveRunId == null) return;
+    
+    final tripwireKey = '${cat.name}_$name';
+    if (!_tripwireRunIds.containsKey(tripwireKey)) {
+      _tripwireRunIds[tripwireKey] = {};
+    }
+    
+    if (_tripwireRunIds[tripwireKey]!.contains(effectiveRunId)) {
+      return; // Already logged for this run
+    }
+    
+    _tripwireRunIds[tripwireKey]!.add(effectiveRunId);
+    
+    // Log event
+    event(cat, name, runId: effectiveRunId, fields: fields);
+    
+    // Log stack trace
+    if (message != null) {
+      debugPrint('[${cat.name}] TRIPWIRE: $message');
+    }
+    debugPrint('[${cat.name}] Stack trace:');
+    try {
+      throw Exception('Stack trace');
+    } catch (e, stack) {
+      debugPrint(stack.toString());
     }
   }
-
-  /// Resets build counter (call on dispose/restart)
-  static void resetBuildCounter() {
-    _buildCount = 0;
-    _lastBuildLogTime = 0;
+  
+  /// Clear rate limiting state (call between runs)
+  static void clearState() {
+    _countPerKey.clear();
+    _lastMsPerKey.clear();
+    _tripwireRunIds.clear();
+  }
+  
+  /// Reset context
+  static void resetContext() {
+    _currentRunId = null;
+    _currentExerciseId = null;
+    _currentMode = null;
   }
 }

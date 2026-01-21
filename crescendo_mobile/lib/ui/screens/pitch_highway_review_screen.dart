@@ -13,6 +13,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
 import '../../audio/reference_midi_synth.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../../audio/midi_playback_config.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
@@ -20,6 +21,7 @@ import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
 import '../../utils/exercise_constants.dart';
+import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -53,6 +55,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   bool _playing = false;
   StreamSubscription<Duration>? _audioPosSub;
   StreamSubscription<void>? _audioCompleteSub;
+  StreamSubscription<PlayerState>? _playerStateSub;
+  Timer? _positionWatchdog;
+  int? _lastPositionUpdateMs;
   double? _audioPositionSec;
   bool _audioStarted = false;
   List<ReferenceNote> _notes = const [];
@@ -75,6 +80,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   @override
   void initState() {
     super.initState();
+    
+    // Set debug context
+    _reviewRunId++;
+    DebugLog.setContext(
+      runId: _reviewRunId,
+      exerciseId: widget.exercise.id,
+      mode: 'replay',
+    );
+    
     final difficulty =
         pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ??
             PitchHighwayDifficulty.medium;
@@ -84,7 +98,27 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // In review mode, audio position is already accurate (from playback), so no latency compensation needed
     _clock.setLatencyCompensationMs(0);
     _time.value = widget.startTimeSec;
+    
+    // Log replay start
+    unawaited(_logReplayStart());
+    
     _preloadEverything(difficulty);
+  }
+  
+  /// Log replay start
+  Future<void> _logReplayStart() async {
+    DebugLog.event(
+      LogCat.replay,
+      'replay_start',
+      runId: _reviewRunId,
+      fields: {
+        'recordingDurationSec': widget.lastTake.durationSec,
+        'recordedFilePath': widget.lastTake.audioPath,
+        'willPlayRecording': _recordedAudioPath != null,
+        'willPlayReference': _notes.isNotEmpty,
+        'initialSeekSec': widget.startTimeSec,
+      },
+    );
   }
   
   /// Preload everything before allowing playback
@@ -236,9 +270,21 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
   @override
   void dispose() {
+    DebugLog.event(
+      LogCat.replay,
+      'replay_dispose',
+      runId: _reviewRunId,
+      fields: {
+        'wasPlaying': _playing,
+      },
+    );
+    DebugLog.resetContext();
+    
     _ticker?.dispose();
     _audioPosSub?.cancel();
     _audioCompleteSub?.cancel();
+    _playerStateSub?.cancel();
+    _positionWatchdog?.cancel();
     _synth.stop();
     _referenceMidiSynth.stop(); // Stop MIDI playback when navigating away
     _time.dispose();
@@ -284,19 +330,27 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   Future<void> _start() async {
     if (_playing || !_preloadComplete) return;
     
+    // Increment runId to cancel any in-flight operations
+    _reviewRunId++;
+    final currentRunId = _reviewRunId;
+    
     final tapTime = DateTime.now().millisecondsSinceEpoch;
     final startOffsetSec = widget.startTimeSec;
     
-    if (kDebugMode) {
-      debugPrint('[Review Start] tapTime=$tapTime (playback requested), startOffsetSec=$startOffsetSec');
-    }
+    DebugLog.event(
+      LogCat.replay,
+      'replay_playback_start',
+      runId: currentRunId,
+      fields: {
+        'tapTime': tapTime,
+        'startOffsetSec': startOffsetSec,
+        'notesCount': _notes.length,
+        'durationSec': _durationSec,
+      },
+    );
     
     // Set visual time to start offset immediately (before audio starts)
     _time.value = startOffsetSec;
-    
-    if (kDebugMode) {
-      debugPrint('[Review] visualsSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
-    }
     
     _playing = true;
     _audioPositionSec = startOffsetSec; // Initialize to start offset
@@ -321,6 +375,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Start audio playback immediately (everything is preloaded)
     // Audio will be sought to startOffsetSec in _playAudio()
     await _playAudio();
+    
+    // Check runId after async call
+    if (!mounted || currentRunId != _reviewRunId) return;
     
     final midiEngineStartTime = DateTime.now().millisecondsSinceEpoch;
     if (kDebugMode) {
@@ -370,6 +427,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   }
 
   Future<void> _playAudio() async {
+    final currentRunId = _reviewRunId;
+    
     // Seek to the start time before playing (if startTimeSec > 0)
     final startOffsetSec = widget.startTimeSec;
     
@@ -378,23 +437,85 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
     
     final hasRecordedAudio = _recordedAudioPath != null && _recordedAudioPath!.isNotEmpty;
+    final willPlayRecording = hasRecordedAudio;
     
-    // Always play reference notes (MIDI guide tones)
-    // If recorded audio exists, play it simultaneously
-    if (hasRecordedAudio) {
+    // Always play reference notes (MIDI guide tones via ReferenceMidiSynth)
+    // If recorded audio exists, play it simultaneously on primary player
+    if (hasRecordedAudio && willPlayRecording) {
       // Play both recorded audio and reference notes simultaneously
-      // Reference notes on secondary player, recorded audio on primary player
-      await _playReference(useSecondaryPlayer: true); // Start reference notes on secondary
+      // Reference notes via ReferenceMidiSynth (real-time MIDI), recorded audio on primary player
+      await _playReference(useSecondaryPlayer: false, runId: currentRunId); // Start reference notes via MIDI
+      
+      // Check runId after async call
+      if (!mounted || currentRunId != _reviewRunId) return;
+      
       await _synth.playFile(_recordedAudioPath!); // Then start recorded audio on primary
       
-      // Seek both players to the start offset
+      // Check runId after async call
+      if (!mounted || currentRunId != _reviewRunId) return;
+      
+      // Seek primary player (recorded audio) to the start offset
       if (startOffsetSec > 0) {
         final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
-        await _synth.seek(seekPos);
-        await _synth.seekSecondary(seekPos);
-        if (kDebugMode) {
-          debugPrint('[Review] audioSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
+        
+        // Log seek actions
+        DebugLog.event(
+          LogCat.seek,
+          'segment_seek_recording',
+          runId: currentRunId,
+          fields: {
+            'targetSec': startOffsetSec,
+            'seekPosMs': seekPos.inMilliseconds,
+            'willPlayRecording': willPlayRecording,
+            'which': 'primary',
+          },
+        );
+        
+        // Seek primary player (recorded audio) - non-blocking with timeout
+        final seekOk = await _synth.seek(seekPos, runId: currentRunId, timeout: const Duration(seconds: 2));
+        if (!mounted || currentRunId != _reviewRunId) return;
+        
+        if (!seekOk) {
+          DebugLog.event(
+            LogCat.seek,
+            'segment_seek_primary_timeout',
+            runId: currentRunId,
+            fields: {
+              'targetSec': startOffsetSec,
+              'warning': 'Primary seek timed out, continuing playback',
+            },
+          );
         }
+        
+        // Log after seek
+        DebugLog.event(
+          LogCat.seek,
+          'segment_seek_complete',
+          runId: currentRunId,
+          fields: {
+            'targetSec': startOffsetSec,
+            'result': 'sought',
+          },
+        );
+      }
+    } else if (!willPlayRecording) {
+      // No recorded audio, just play reference notes via MIDI
+      await _playReference(useSecondaryPlayer: false, runId: currentRunId);
+      
+      // Check runId after async call
+      if (!mounted || currentRunId != _reviewRunId) return;
+      
+      // Skip recording seek if we're not playing recording
+      if (startOffsetSec > 0) {
+        DebugLog.event(
+          LogCat.seek,
+          'skip_recording_seek',
+          runId: currentRunId,
+          fields: {
+            'targetSec': startOffsetSec,
+            'reason': 'willPlayRecording=false',
+          },
+        );
       }
       
       // Debug: log when audio actually starts
@@ -404,22 +525,102 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       }
       
       // Use primary player's position (recorded audio) as master clock
-        await _audioPosSub?.cancel();
-        _audioPosSub = _synth.onPositionChanged.listen((pos) {
-          if (!_audioStarted && pos > Duration.zero) {
-            _audioStarted = true;
-          // Debug: log when audio position first becomes available
-          if (kDebugMode) {
-            debugPrint('[Review Start] Audio position stream started, first pos=${pos.inMilliseconds}ms');
-          }
-          }
+      await _audioPosSub?.cancel();
+      await _playerStateSub?.cancel();
+      _positionWatchdog?.cancel();
+      _lastPositionUpdateMs = null;
+      
+      // Also listen to player state changes to detect if playback stops
+      _playerStateSub = _synth.onPlayerStateChanged.listen((state) {
+        DebugLog.event(
+          LogCat.audio,
+          'player_state_changed',
+          runId: _reviewRunId,
+          fields: {
+            'state': state.toString(),
+            'isPlaying': state == PlayerState.playing,
+          },
+        );
+        
+        // If player stopped/paused, cancel watchdog
+        if (state != PlayerState.playing) {
+          _positionWatchdog?.cancel();
+        }
+      });
+      
+      _audioPosSub = _synth.onPositionChanged.listen((pos) {
+        _lastPositionUpdateMs = DateTime.now().millisecondsSinceEpoch;
+        
+        if (!_audioStarted && pos > Duration.zero) {
+          _audioStarted = true;
+          DebugLog.event(
+            LogCat.audio,
+            'audio_position_first_update',
+            runId: _reviewRunId,
+            fields: {
+              'posMs': pos.inMilliseconds,
+              'startOffsetSec': startOffsetSec,
+            },
+          );
+        }
+        
         if (_audioStarted) {
           // Audio position is relative to audio file start
           // Add the start offset to get the actual timeline position
-          _audioPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
+          final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
+          
+          // Detect if position is stuck (not advancing)
+          if (_audioPositionSec != null && (newPositionSec - _audioPositionSec!).abs() < 0.001) {
+            DebugLog.log(
+              LogCat.audio,
+              'audio_position_stuck',
+              key: 'position_stuck',
+              throttleMs: 1000,
+              runId: _reviewRunId,
+              extraMap: {
+                'posSec': newPositionSec,
+                'posMs': pos.inMilliseconds,
+              },
+            );
+          }
+          
+          _audioPositionSec = newPositionSec;
           
           // Visual time is driven directly by audio position (master clock)
           // This ensures perfect sync
+        }
+      });
+      
+      // Watchdog: if position hasn't updated in 500ms, poll manually
+      _positionWatchdog = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+        if (!_playing) {
+          timer.cancel();
+          return;
+        }
+        
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (_lastPositionUpdateMs != null && (now - _lastPositionUpdateMs!) > 1000) {
+          // Position stream appears stuck, poll manually
+          _synth.getCurrentPosition().then((pos) {
+            if (pos != null && _playing) {
+              final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
+              if (_audioPositionSec == null || (newPositionSec - _audioPositionSec!).abs() > 0.01) {
+                DebugLog.event(
+                  LogCat.audio,
+                  'audio_position_polled',
+                  runId: _reviewRunId,
+                  fields: {
+                    'oldPosSec': _audioPositionSec,
+                    'newPosSec': newPositionSec,
+                    'posMs': pos.inMilliseconds,
+                    'streamStuck': true,
+                  },
+                );
+                _audioPositionSec = newPositionSec;
+                _lastPositionUpdateMs = now;
+              }
+            }
+          });
         }
       });
       
@@ -447,8 +648,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
   }
 
-  Future<void> _playReference({bool useSecondaryPlayer = false}) async {
+  Future<void> _playReference({bool useSecondaryPlayer = false, int? runId}) async {
+    final currentRunId = runId ?? _reviewRunId;
+    
     if (_notes.isEmpty) return;
+    if (!mounted || currentRunId != _reviewRunId) return;
     
     // Use ReferenceMidiSynth for review playback (same as exercise) to ensure identical audio pipeline
     // This ensures both exercise and review use the same SoundFont, program, bank, channel, etc.
@@ -470,13 +674,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // Use ReferenceMidiSynth for real-time MIDI playback (same as exercise)
     // This ensures identical audio pipeline: same SoundFont, same synth, same configuration
-    _reviewRunId++;
     final startEpochMs = DateTime.now().millisecondsSinceEpoch;
     
     await _referenceMidiSynth.playSequence(
       notes: _notes,
       leadInSec: 0.0, // Lead-in is already in note timestamps
-      runId: _reviewRunId,
+      runId: currentRunId,
       startEpochMs: startEpochMs,
       config: reviewConfig,
     );
