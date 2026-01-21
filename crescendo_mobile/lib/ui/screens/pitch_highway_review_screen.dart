@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 import '../../models/last_take.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -13,6 +14,7 @@ import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/reference_midi_engine.dart';
+import '../../services/review_audio_bounce_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../audio/midi_playback_config.dart';
 import '../../services/transposed_exercise_builder.dart';
@@ -76,6 +78,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   bool _preloading = false;
   String? _referenceAudioPath;
   String? _recordedAudioPath;
+  String? _mixedAudioPath; // Bounced mixed WAV (mic + reference)
+  bool _showReference = true; // Toggle: true = mixed (with reference), false = mic only
+  final ReviewAudioBounceService _bounceService = ReviewAudioBounceService();
   DateTime? _playbackStartEpoch; // Exact moment playback truly starts
   int _lastSyncLogTime = 0;
   int _reviewRunId = 0; // Run ID for review MIDI playback
@@ -164,16 +169,13 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       }
     }
     
-    // Step 3: Initialize MIDI engine (fast, no WAV rendering needed)
-    // This is much faster than WAV rendering and is what we actually use for playback
-    await _midiEngine.ensureReady(tag: 'review-preload');
-    
-    // Step 4: Skip WAV rendering - we use ReferenceMidiSynth for real-time MIDI playback
-    // WAV rendering was causing 10+ second delays. MIDI synth is instant.
-    // Only render WAV in background if needed for mixing (but don't block on it)
-    if (_notes.isNotEmpty) {
-      // Render WAV asynchronously in background (non-blocking)
-      unawaited(_renderReferenceAudioInBackground());
+    // Step 3: Render and mix audio (bounce MIDI to WAV, then mix with recorded audio)
+    // This eliminates timer-based real-time MIDI scheduling for route-change resilience
+    if (_notes.isNotEmpty && _recordedAudioPath != null) {
+      await _bounceAndMixAudio(difficulty);
+    } else if (_notes.isNotEmpty) {
+      // No recorded audio, just render reference WAV
+      await _bounceReferenceAudio(difficulty);
     }
     
     final preloadCompleteTime = DateTime.now().millisecondsSinceEpoch;
@@ -209,17 +211,94 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
   }
   
-  /// Render reference audio in background (non-blocking)
-  /// This is only used as a fallback - MIDI synth is the primary playback method
-  Future<void> _renderReferenceAudioInBackground() async {
+  /// Bounce reference audio and mix with recorded audio
+  Future<void> _bounceAndMixAudio(PitchHighwayDifficulty difficulty) async {
     try {
-      _referenceAudioPath = await _synth.renderReferenceNotes(_notes);
+      // Generate cache key
+      final takeFileName = p.basename(_recordedAudioPath ?? '');
+      final reviewConfig = MidiPlaybackConfig.review();
+      final cacheKey = ReviewAudioBounceService.generateCacheKey(
+        takeFileName: takeFileName,
+        exerciseId: widget.exercise.id,
+        transposeSemitones: 0, // Review doesn't transpose
+        soundFontName: reviewConfig.soundFontName,
+        program: reviewConfig.program,
+        sampleRate: ReviewAudioBounceService.defaultSampleRate,
+      );
+      
+      // Check cache first
+      final cachedMixed = await ReviewAudioBounceService.getCachedMixedWav(cacheKey);
+      if (cachedMixed != null) {
+        _mixedAudioPath = cachedMixed.path;
+        if (kDebugMode) {
+          debugPrint('[Review Bounce] Using cached mixed WAV: ${_mixedAudioPath}');
+        }
+        return;
+      }
+      
       if (kDebugMode) {
-        debugPrint('[Review Preload] Reference audio rendered in background (WAV fallback): ${_referenceAudioPath}');
+        debugPrint('[Review Bounce] Cache miss, rendering and mixing audio...');
+      }
+      
+      // Render reference WAV
+      final referenceWav = await _bounceService.renderReferenceWav(
+        notes: _notes,
+        durationSec: _durationSec,
+        sampleRate: ReviewAudioBounceService.defaultSampleRate,
+        soundFontAssetPath: reviewConfig.soundFontAssetPath,
+        program: reviewConfig.program,
+      );
+      
+      // Mix with recorded audio
+      final micWav = File(_recordedAudioPath!);
+      final mixedWav = await _bounceService.mixWavs(
+        micWav: micWav,
+        referenceWav: referenceWav,
+        micGain: 1.0,
+        refGain: 1.0,
+        duckMicWhileRef: false,
+      );
+      
+      // Save to cache
+      final cacheDir = await ReviewAudioBounceService.getCacheDirectory();
+      final cachedFile = File(p.join(cacheDir.path, '${cacheKey}_mixed.wav'));
+      await mixedWav.copy(cachedFile.path);
+      
+      _mixedAudioPath = cachedFile.path;
+      
+      if (kDebugMode) {
+        debugPrint('[Review Bounce] Mixed WAV created and cached: ${_mixedAudioPath}');
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[Review Preload] Background WAV rendering error (non-fatal): $e');
+        debugPrint('[Review Bounce] Error bouncing/mixing audio: $e');
+      }
+      // Fallback: continue without mixed audio (will use real-time MIDI)
+    }
+  }
+  
+  /// Bounce reference audio only (no recorded audio)
+  Future<void> _bounceReferenceAudio(PitchHighwayDifficulty difficulty) async {
+    try {
+      final reviewConfig = MidiPlaybackConfig.review();
+      
+      // Render reference WAV
+      final referenceWav = await _bounceService.renderReferenceWav(
+        notes: _notes,
+        durationSec: _durationSec,
+        sampleRate: ReviewAudioBounceService.defaultSampleRate,
+        soundFontAssetPath: reviewConfig.soundFontAssetPath,
+        program: reviewConfig.program,
+      );
+      
+      _referenceAudioPath = referenceWav.path;
+      
+      if (kDebugMode) {
+        debugPrint('[Review Bounce] Reference WAV rendered: ${_referenceAudioPath}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Review Bounce] Error bouncing reference audio: $e');
       }
     }
   }
@@ -382,10 +461,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     final visualTimeMs = _audioPositionSec! * 1000.0;
     _time.value = _audioPositionSec!;
     
-    // Update MIDI engine position for route change resumption
-    if (_playing) {
-      _midiEngine.updatePosition(_audioPositionSec!, runId: _reviewRunId);
-    }
+    // No MIDI position updates needed - we use bounced WAV, not real-time MIDI
     
     // Debug logging (temporary) - log every 250-500ms
     if (kDebugMode) {
@@ -479,16 +555,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Check runId after async call
     if (!mounted || currentRunId != _reviewRunId) return;
     
-    // Now start MIDI playback using audio-position-based scheduling
-    // This ensures MIDI notes are synchronized with recorded audio by using the same clock
-    await _playReference(useSecondaryPlayer: false, runId: currentRunId);
+    // NO REAL-TIME MIDI: We use bounced/mixed WAV instead
+    // This eliminates timer-based scheduling and route change issues
+    if (kDebugMode) {
+      debugPrint('[Review Start] Using bounced audio (no real-time MIDI): mixed=${_mixedAudioPath != null}, ref=${_referenceAudioPath != null}');
+    }
     
-    // Check runId after async call
-    if (!mounted || currentRunId != _reviewRunId) return;
-    
-    // For MIDI-only playback (no recorded audio), use a timer to drive visuals
-    // MIDI notes are already scheduled with timers, so we just need to update visuals
-    if (_recordedAudioPath == null && _midiOnlyTimer == null) {
+    // For reference-only playback (no recorded audio), use a timer to drive visuals
+    // if we don't have bounced reference WAV
+    if (_recordedAudioPath == null && _referenceAudioPath == null && _midiOnlyTimer == null) {
       _midiOnlyStartTime = DateTime.now().millisecondsSinceEpoch;
       final startOffsetSec = widget.startTimeSec;
       _midiOnlyTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
@@ -535,8 +610,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _clock.pause();
     // Stop audio immediately - this will stop audio position updates
     await _synth.stop();
-    await _midiEngine.stopAll(tag: 'review-stop');
-    _midiEngine.clearContext(runId: _reviewRunId);
+    // No MIDI to stop - we use bounced WAV, not real-time MIDI
     await _audioPosSub?.cancel();
     _audioPosSub = null;
     await _audioCompleteSub?.cancel();
@@ -573,47 +647,63 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       debugPrint('[Review] startOffsetSec=$startOffsetSec');
     }
     
-    final hasRecordedAudio = _recordedAudioPath != null && _recordedAudioPath!.isNotEmpty;
-    final willPlayRecording = hasRecordedAudio;
+    // Use bounced/mixed WAV if available, otherwise fall back to recorded audio only
+    String? audioToPlay;
+    if (_showReference && _mixedAudioPath != null) {
+      // Play mixed WAV (mic + reference)
+      audioToPlay = _mixedAudioPath;
+      if (kDebugMode) {
+        debugPrint('[Review] Playing mixed WAV (with reference): ${audioToPlay}');
+      }
+    } else if (_showReference && _referenceAudioPath != null) {
+      // Play reference-only WAV (no recorded audio)
+      audioToPlay = _referenceAudioPath;
+      if (kDebugMode) {
+        debugPrint('[Review] Playing reference-only WAV: ${audioToPlay}');
+      }
+    } else if (_recordedAudioPath != null) {
+      // Play recorded audio only (reference toggle off)
+      audioToPlay = _recordedAudioPath;
+      if (kDebugMode) {
+        debugPrint('[Review] Playing recorded audio only (reference off): ${audioToPlay}');
+      }
+    }
     
-    // Always play reference notes (MIDI guide tones via ReferenceMidiSynth)
-    // If recorded audio exists, play it simultaneously on primary player
-    if (hasRecordedAudio && willPlayRecording) {
-      // Start recorded audio first, then MIDI will be started from _start() after seek completes
-      await _synth.playFile(_recordedAudioPath!); // Start recorded audio on primary
+    if (audioToPlay != null) {
+      // Play the bounced/mixed WAV or recorded audio
+      await _synth.playFile(audioToPlay);
       
       // Check runId after async call
       if (!mounted || currentRunId != _reviewRunId) return;
       
-      // Seek primary player (recorded audio) to the start offset
+      // Seek to the start offset
       if (startOffsetSec > 0) {
         final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
         
         // Log seek actions
         DebugLog.event(
           LogCat.seek,
-          'segment_seek_recording',
+          'segment_seek_audio',
           runId: currentRunId,
           fields: {
             'targetSec': startOffsetSec,
             'seekPosMs': seekPos.inMilliseconds,
-            'willPlayRecording': willPlayRecording,
-            'which': 'primary',
+            'audioFile': p.basename(audioToPlay),
           },
         );
         
-        // Seek primary player (recorded audio) - non-blocking with timeout
+        // Seek audio player - non-blocking with timeout
         final seekOk = await _synth.seek(seekPos, runId: currentRunId, timeout: const Duration(seconds: 2));
         if (!mounted || currentRunId != _reviewRunId) return;
         
         if (!seekOk) {
           DebugLog.event(
             LogCat.seek,
-            'segment_seek_primary_timeout',
+            'segment_seek_timeout',
             runId: currentRunId,
             fields: {
               'targetSec': startOffsetSec,
-              'warning': 'Primary seek timed out, continuing playback',
+              'warning': 'Seek timed out, continuing playback',
             },
           );
         }
@@ -629,7 +719,31 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
           },
         );
       }
-    } else if (!willPlayRecording) {
+      
+      // Set up position listener for visuals
+      await _audioPosSub?.cancel();
+      _audioPosSub = _synth.onPositionChanged.listen((pos) {
+        if (!_audioStarted && pos > Duration.zero) {
+          _audioStarted = true;
+          if (kDebugMode) {
+            debugPrint('[Review] Audio started, position stream active');
+          }
+        }
+        final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
+        _audioPositionSec = newPositionSec;
+        _lastPositionUpdateMs = DateTime.now().millisecondsSinceEpoch;
+      });
+      
+      // Set up completion listener
+      await _audioCompleteSub?.cancel();
+      _audioCompleteSub = _synth.onComplete.listen((_) {
+        _onPlaybackComplete();
+      });
+    } else {
+      // No audio file available - fallback to MIDI-only (shouldn't happen with bounced audio)
+      if (kDebugMode) {
+        debugPrint('[Review] WARNING: No audio file available, falling back to MIDI-only');
+      }
       // No recorded audio - MIDI-only playback
       // Skip recording seek if we're not playing recording
       if (startOffsetSec > 0) {
@@ -658,8 +772,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       _audioPositionSec = startOffsetSec; // Initialize to start offset
       _audioStarted = true;
       
-      // Timer will be started AFTER _playReference() initializes the MIDI sequence
-      // (see _start() method after _playReference() completes)
+      // Timer for visual updates (no audio file available)
       
       // Watchdog: if position hasn't updated in 500ms, poll manually
       _positionWatchdog = Timer.periodic(const Duration(milliseconds: 500), (timer) {
@@ -699,18 +812,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       _audioCompleteSub = _synth.onComplete.listen((_) {
         _onPlaybackComplete();
       });
-    } else {
-      // No recorded audio, just play reference notes
-      await _playReference();
-      
-      // Seek to the start offset
-      if (startOffsetSec > 0) {
-        final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
-        await _synth.seek(seekPos);
-        if (kDebugMode) {
-          debugPrint('[Review] audioSeeked=true at ${startOffsetSec.toStringAsFixed(2)}s');
-        }
-      }
     }
     
     if (kDebugMode) {
@@ -718,106 +819,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
   }
 
-  Future<void> _playReference({bool useSecondaryPlayer = false, int? runId}) async {
-    final currentRunId = runId ?? _reviewRunId;
-    
-    if (_notes.isEmpty) return;
-    if (!mounted || currentRunId != _reviewRunId) return;
-    
-    // Use ReferenceMidiSynth for review playback (same as exercise) to ensure identical audio pipeline
-    // This ensures both exercise and review use the same SoundFont, program, bank, channel, etc.
-    final reviewConfig = MidiPlaybackConfig.review();
-    
-    // Filter and adjust notes for segment playback
-    // If startTimeSec > 0, we're playing a segment - filter notes and adjust their timing
-    final startOffsetSec = widget.startTimeSec;
-    var notesToPlay = _filterAndAdjustNotesForSegment(_notes, startOffsetSec);
-    
-    if (notesToPlay.isEmpty) {
-      if (kDebugMode) {
-        debugPrint('[Review] No notes to play after filtering for segment (startOffsetSec=$startOffsetSec)');
-      }
-      return;
-    }
-    
-    // Calculate the total offset to apply (diagnostic offset + manual offset)
-    // Only apply if compensation toggle is enabled
-    // Note: We apply offset via offsetMs parameter in playSequence(), not by modifying note times
-    int totalOffsetMs = 0;
-    if (_compensationEnabled) {
-      final diagnosticOffset = (kDebugMode && kEnableSyncCompensation && _syncOffsetMs != null) ? _syncOffsetMs! : 0;
-      totalOffsetMs = diagnosticOffset + _manualOffsetMs;
-      if (kDebugMode && totalOffsetMs != 0) {
-        debugPrint('[Review] Compensation enabled: totalOffsetMs=$totalOffsetMs (${diagnosticOffset}ms diagnostic + ${_manualOffsetMs}ms manual)');
-      }
-    } else if (kDebugMode) {
-      debugPrint('[Review] Compensation disabled - using raw note timing');
-    }
-    
-    // Log first note for review playback (for octave tripwire comparison)
-    if (notesToPlay.isNotEmpty) {
-      final firstNote = notesToPlay.first;
-      final reviewMidi = firstNote.midi.round();
-      final noteName = PitchMath.midiToName(reviewMidi);
-      final hz = 440.0 * math.pow(2.0, (reviewMidi - 69) / 12.0);
-      final difficulty = widget.lastTake.pitchDifficulty ?? 'unknown';
-      debugPrint(
-          '[OctaveTripwire] REVIEW playback: '
-          'exerciseId=${widget.exercise.id}, difficulty=$difficulty, '
-          'firstNoteMidi=$reviewMidi ($noteName), hz=${hz.toStringAsFixed(1)}, '
-          'noteCount=${notesToPlay.length} (filtered from ${_notes.length}, startOffsetSec=$startOffsetSec)');
-    }
-    
-    // Use timer-based scheduling with manual offset compensation
-    // This ensures MIDI notes are delayed by the sync offset to align with recorded audio bleed
-    if (kDebugMode) {
-      debugPrint('[Review] MIDI playback (timer-based with offset): startOffsetSec=$startOffsetSec, '
-          'notesCount=${notesToPlay.length}, firstNoteStartSec=${notesToPlay.first.startSec.toStringAsFixed(2)}, '
-          'syncOffsetMs=${_syncOffsetMs ?? "none"}, manualOffsetMs=$_manualOffsetMs, compensationEnabled=$_compensationEnabled, totalOffsetMs=$totalOffsetMs');
-    }
-    
-    // Start MIDI playback using timer-based scheduling with offset compensation
-    // The offset will be applied when scheduling each note
-    await _midiEngine.playSequence(
-      notes: notesToPlay,
-      leadInSec: 0.0, // Notes already include lead-in in their startSec
-      runId: currentRunId,
-      startEpochMs: _playbackStartEpoch?.millisecondsSinceEpoch,
-      config: reviewConfig,
-      offsetMs: totalOffsetMs, // Apply sync offset to delay MIDI notes
-      mode: 'review',
-    );
-    
-    if (kDebugMode) {
-      debugPrint('[Review] MIDI sequence scheduled with timer-based playback, offset=${totalOffsetMs}ms');
-    }
-    
-    // Set up position listener for visuals (recorded audio drives visual timeline)
-    if (!useSecondaryPlayer) {
-      await _audioPosSub?.cancel();
-      _audioPosSub = _synth.onPositionChanged.listen((pos) {
-        if (!_audioStarted && pos > Duration.zero) {
-          _audioStarted = true;
-          if (kDebugMode) {
-            debugPrint('[Review Start] Audio position stream started, first pos=${pos.inMilliseconds}ms');
-          }
-        }
-        
-        // Update audio position for visuals (visuals follow recorded audio)
-        final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
-        _audioPositionSec = newPositionSec;
-        
-        // Visual time is driven directly by audio position (master clock)
-        // MIDI notes are scheduled independently with offset compensation
-      });
-    
-    // Listen for reference notes completion (when no recorded audio)
-    await _audioCompleteSub?.cancel();
-    _audioCompleteSub = _synth.onComplete.listen((_) {
-      _onPlaybackComplete();
-    });
-    }
-  }
+  // _playReference method removed - we use bounced WAV instead of real-time MIDI
 
   double _computeDuration(List<ReferenceNote> notes) {
     final specDuration =
@@ -866,6 +868,59 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         leading: const BackButton(),
         title: const Text('Review last take'),
         actions: [
+          // Reference toggle button
+          if (_mixedAudioPath != null || _referenceAudioPath != null)
+            IconButton(
+              icon: Icon(_showReference ? Icons.music_note : Icons.mic),
+              tooltip: _showReference ? 'Show reference (mixed)' : 'Show mic only',
+              onPressed: () {
+                setState(() {
+                  _showReference = !_showReference;
+                });
+                // Restart playback with new audio source
+                if (_playing) {
+                  _stop();
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    if (mounted && _preloadComplete) {
+                      _start();
+                    }
+                  });
+                }
+              },
+            ),
+          // Force re-render button (debug only)
+          if (kDebugMode)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Force re-render (clear cache)',
+              onPressed: () async {
+                // Clear cache and re-render
+                final reviewConfig = MidiPlaybackConfig.review();
+                final takeFileName = p.basename(_recordedAudioPath ?? '');
+                final cacheKey = ReviewAudioBounceService.generateCacheKey(
+                  takeFileName: takeFileName,
+                  exerciseId: widget.exercise.id,
+                  transposeSemitones: 0,
+                  soundFontName: reviewConfig.soundFontName,
+                  program: reviewConfig.program,
+                  sampleRate: ReviewAudioBounceService.defaultSampleRate,
+                );
+                final cacheDir = await ReviewAudioBounceService.getCacheDirectory();
+                final cachedFile = File(p.join(cacheDir.path, '${cacheKey}_mixed.wav'));
+                if (await cachedFile.exists()) {
+                  await cachedFile.delete();
+                  if (kDebugMode) {
+                    debugPrint('[Review] Cleared cached mixed WAV: ${cachedFile.path}');
+                  }
+                }
+                _mixedAudioPath = null;
+                _referenceAudioPath = null;
+                // Re-bounce
+                final difficulty = pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ?? PitchHighwayDifficulty.medium;
+                await _bounceAndMixAudio(difficulty);
+                if (mounted) setState(() {});
+              },
+            ),
           // Manual offset adjustment controls (debug only)
           if (kDebugMode)
             _OffsetAdjustmentControls(

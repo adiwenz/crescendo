@@ -68,19 +68,19 @@ class ReferenceMidiEngine {
   }
   
   /// Internal: Initialize and load SoundFont
-  Future<void> _initAndLoad({String tag = 'initAndLoad'}) async {
-    if (_loading) return;
+  Future<void> _initAndLoad({String tag = 'initAndLoad', bool force = false}) async {
+    if (_loading && !force) return;
     
     _loading = true;
     final startTime = DateTime.now();
     
     try {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] [$tag] Initializing MIDI engine...');
+        debugPrint('[ReferenceMidiEngine] [$tag] Initializing MIDI engine (force=$force)...');
       }
       
-      // Initialize with default config
-      await _synth.init(config: MidiPlaybackConfig.exercise(), force: false);
+      // Initialize with default config (force reinit if requested)
+      await _synth.init(config: MidiPlaybackConfig.exercise(), force: force);
       
       _ready = true;
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
@@ -186,64 +186,66 @@ class ReferenceMidiEngine {
     );
   }
   
-  /// Resume playback after route change
-  Future<void> resumeAfterRouteChange({required PlaybackContext context}) async {
-    if (_isHandlingRouteChange) {
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Route change already being handled, skipping resume');
-      }
-      return;
-    }
-    
-    _isHandlingRouteChange = true;
-    final resumeStartTime = DateTime.now();
+  /// Recover MIDI engine after route change
+  /// This method reinitializes the MIDI engine and resumes playback
+  Future<void> recoverAfterRouteChange({required PlaybackContext context}) async {
+    final recoverStartTime = DateTime.now();
     
     try {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Resuming playback after route change: $context');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Starting MIDI recovery...');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Context: mode=${context.mode}, runId=${context.runId}, currentTime=${context.currentTimeSec.toStringAsFixed(3)}s');
       }
       
-      // Step 1: Stop all current playback
-      await stopAll(tag: 'resumeAfterRouteChange-stop');
-      
-      // Step 2: Wait for route stabilization (debounce)
-      await Future.delayed(const Duration(milliseconds: 200));
-      
-      // Step 3: Re-initialize MIDI engine
+      // Step 1: Mark MIDI engine as needing rebuild
       if (kDebugMode) {
-        debugPrint('[AudioRoute] Restarting MIDI engine after route change');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 1: Marking engine for rebuild...');
+      }
+      _synth.markEngineRebuildNeeded();
+      
+      // Step 2: Force reinitialize MIDI engine (unload + reload soundfont)
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 2: Reinitializing MIDI engine (force=true)...');
       }
       final reinitStartTime = DateTime.now();
-      await _initAndLoad(tag: 'resumeAfterRouteChange-reinit');
+      _ready = false; // Force reinitialization
+      await _initAndLoad(tag: 'recoverAfterRouteChange-reinit', force: true);
       final reinitElapsed = DateTime.now().difference(reinitStartTime).inMilliseconds;
       
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Reinit complete (${reinitElapsed}ms)');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] MIDI engine reinit complete (${reinitElapsed}ms)');
       }
       
-      // Step 4: Warm up engine (play a silent/low note)
+      // Step 3: Warm up engine
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 3: Warming up MIDI engine...');
+      }
       await _warmUpEngine();
       
-      // Step 5: Get current position from playback state (may have been updated)
+      // Step 4: Get current position from playback state (may have been updated)
       final currentPositionSec = _playbackState.currentContext?.currentTimeSec ?? context.currentTimeSec;
       
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Resuming from position: ${currentPositionSec.toStringAsFixed(3)}s (context had ${context.currentTimeSec.toStringAsFixed(3)}s)');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 4: Current position: ${currentPositionSec.toStringAsFixed(3)}s (context had ${context.currentTimeSec.toStringAsFixed(3)}s)');
       }
       
-      // Step 6: Filter notes that should play from current position
+      // Step 5: Filter notes that should play from current position
       final notesToPlay = context.notes.where((note) {
         return note.endSec > currentPositionSec;
       }).toList();
       
       if (notesToPlay.isEmpty) {
         if (kDebugMode) {
-          debugPrint('[ReferenceMidiEngine] No notes to resume (all notes already played)');
+          debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] No notes to resume (all notes already played)');
         }
         return;
       }
       
-      // Step 7: Adjust note times to be relative to current position
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 5: Found ${notesToPlay.length} notes to resume (from ${context.notes.length} total)');
+      }
+      
+      // Step 6: Adjust note times to be relative to current position
       final adjustedNotes = notesToPlay.map((note) {
         final adjustedStart = (note.startSec - currentPositionSec).clamp(0.0, double.infinity);
         final adjustedEnd = note.endSec - currentPositionSec;
@@ -258,35 +260,43 @@ class ReferenceMidiEngine {
         );
       }).toList();
       
-      // Step 8: Resume playback with adjusted notes
-      final resumeRunId = context.runId;
+      // Step 7: Bump runId to cancel old timers/notes
+      final newRunId = context.runId + 1000; // Use large increment to avoid conflicts
       final resumeStartEpoch = DateTime.now().millisecondsSinceEpoch;
       
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Resuming ${adjustedNotes.length} notes from position ${currentPositionSec.toStringAsFixed(3)}s');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 6: Bumping runId: ${context.runId} → $newRunId');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Step 7: Resuming playback from position ${currentPositionSec.toStringAsFixed(3)}s with ${adjustedNotes.length} notes...');
       }
       
+      // Step 8: Resume playback with adjusted notes and new runId
       await playSequence(
         notes: adjustedNotes,
         leadInSec: 0.0, // No lead-in for resume
-        runId: resumeRunId,
+        runId: newRunId,
         startEpochMs: resumeStartEpoch,
         config: context.config,
         offsetMs: context.offsetMs,
         mode: context.mode,
       );
       
-      final resumeElapsed = DateTime.now().difference(resumeStartTime).inMilliseconds;
+      final recoverElapsed = DateTime.now().difference(recoverStartTime).inMilliseconds;
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Resume complete (${resumeElapsed}ms total)');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] ✅ MIDI recovery complete (${recoverElapsed}ms total)');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] Resume playback from t=${currentPositionSec.toStringAsFixed(3)}s, ${adjustedNotes.length} notes scheduled, runId=$newRunId');
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Error resuming playback: $e');
+        debugPrint('[ReferenceMidiEngine] [recoverAfterRouteChange] ❌ ERROR during MIDI recovery: $e');
       }
-    } finally {
-      _isHandlingRouteChange = false;
+      rethrow;
     }
+  }
+  
+  /// Resume playback after route change (legacy method name, now calls recoverAfterRouteChange)
+  @Deprecated('Use recoverAfterRouteChange instead')
+  Future<void> resumeAfterRouteChange({required PlaybackContext context}) async {
+    return recoverAfterRouteChange(context: context);
   }
   
   /// Warm up the MIDI engine after reinit
@@ -329,49 +339,101 @@ class ReferenceMidiEngine {
   
   /// Process route change (called after debounce)
   Future<void> _processRouteChange() async {
-    final hasHeadphones = _audioRoute.hasHeadphones;
-    
-    if (kDebugMode) {
-      debugPrint('[ReferenceMidiEngine] Processing route change: output=${_audioRoute.currentOutput}, hasHeadphones=$hasHeadphones');
-    }
-    
-    // Get current playback context (with latest position)
-    final context = _playbackState.currentContext;
-    if (context == null) {
+    if (_isHandlingRouteChange) {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] No active playback, skipping resume');
+        debugPrint('[ReferenceMidiEngine] Route change already being handled, skipping');
       }
       return;
     }
     
-    // Step 1: Stop all MIDI immediately
-    await stopAll(tag: 'routeChange-stop');
+    _isHandlingRouteChange = true;
+    final routeChangeStartTime = DateTime.now();
     
-    // Step 2: Re-apply audio session
     try {
-      if (context.mode == 'exercise') {
-        await AudioSessionService.applyExerciseSession(tag: 'routeChange');
-      } else {
-        await AudioSessionService.applyReviewSession(tag: 'routeChange');
+      final oldOutput = _audioRoute.currentOutput;
+      final hasHeadphones = _audioRoute.hasHeadphones;
+      
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] ========================================');
+        debugPrint('[ReferenceMidiEngine] ROUTE CHANGE DETECTED');
+        debugPrint('[ReferenceMidiEngine] Old output: $oldOutput');
+        debugPrint('[ReferenceMidiEngine] Has headphones: $hasHeadphones');
+        debugPrint('[ReferenceMidiEngine] ========================================');
+      }
+      
+      // Get current playback context (with latest position)
+      final context = _playbackState.currentContext;
+      if (context == null) {
+        if (kDebugMode) {
+          debugPrint('[ReferenceMidiEngine] No active playback, skipping recovery');
+        }
+        return;
+      }
+      
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] Active playback context: mode=${context.mode}, runId=${context.runId}, currentTime=${context.currentTimeSec.toStringAsFixed(3)}s, notes=${context.notes.length}');
+      }
+      
+      // Step 1: Stop all MIDI immediately
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] Step 1: Stopping all MIDI playback...');
+      }
+      await stopAll(tag: 'routeChange-stop');
+      
+      // Step 2: Re-apply audio session with output port override
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] Step 2: Re-applying audio session (mode=${context.mode}, overrideToSpeaker=${!hasHeadphones})...');
+      }
+      try {
+        if (context.mode == 'exercise') {
+          await AudioSessionService.applyExerciseSession(
+            tag: 'routeChange_recover',
+            overrideToSpeaker: !hasHeadphones,
+          );
+        } else {
+          await AudioSessionService.applyReviewSession(
+            tag: 'routeChange_recover',
+            overrideToSpeaker: !hasHeadphones,
+          );
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[ReferenceMidiEngine] ERROR applying audio session: $e');
+        }
+      }
+      
+      // Step 3: Wait for route stabilization
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] Step 3: Waiting for route stabilization (150ms)...');
+      }
+      await Future.delayed(const Duration(milliseconds: 150));
+      
+      // Step 4: Recover MIDI engine
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] Step 4: Recovering MIDI engine...');
+      }
+      await recoverAfterRouteChange(context: context);
+      
+      // Update context with new runId (recoverAfterRouteChange bumps it)
+      final updatedContext = _playbackState.currentContext;
+      if (updatedContext != null && updatedContext.runId > context.runId) {
+        if (kDebugMode) {
+          debugPrint('[ReferenceMidiEngine] Context updated with new runId: ${updatedContext.runId}');
+        }
+      }
+      
+      final routeChangeElapsed = DateTime.now().difference(routeChangeStartTime).inMilliseconds;
+      if (kDebugMode) {
+        debugPrint('[ReferenceMidiEngine] ========================================');
+        debugPrint('[ReferenceMidiEngine] ROUTE CHANGE RECOVERY COMPLETE (${routeChangeElapsed}ms)');
+        debugPrint('[ReferenceMidiEngine] ========================================');
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Error applying audio session: $e');
+        debugPrint('[ReferenceMidiEngine] ERROR during route change recovery: $e');
       }
-    }
-    
-    // Step 3: Wait for route stabilization
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    // Step 4: Get updated context with latest position (in case position was updated during delay)
-    final updatedContext = _playbackState.currentContext;
-    if (updatedContext != null && updatedContext.runId == context.runId) {
-      // Step 5: Resume playback with updated context
-      await resumeAfterRouteChange(context: updatedContext);
-    } else {
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Context changed during route change, skipping resume');
-      }
+    } finally {
+      _isHandlingRouteChange = false;
     }
   }
   

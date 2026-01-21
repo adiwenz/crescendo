@@ -57,8 +57,6 @@ class AudioRouteService {
       final initialState = await _detector!.getCurrentState;
       _currentOutput = _mapToOutputType(initialState);
 
-      debugPrint('Got here ⚠️');
-
       if (kDebugMode) {
         final wiredState =
             initialState[HeadsetType.WIRED] ?? HeadsetState.DISCONNECTED;
