@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 8, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 9, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -56,6 +56,25 @@ class AppDatabase {
         attemptsJson TEXT,
         updatedAt INTEGER
       )
+    ''');
+    await db.execute('''
+      CREATE TABLE reference_audio_cache(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        rangeHash TEXT NOT NULL,
+        variantKey TEXT NOT NULL,
+        filePath TEXT NOT NULL,
+        durationMs INTEGER NOT NULL,
+        sampleRate INTEGER NOT NULL,
+        codec TEXT NOT NULL,
+        generatedAt INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        UNIQUE(exerciseId, rangeHash, variantKey)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_reference_audio_cache_lookup 
+      ON reference_audio_cache(exerciseId, rangeHash, variantKey)
     ''');
   }
 
@@ -106,6 +125,27 @@ class AppDatabase {
     }
     if (oldVersion < 7) {
       await _addColumnIfMissing(db, 'exercise_progress', 'lastSelectedLevel', 'INTEGER');
+    }
+    if (oldVersion < 9) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS reference_audio_cache(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          exerciseId TEXT NOT NULL,
+          rangeHash TEXT NOT NULL,
+          variantKey TEXT NOT NULL,
+          filePath TEXT NOT NULL,
+          durationMs INTEGER NOT NULL,
+          sampleRate INTEGER NOT NULL,
+          codec TEXT NOT NULL,
+          generatedAt INTEGER NOT NULL,
+          version INTEGER NOT NULL,
+          UNIQUE(exerciseId, rangeHash, variantKey)
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reference_audio_cache_lookup 
+        ON reference_audio_cache(exerciseId, rangeHash, variantKey)
+      ''');
     }
   }
 

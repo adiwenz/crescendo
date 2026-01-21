@@ -131,15 +131,26 @@ class AudioSynthService {
     await _player.stop();
     await _applyAudioContext();
     await _player.setVolume(1.0);
+    
+    // Detect MIME type from file extension
+    String mimeType = 'audio/wav';
+    if (path.toLowerCase().endsWith('.m4a')) {
+      mimeType = 'audio/mp4';
+    } else if (path.toLowerCase().endsWith('.mp3')) {
+      mimeType = 'audio/mpeg';
+    } else if (path.toLowerCase().endsWith('.wav')) {
+      mimeType = 'audio/wav';
+    }
+    
     try {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) return;
-      await _player.setSourceBytes(bytes, mimeType: 'audio/wav');
+      await _player.setSourceBytes(bytes, mimeType: mimeType);
       await _player.resume();
     } on PlatformException {
-      await _player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+      await _player.play(DeviceFileSource(path, mimeType: mimeType));
     } on AudioPlayerException {
-      await _player.play(DeviceFileSource(path, mimeType: 'audio/wav'));
+      await _player.play(DeviceFileSource(path, mimeType: mimeType));
     }
   }
 

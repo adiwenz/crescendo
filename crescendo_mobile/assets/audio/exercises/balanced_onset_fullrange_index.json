@@ -1,0 +1,280 @@
+{
+  "exerciseId": "balanced_onset",
+  "leadInSec": 2.0,
+  "range": {
+    "minMidi": 36,
+    "maxMidi": 96
+  },
+  "steps": [
+    {
+      "rootMidi": 36,
+      "startSec": 2.0,
+      "endSec": 6.05
+    },
+    {
+      "rootMidi": 37,
+      "startSec": 6.8,
+      "endSec": 10.85
+    },
+    {
+      "rootMidi": 38,
+      "startSec": 11.6,
+      "endSec": 15.649999999999999
+    },
+    {
+      "rootMidi": 39,
+      "startSec": 16.4,
+      "endSec": 20.45
+    },
+    {
+      "rootMidi": 40,
+      "startSec": 21.2,
+      "endSec": 25.25
+    },
+    {
+      "rootMidi": 41,
+      "startSec": 26.0,
+      "endSec": 30.05
+    },
+    {
+      "rootMidi": 42,
+      "startSec": 30.8,
+      "endSec": 34.85
+    },
+    {
+      "rootMidi": 43,
+      "startSec": 35.6,
+      "endSec": 39.65
+    },
+    {
+      "rootMidi": 44,
+      "startSec": 40.4,
+      "endSec": 44.449999999999996
+    },
+    {
+      "rootMidi": 45,
+      "startSec": 45.199999999999996,
+      "endSec": 49.24999999999999
+    },
+    {
+      "rootMidi": 46,
+      "startSec": 49.99999999999999,
+      "endSec": 54.04999999999999
+    },
+    {
+      "rootMidi": 47,
+      "startSec": 54.79999999999999,
+      "endSec": 58.84999999999999
+    },
+    {
+      "rootMidi": 48,
+      "startSec": 59.59999999999999,
+      "endSec": 63.649999999999984
+    },
+    {
+      "rootMidi": 49,
+      "startSec": 64.39999999999999,
+      "endSec": 68.44999999999999
+    },
+    {
+      "rootMidi": 50,
+      "startSec": 69.19999999999999,
+      "endSec": 73.24999999999999
+    },
+    {
+      "rootMidi": 51,
+      "startSec": 73.99999999999999,
+      "endSec": 78.04999999999998
+    },
+    {
+      "rootMidi": 52,
+      "startSec": 78.79999999999998,
+      "endSec": 82.84999999999998
+    },
+    {
+      "rootMidi": 53,
+      "startSec": 83.59999999999998,
+      "endSec": 87.64999999999998
+    },
+    {
+      "rootMidi": 54,
+      "startSec": 88.39999999999998,
+      "endSec": 92.44999999999997
+    },
+    {
+      "rootMidi": 55,
+      "startSec": 93.19999999999997,
+      "endSec": 97.24999999999997
+    },
+    {
+      "rootMidi": 56,
+      "startSec": 97.99999999999997,
+      "endSec": 102.04999999999997
+    },
+    {
+      "rootMidi": 57,
+      "startSec": 102.79999999999997,
+      "endSec": 106.84999999999997
+    },
+    {
+      "rootMidi": 58,
+      "startSec": 107.59999999999997,
+      "endSec": 111.64999999999996
+    },
+    {
+      "rootMidi": 59,
+      "startSec": 112.39999999999996,
+      "endSec": 116.44999999999996
+    },
+    {
+      "rootMidi": 60,
+      "startSec": 117.19999999999996,
+      "endSec": 121.24999999999996
+    },
+    {
+      "rootMidi": 61,
+      "startSec": 121.99999999999996,
+      "endSec": 126.04999999999995
+    },
+    {
+      "rootMidi": 62,
+      "startSec": 126.79999999999995,
+      "endSec": 130.84999999999997
+    },
+    {
+      "rootMidi": 63,
+      "startSec": 131.59999999999997,
+      "endSec": 135.64999999999998
+    },
+    {
+      "rootMidi": 64,
+      "startSec": 136.39999999999998,
+      "endSec": 140.45
+    },
+    {
+      "rootMidi": 65,
+      "startSec": 141.2,
+      "endSec": 145.25
+    },
+    {
+      "rootMidi": 66,
+      "startSec": 146.0,
+      "endSec": 150.05
+    },
+    {
+      "rootMidi": 67,
+      "startSec": 150.8,
+      "endSec": 154.85000000000002
+    },
+    {
+      "rootMidi": 68,
+      "startSec": 155.60000000000002,
+      "endSec": 159.65000000000003
+    },
+    {
+      "rootMidi": 69,
+      "startSec": 160.40000000000003,
+      "endSec": 164.45000000000005
+    },
+    {
+      "rootMidi": 70,
+      "startSec": 165.20000000000005,
+      "endSec": 169.25000000000006
+    },
+    {
+      "rootMidi": 71,
+      "startSec": 170.00000000000006,
+      "endSec": 174.05000000000007
+    },
+    {
+      "rootMidi": 72,
+      "startSec": 174.80000000000007,
+      "endSec": 178.85000000000008
+    },
+    {
+      "rootMidi": 73,
+      "startSec": 179.60000000000008,
+      "endSec": 183.6500000000001
+    },
+    {
+      "rootMidi": 74,
+      "startSec": 184.4000000000001,
+      "endSec": 188.4500000000001
+    },
+    {
+      "rootMidi": 75,
+      "startSec": 189.2000000000001,
+      "endSec": 193.2500000000001
+    },
+    {
+      "rootMidi": 76,
+      "startSec": 194.0000000000001,
+      "endSec": 198.05000000000013
+    },
+    {
+      "rootMidi": 77,
+      "startSec": 198.80000000000013,
+      "endSec": 202.85000000000014
+    },
+    {
+      "rootMidi": 78,
+      "startSec": 203.60000000000014,
+      "endSec": 207.65000000000015
+    },
+    {
+      "rootMidi": 79,
+      "startSec": 208.40000000000015,
+      "endSec": 212.45000000000016
+    },
+    {
+      "rootMidi": 80,
+      "startSec": 213.20000000000016,
+      "endSec": 217.25000000000017
+    },
+    {
+      "rootMidi": 81,
+      "startSec": 218.00000000000017,
+      "endSec": 222.05000000000018
+    },
+    {
+      "rootMidi": 82,
+      "startSec": 222.80000000000018,
+      "endSec": 226.8500000000002
+    },
+    {
+      "rootMidi": 83,
+      "startSec": 227.6000000000002,
+      "endSec": 231.6500000000002
+    },
+    {
+      "rootMidi": 84,
+      "startSec": 232.4000000000002,
+      "endSec": 236.45000000000022
+    },
+    {
+      "rootMidi": 85,
+      "startSec": 237.20000000000022,
+      "endSec": 241.25000000000023
+    },
+    {
+      "rootMidi": 86,
+      "startSec": 242.00000000000023,
+      "endSec": 246.05000000000024
+    },
+    {
+      "rootMidi": 87,
+      "startSec": 246.80000000000024,
+      "endSec": 250.85000000000025
+    },
+    {
+      "rootMidi": 88,
+      "startSec": 251.60000000000025,
+      "endSec": 255.65000000000026
+    },
+    {
+      "rootMidi": 89,
+      "startSec": 256.40000000000026,
+      "endSec": 260.4500000000003
+    }
+  ]
+}

@@ -1,11 +1,17 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exercise_cache_service.dart';
+import 'reference_audio_cache_service.dart';
 
 class RangeStore {
   static const _lowestKey = 'range_lowest_midi';
   static const _highestKey = 'range_highest_midi';
 
-  Future<void> saveRange({required int lowestMidi, required int highestMidi}) async {
+  Future<void> saveRange({
+    required int lowestMidi,
+    required int highestMidi,
+    void Function(int current, int total, String exerciseId)? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lowestKey, lowestMidi);
     await prefs.setInt(_highestKey, highestMidi);
@@ -14,6 +20,14 @@ class RangeStore {
     await ExerciseCacheService.instance.generateCache(
       lowestMidi: lowestMidi,
       highestMidi: highestMidi,
+    );
+    
+    // Generate reference audio cache
+    await ReferenceAudioCacheService.instance.generateCacheForRange(
+      lowestMidi: lowestMidi,
+      highestMidi: highestMidi,
+      onProgress: onProgress,
+      shouldCancel: shouldCancel,
     );
   }
 

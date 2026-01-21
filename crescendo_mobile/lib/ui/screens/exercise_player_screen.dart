@@ -18,7 +18,6 @@ import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../services/audio_synth_service.dart';
-import '../../services/reference_midi_engine.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
 import '../../services/recording_service.dart';
@@ -27,6 +26,12 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_cache_service.dart';
+import '../../services/reference_audio_cache_service.dart';
+import '../../services/exercise_audio_asset_resolver.dart';
+import '../../services/exercise_audio_slicer.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import '../../services/attempt_repository.dart';
 import '../../models/exercise_attempt.dart';
 import 'exercise_review_summary_screen.dart';
@@ -153,8 +158,7 @@ class PitchHighwayPlayer extends StatefulWidget {
 
 class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     with SingleTickerProviderStateMixin {
-  final AudioSynthService _synth = AudioSynthService(); // Keep for review mode
-  final ReferenceMidiEngine _midiEngine = ReferenceMidiEngine();
+  final AudioSynthService _synth = AudioSynthService(); // For cached audio playback
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final ValueNotifier<double?> _liveMidi = ValueNotifier<double?>(null);
   final List<PitchFrame> _captured = [];
@@ -255,7 +259,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         '[ExercisePlayerScreen] initState start at ${initStartTime.millisecondsSinceEpoch}');
 
     // Initialize MIDI engine (sets up route change listeners automatically)
-    unawaited(_midiEngine.initialize());
+    // No MIDI engine initialization needed - using cached audio instead
 
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
@@ -532,7 +536,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (!mounted) return;
     try {
       // Ensure MIDI synth is initialized (idempotent)
-      await _midiEngine.ensureReady(tag: 'exercise-start');
+      // No MIDI engine needed - using cached audio
       DebugLog.log(LogCat.midi, 'MIDI engine ready for ${notes.length} notes');
     } catch (e) {
       DebugLog.log(LogCat.error, 'Error initializing MIDI engine: $e');
@@ -718,7 +722,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Update MIDI engine position for route change resumption
     if (_phase == StartPhase.running) {
-      _midiEngine.updatePosition(next, runId: _runId);
+      // No MIDI position update needed - using cached audio, position comes from audio player
     }
 
     final effectiveMidi = _pitchState.effectiveMidi;
@@ -1188,8 +1192,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final beforeAudio = DateTime.now();
 
       try {
-        // Get timeline anchor epoch for logging/debugging
-        final timelineStartMs = _timelineStartEpochMs ?? t0;
+        // Timeline anchor epoch for logging/debugging (not used for cached audio)
 
         // Sync check: verify visual and audio timelines align
         if (notes.isNotEmpty) {
@@ -1228,14 +1231,85 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           }
         }
 
-        // Schedule notes with lead-in delay (lead-in is in MIDI timestamps, but we pass it for timing)
-        await _midiEngine.playSequence(
-          notes: notes,
-          leadInSec: 0.0, // Start immediately, lead-in is in MIDI timestamps
-          runId: runId,
-          startEpochMs: timelineStartMs,
-          mode: 'exercise',
-        );
+        // Play reference audio from bundled M4A assets (sliced to user's vocal range)
+        // This eliminates MIDI/audio sync drift and route-change failures
+        final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
+        
+        // Check if exercise has a bundled M4A asset
+        final hasAsset = await ExerciseAudioAssetResolver.hasAsset(widget.exercise.id);
+        
+        if (hasAsset) {
+          // Get slice for user's vocal range
+          final slice = await ExerciseAudioSlicer.instance.getSlice(
+            exerciseId: widget.exercise.id,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+          );
+          
+          if (slice != null) {
+            // Load asset to temp file
+            final assetPath = ExerciseAudioAssetResolver.getM4aAssetPath(widget.exercise.id);
+            final byteData = await rootBundle.load(assetPath);
+            final bytes = byteData.buffer.asUint8List();
+            
+            final dir = await getTemporaryDirectory();
+            final fileName = p.basename(assetPath);
+            final tempPath = p.join(dir.path, 'exercise_${DateTime.now().millisecondsSinceEpoch}_$fileName');
+            final file = File(tempPath);
+            await file.writeAsBytes(bytes, flush: true);
+            
+            debugPrint('[Start] Playing asset audio for ${widget.exercise.id}:');
+            debugPrint('[Start]   Slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s');
+            debugPrint('[Start]   Range: $lowestMidi-$highestMidi');
+            
+            // Play the file
+            await _synth.playFile(tempPath);
+            
+            // Seek to slice start (slice times already include lead-in from JSON)
+            final seekPosition = Duration(milliseconds: (slice.startSec * 1000).round());
+            await _synth.seek(seekPosition, runId: runId);
+            
+            // Set up position monitoring to stop at slice end
+            // Cancel any existing subscription
+            await _audioPosSub?.cancel();
+            _audioPosSub = _synth.onPositionChanged.listen((position) {
+              final positionSec = position.inMilliseconds / 1000.0;
+              // Stop audio when we reach the end of the slice
+              if (positionSec >= slice.endSec) {
+                _synth.stop();
+                _audioPosSub?.cancel();
+                _audioPosSub = null;
+              }
+            });
+            
+            debugPrint('[Start] Asset audio started, seeking to ${seekPosition.inMilliseconds}ms (slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s)');
+          } else {
+            debugPrint('[Start] WARNING: No slice found for ${widget.exercise.id} (range: $lowestMidi-$highestMidi)');
+            debugPrint('[Start] Exercise may not have valid index. Continuing without audio playback.');
+          }
+        } else {
+          // Fallback: try cache for backward compatibility
+          final rangeHash = ReferenceAudioCacheService.generateRangeHash(
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+          );
+          final variantKey = widget.pitchDifficulty.name;
+          
+          final cachedAudioPath = await ReferenceAudioCacheService.instance.getCachedAudioPath(
+            exerciseId: widget.exercise.id,
+            rangeHash: rangeHash,
+            variantKey: variantKey,
+          );
+          
+          if (cachedAudioPath != null) {
+            // Play cached audio file (fallback for exercises without assets)
+            await _synth.playFile(cachedAudioPath);
+            debugPrint('[Start] Playing cached reference audio (fallback): $cachedAudioPath');
+          } else {
+            debugPrint('[Start] WARNING: No asset or cached audio found for ${widget.exercise.id}');
+            debugPrint('[Start] Exercise may not have reference audio. Continuing without audio playback.');
+          }
+        }
 
         // Update position tracking as playback progresses (will be updated in ticker)
         // Initial position is 0, will be updated by ticker
@@ -1243,10 +1317,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         dev.Timeline.finishSync();
         final afterAudio = DateTime.now();
         _audioPlayingEpochMs = afterAudio.millisecondsSinceEpoch;
-        trace.mark('after scheduleNotes');
+        trace.mark('after playCachedAudio');
         final elapsedFromTap = _audioPlayingEpochMs! - _tapEpochMs!;
         debugPrint(
-            '[Start] MIDI scheduled and started in ${afterAudio.difference(beforeAudio).inMilliseconds}ms (${elapsedFromTap}ms after tap)');
+            '[Start] Cached audio started in ${afterAudio.difference(beforeAudio).inMilliseconds}ms (${elapsedFromTap}ms after tap)');
 
         if (runId != _runId || !mounted) {
           debugPrint(
@@ -1327,8 +1401,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _recording == null ? null : await _recording!.stop();
     // Note: Do NOT dispose recording here - only dispose in dispose()
     await _synth.stop();
-    await _midiEngine.stopAll(tag: 'exercise-stop');
-    _midiEngine.clearContext(runId: _runId);
+    // No MIDI engine stop needed - we're using cached audio, not MIDI
     _clock.pause();
     _pitchState.reset();
     _visualState.reset();

@@ -13,7 +13,6 @@ import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
 import '../../services/audio_synth_service.dart';
-import '../../services/reference_midi_engine.dart';
 import '../../services/review_audio_bounce_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../audio/midi_playback_config.dart';
@@ -51,7 +50,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     with SingleTickerProviderStateMixin {
   // Enable mixing mode to play both recorded audio and reference notes simultaneously
   final AudioSynthService _synth = AudioSynthService(enableMixing: true);
-  final ReferenceMidiEngine _midiEngine = ReferenceMidiEngine();
+  // No MIDI engine needed - using bounced audio for review playback
   final VocalRangeService _vocalRangeService = VocalRangeService();
   final ValueNotifier<double> _time = ValueNotifier<double>(0);
   final PerformanceClock _clock = PerformanceClock();
@@ -97,7 +96,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     super.initState();
     
     // Initialize MIDI engine (sets up route change listeners automatically)
-    unawaited(_midiEngine.initialize());
+    // No MIDI engine initialization needed - using bounced audio
     
     // Set debug context
     _reviewRunId++;
@@ -441,8 +440,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _playerStateSub?.cancel();
     _positionWatchdog?.cancel();
     _synth.stop();
-    _midiEngine.stopAll(tag: 'review-dispose');
-    _midiEngine.clearContext(runId: _reviewRunId);
+    // No MIDI engine cleanup needed - using bounced audio, not real-time MIDI
     _time.dispose();
     super.dispose();
   }
