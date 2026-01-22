@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "five_tone_scales",
+  "patternId": "default",
+  "noteCount": 9,
+  "patternDurationSec": 3.6,
+  "notes": [
+    {
+      "i": 0,
+      "midiDelta": 0,
+      "xStart": 0.0,
+      "xEnd": 0.4
+    },
+    {
+      "i": 1,
+      "midiDelta": 2,
+      "xStart": 0.4,
+      "xEnd": 0.8
+    },
+    {
+      "i": 2,
+      "midiDelta": 4,
+      "xStart": 0.8,
+      "xEnd": 1.2
+    },
+    {
+      "i": 3,
+      "midiDelta": 5,
+      "xStart": 1.2,
+      "xEnd": 1.6
+    },
+    {
+      "i": 4,
+      "midiDelta": 7,
+      "xStart": 1.6,
+      "xEnd": 2.0
+    },
+    {
+      "i": 5,
+      "midiDelta": 5,
+      "xStart": 2.0,
+      "xEnd": 2.4
+    },
+    {
+      "i": 6,
+      "midiDelta": 4,
+      "xStart": 2.4,
+      "xEnd": 2.8
+    },
+    {
+      "i": 7,
+      "midiDelta": 2,
+      "xStart": 2.8,
+      "xEnd": 3.2
+    },
+    {
+      "i": 8,
+      "midiDelta": 0,
+      "xStart": 3.2,
+      "xEnd": 3.6
+    }
+  ]
+}

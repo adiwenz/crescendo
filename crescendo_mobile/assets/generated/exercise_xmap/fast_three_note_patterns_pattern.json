@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "fast_three_note_patterns",
+  "patternId": "default",
+  "noteCount": 9,
+  "patternDurationSec": 2.7,
+  "notes": [
+    {
+      "i": 0,
+      "midiDelta": 0,
+      "xStart": 0.0,
+      "xEnd": 0.3
+    },
+    {
+      "i": 1,
+      "midiDelta": 2,
+      "xStart": 0.3,
+      "xEnd": 0.6
+    },
+    {
+      "i": 2,
+      "midiDelta": 4,
+      "xStart": 0.6,
+      "xEnd": 0.9
+    },
+    {
+      "i": 3,
+      "midiDelta": 2,
+      "xStart": 0.9,
+      "xEnd": 1.2
+    },
+    {
+      "i": 4,
+      "midiDelta": 0,
+      "xStart": 1.2,
+      "xEnd": 1.5
+    },
+    {
+      "i": 5,
+      "midiDelta": 2,
+      "xStart": 1.5,
+      "xEnd": 1.8
+    },
+    {
+      "i": 6,
+      "midiDelta": 4,
+      "xStart": 1.8,
+      "xEnd": 2.1
+    },
+    {
+      "i": 7,
+      "midiDelta": 2,
+      "xStart": 2.1,
+      "xEnd": 2.4
+    },
+    {
+      "i": 8,
+      "midiDelta": 0,
+      "xStart": 2.4,
+      "xEnd": 2.7
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "mix_bridging",
+  "patternId": "default",
+  "noteCount": 7,
+  "patternDurationSec": 3.01,
+  "notes": [
+    {
+      "i": 0,
+      "midiDelta": 0,
+      "xStart": 0.0,
+      "xEnd": 0.43
+    },
+    {
+      "i": 1,
+      "midiDelta": 4,
+      "xStart": 0.43,
+      "xEnd": 0.86
+    },
+    {
+      "i": 2,
+      "midiDelta": 7,
+      "xStart": 0.86,
+      "xEnd": 1.29
+    },
+    {
+      "i": 3,
+      "midiDelta": 12,
+      "xStart": 1.29,
+      "xEnd": 1.72
+    },
+    {
+      "i": 4,
+      "midiDelta": 7,
+      "xStart": 1.72,
+      "xEnd": 2.15
+    },
+    {
+      "i": 5,
+      "midiDelta": 4,
+      "xStart": 2.15,
+      "xEnd": 2.58
+    },
+    {
+      "i": 6,
+      "midiDelta": 0,
+      "xStart": 2.58,
+      "xEnd": 3.01
+    }
+  ]
+}
