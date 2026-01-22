@@ -4,6 +4,7 @@
   "patternId": "default",
   "noteCount": 7,
   "patternDurationSec": 2.94,
+  "gapBetweenPatterns": 2.0,
   "notes": [
     {
       "i": 0,
