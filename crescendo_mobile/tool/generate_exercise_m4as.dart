@@ -430,6 +430,24 @@ Future<Map<String, dynamic>?> _generateExerciseAudio({
       JsonEncoder.withIndent('  ').convert(indexData),
     );
 
+    // Write visual notes JSON (for pitch highway rendering)
+    // Notes are in absolute time (including lead-in), starting at leadInSec
+    final visualNotesPath =
+        p.join(outputDir, '${exercise.id}_visual_notes.json');
+    final visualNotesData = {
+      'leadInSec': leadInSec,
+      'notes': sortedNotes.map((note) {
+        return {
+          'startSec': note.startSec,
+          'endSec': note.endSec,
+          'midi': note.midi,
+        };
+      }).toList(),
+    };
+    await File(visualNotesPath).writeAsString(
+      JsonEncoder.withIndent('  ').convert(visualNotesData),
+    );
+
     final m4aFile = File(m4aPath);
     final m4aSize = await m4aFile.length();
 

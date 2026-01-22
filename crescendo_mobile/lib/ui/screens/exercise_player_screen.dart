@@ -1262,12 +1262,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             debugPrint('[Start]   Slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s');
             debugPrint('[Start]   Range: $lowestMidi-$highestMidi');
             
-            // Play the file
+            // Load the file (playFile will auto-play, so we'll pause immediately)
             await _synth.playFile(tempPath);
             
+            // Immediately pause (playFile auto-starts playback)
+            await _synth.pause();
+            
             // Seek to slice start (slice times already include lead-in from JSON)
+            // The slice.startSec is where the notes start in the file (after 2s lead-in)
             final seekPosition = Duration(milliseconds: (slice.startSec * 1000).round());
             await _synth.seek(seekPosition, runId: runId);
+            
+            debugPrint('[Start] Asset audio loaded and paused at ${seekPosition.inMilliseconds}ms (slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s)');
+            debugPrint('[Start] Waiting ${_leadInSec.toStringAsFixed(1)}s lead-in before resuming playback...');
+            
+            // Wait 2 seconds (lead-in count-in), then resume
+            await Future.delayed(Duration(milliseconds: (_leadInSec * 1000).round()));
+            
+            // Resume playback
+            await _synth.resume();
+            debugPrint('[Start] Audio playback resumed after ${_leadInSec.toStringAsFixed(1)}s lead-in');
             
             // Set up position monitoring to stop at slice end
             // Cancel any existing subscription
@@ -1281,8 +1295,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                 _audioPosSub = null;
               }
             });
-            
-            debugPrint('[Start] Asset audio started, seeking to ${seekPosition.inMilliseconds}ms (slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s)');
           } else {
             debugPrint('[Start] WARNING: No slice found for ${widget.exercise.id} (range: $lowestMidi-$highestMidi)');
             debugPrint('[Start] Exercise may not have valid index. Continuing without audio playback.');

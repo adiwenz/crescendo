@@ -18,7 +18,8 @@ class AudioSynthService {
   final AudioPlayer _player;
   final AudioPlayer?
       _secondaryPlayer; // For mixing reference notes with recorded audio
-  String? _secondaryPreparedPath; // Track which file secondary player is prepared for
+  String?
+      _secondaryPreparedPath; // Track which file secondary player is prepared for
   bool _secondaryPrepared = false;
 
   AudioSynthService({this.sampleRate = 44100, bool enableMixing = false})
@@ -131,7 +132,7 @@ class AudioSynthService {
     await _player.stop();
     await _applyAudioContext();
     await _player.setVolume(1.0);
-    
+
     // Detect MIME type from file extension
     String mimeType = 'audio/wav';
     if (path.toLowerCase().endsWith('.m4a')) {
@@ -141,7 +142,7 @@ class AudioSynthService {
     } else if (path.toLowerCase().endsWith('.wav')) {
       mimeType = 'audio/wav';
     }
-    
+
     try {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) return;
@@ -184,26 +185,30 @@ class AudioSynthService {
   Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
   /// Seek the primary player to a specific position (with timeout protection)
-  Future<bool> seek(Duration position, {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
+  Future<bool> seek(Duration position,
+      {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
     final state = _player.state;
     final hasSource = _player.source != null;
     final targetSec = position.inMilliseconds / 1000.0;
-    
-    debugPrint('[AudioSynthService] seek: which=primary targetSec=$targetSec hasSource=$hasSource playing=${state == PlayerState.playing} state=$state runId=$runId');
-    
+
+    debugPrint(
+        '[AudioSynthService] seek: which=primary targetSec=$targetSec hasSource=$hasSource playing=${state == PlayerState.playing} state=$state runId=$runId');
+
     try {
       await _player.seek(position).timeout(
         timeout,
         onTimeout: () {
-          debugPrint('[AudioSynthService] seek: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
+          debugPrint(
+              '[AudioSynthService] seek: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
           throw TimeoutException('seek timeout', timeout);
         },
       );
-      
+
       // Get position after seek for logging
       final pos = await _player.getCurrentPosition();
-      debugPrint('[AudioSynthService] seek: done posMs=${pos?.inMilliseconds} runId=$runId');
-      
+      debugPrint(
+          '[AudioSynthService] seek: done posMs=${pos?.inMilliseconds} runId=$runId');
+
       return true;
     } catch (e) {
       debugPrint('[AudioSynthService] seek: error $e runId=$runId');
@@ -216,19 +221,22 @@ class AudioSynthService {
   Future<bool> ensureSecondaryPrepared(String path, {int? runId}) async {
     final player = _secondaryPlayer;
     if (player == null) {
-      debugPrint('[AudioSynthService] ensureSecondaryPrepared: no secondary player');
+      debugPrint(
+          '[AudioSynthService] ensureSecondaryPrepared: no secondary player');
       return false;
     }
 
     // If already prepared for this file, skip
     if (_secondaryPrepared && _secondaryPreparedPath == path) {
-      debugPrint('[AudioSynthService] ensureSecondaryPrepared: already prepared for $path runId=$runId');
+      debugPrint(
+          '[AudioSynthService] ensureSecondaryPrepared: already prepared for $path runId=$runId');
       return true;
     }
 
     try {
-      debugPrint('[AudioSynthService] ensureSecondaryPrepared: preparing $path runId=$runId');
-      
+      debugPrint(
+          '[AudioSynthService] ensureSecondaryPrepared: preparing $path runId=$runId');
+
       // Stop and reset
       await player.stop();
       _secondaryPrepared = false;
@@ -237,7 +245,8 @@ class AudioSynthService {
       // Set source
       final file = File(path);
       if (!await file.exists()) {
-        debugPrint('[AudioSynthService] ensureSecondaryPrepared: file not found $path runId=$runId');
+        debugPrint(
+            '[AudioSynthService] ensureSecondaryPrepared: file not found $path runId=$runId');
         return false;
       }
 
@@ -245,7 +254,8 @@ class AudioSynthService {
       try {
         final bytes = await file.readAsBytes();
         if (bytes.isEmpty) {
-          debugPrint('[AudioSynthService] ensureSecondaryPrepared: empty file $path runId=$runId');
+          debugPrint(
+              '[AudioSynthService] ensureSecondaryPrepared: empty file $path runId=$runId');
           return false;
         }
         await player.setSourceBytes(bytes, mimeType: 'audio/wav');
@@ -268,14 +278,16 @@ class AudioSynthService {
 
       _secondaryPrepared = true;
       _secondaryPreparedPath = path;
-      
+
       // Get duration for logging
       final duration = await player.getDuration();
-      debugPrint('[AudioSynthService] ensureSecondaryPrepared: ready durationMs=${duration?.inMilliseconds} runId=$runId');
-      
+      debugPrint(
+          '[AudioSynthService] ensureSecondaryPrepared: ready durationMs=${duration?.inMilliseconds} runId=$runId');
+
       return true;
     } catch (e) {
-      debugPrint('[AudioSynthService] ensureSecondaryPrepared: error $e runId=$runId');
+      debugPrint(
+          '[AudioSynthService] ensureSecondaryPrepared: error $e runId=$runId');
       _secondaryPrepared = false;
       _secondaryPreparedPath = null;
       return false;
@@ -283,38 +295,44 @@ class AudioSynthService {
   }
 
   /// Seek the secondary player with timeout (non-blocking)
-  Future<bool> seekSecondary(Duration position, {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
+  Future<bool> seekSecondary(Duration position,
+      {int? runId, Duration timeout = const Duration(seconds: 2)}) async {
     final player = _secondaryPlayer;
     if (player == null) {
-      debugPrint('[AudioSynthService] seekSecondary: no secondary player runId=$runId');
+      debugPrint(
+          '[AudioSynthService] seekSecondary: no secondary player runId=$runId');
       return false;
     }
 
     if (!_secondaryPrepared) {
-      debugPrint('[AudioSynthService] seekSecondary: secondary not prepared, skipping seek runId=$runId');
+      debugPrint(
+          '[AudioSynthService] seekSecondary: secondary not prepared, skipping seek runId=$runId');
       return false;
     }
 
     final targetSec = position.inMilliseconds / 1000.0;
     final state = player.state;
     final hasSource = player.source != null;
-    
-    debugPrint('[AudioSynthService] seekSecondary: which=secondary targetSec=$targetSec hasSource=$hasSource prepared=$_secondaryPrepared playing=${state == PlayerState.playing} state=$state runId=$runId');
+
+    debugPrint(
+        '[AudioSynthService] seekSecondary: which=secondary targetSec=$targetSec hasSource=$hasSource prepared=$_secondaryPrepared playing=${state == PlayerState.playing} state=$state runId=$runId');
 
     try {
       // Use timeout to prevent hanging
       await player.seek(position).timeout(
         timeout,
         onTimeout: () {
-          debugPrint('[AudioSynthService] seekSecondary: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
+          debugPrint(
+              '[AudioSynthService] seekSecondary: TIMEOUT after ${timeout.inMilliseconds}ms runId=$runId');
           throw TimeoutException('seekSecondary timeout', timeout);
         },
       );
 
       // Get position after seek for logging
       final pos = await player.getCurrentPosition();
-      debugPrint('[AudioSynthService] seekSecondary: done posMs=${pos?.inMilliseconds} runId=$runId');
-      
+      debugPrint(
+          '[AudioSynthService] seekSecondary: done posMs=${pos?.inMilliseconds} runId=$runId');
+
       return true;
     } catch (e) {
       debugPrint('[AudioSynthService] seekSecondary: error $e runId=$runId');
@@ -325,6 +343,16 @@ class AudioSynthService {
   Future<void> stop() async {
     await _player.stop();
     await _secondaryPlayer?.stop();
+  }
+
+  Future<void> pause() async {
+    await _player.pause();
+    await _secondaryPlayer?.pause();
+  }
+
+  Future<void> resume() async {
+    await _player.resume();
+    await _secondaryPlayer?.resume();
   }
 
   Future<void> dispose() async {
