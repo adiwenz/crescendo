@@ -41,6 +41,7 @@ flutter:
     - assets/soundfonts/default.sf2
     - assets/audio/previews/
     - assets/audio/exercises/
+    - assets/generated/exercise_xmap/
 
 flutter_launcher_icons:
   image_path: "assets/purple_logo.png"

@@ -49,6 +49,9 @@ import '../../utils/exercise_constants.dart';
 import '../widgets/cents_meter.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/audio_session_service.dart';
+import '../../services/pattern_spec_loader.dart';
+import '../../services/pattern_visual_note_builder.dart';
+import '../../models/pattern_spec.dart';
 
 /// Single source of truth for exercise start state
 enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
@@ -215,6 +218,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   SirenPath?
       _sirenVisualPath; // Visual path for Sirens (separate from audio notes)
   bool _notesLoaded = false;
+  PatternSpec? _patternSpec; // Cached pattern spec for JSON-driven rendering
   String? _rangeError;
 
   // Instant start state management
@@ -264,6 +268,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Clear all state to prevent rendering old data from previous exercise
     _transposedNotes = const [];
     _notesLoaded = false;
+    _patternSpec = null; // Clear pattern spec
     _phase = StartPhase.idle;
     _setTimeValue(0.0, src: 'initState');
     _pitchBall.reset();
@@ -620,6 +625,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Clear all state to prevent old data from persisting
     _transposedNotes = const [];
     _notesLoaded = false;
+    _patternSpec = null; // Clear pattern spec
     _phase = StartPhase.idle;
     _captureEnabled = false;
     _audioStarted = false;
@@ -1152,6 +1158,43 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         trace.end();
         return;
       }
+
+      // Try to load pattern JSON for JSON-driven rendering
+      trace.mark('before loadPattern');
+      final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
+      _patternSpec = await PatternSpecLoader.instance.loadPattern(widget.exercise.id);
+      
+      if (_patternSpec != null) {
+        // Build visual notes from pattern
+        trace.mark('before buildVisualNotesFromPattern');
+        final patternNotes = PatternVisualNoteBuilder.buildVisualNotesFromPattern(
+          pattern: _patternSpec!,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+        );
+        trace.mark('after buildVisualNotesFromPattern');
+        
+        if (patternNotes.isNotEmpty) {
+          // Use pattern-based notes
+          _transposedNotes = patternNotes;
+          _notesLoaded = true;
+          
+          // Set MIDI range to user's vocal range (for Y-axis mapping)
+          _midiMin = lowestMidi;
+          _midiMax = highestMidi;
+          
+          debugPrint('[PatternNotes] Using pattern-based notes: ${patternNotes.length} notes');
+          debugPrint('[PatternNotes] MIDI range: $_midiMin - $_midiMax (user range)');
+          debugPrint('[PatternNotes] Pattern: ${_patternSpec!.noteCount} notes, duration=${_patternSpec!.patternDurationSec.toStringAsFixed(2)}s, gap=${_patternSpec!.gapBetweenPatterns.toStringAsFixed(2)}s');
+        } else {
+          debugPrint('[PatternNotes] Pattern loaded but visual notes empty, falling back to old method');
+          _patternSpec = null; // Clear pattern spec to use fallback
+        }
+      } else {
+        debugPrint('[PatternNotes] No pattern JSON found for ${widget.exercise.id}, using old method');
+      }
+      trace.mark('after loadPattern');
 
       // Build reference notes (lightweight - just data structure)
       trace.mark('before buildReferenceNotes');
@@ -1719,10 +1762,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   List<ReferenceNote> _buildReferenceNotes() {
-    // Return the transposed sequence if available
+    // Return the transposed sequence if available (pattern-based or old method)
     if (_transposedNotes.isNotEmpty) {
       return _transposedNotes;
     }
+    
+    // Try to load pattern-based notes if pattern spec is available
+    if (_patternSpec != null) {
+      // Pattern notes should already be built and stored in _transposedNotes
+      // If we reach here, pattern loading might have failed, fall through to old method
+      debugPrint('[PatternNotes] Pattern spec available but notes not built yet');
+    }
+    
     // Fallback to old method if notes aren't loaded yet
     final spec = _scaledSpec;
     if (spec == null) return const [];
@@ -1899,8 +1950,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
-    // Update MIDI range if we have notes
-    if (notes.isNotEmpty) {
+    // Update MIDI range
+    if (_patternSpec != null && _transposedNotes.isNotEmpty) {
+      // For pattern-based notes, use user's vocal range directly (already set during pattern loading)
+      // _midiMin and _midiMax are already set to user's range
+      // No need to recalculate from notes
+    } else if (notes.isNotEmpty) {
+      // For old method, calculate from notes
       final midiValues = notes.map((n) => n.midi).toList();
       final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
       final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
@@ -1957,10 +2013,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                                 'tap: ${_tapEpochMs ?? "null"}\n'
                                 'audioPlayCalled: ${_audioPlayCalledEpochMs ?? "null"}\n'
                                 'audioPlaying: ${_audioPlayingEpochMs ?? "null"}\n'
-                                'MIDI runId: ${_runId}\n'
+                                'MIDI runId: $_runId\n'
                                 'MIDI playing: ${_phase == StartPhase.running}\n'
                                 'time: ${_time.value.toStringAsFixed(2)}s\n'
-                                'now: ${DateTime.now().millisecondsSinceEpoch}',
+                                'now: ${DateTime.now().millisecondsSinceEpoch}\n'
+                                '${_patternSpec != null && _transposedNotes.isNotEmpty ? "Pattern: ${_patternSpec!.exerciseId}\n"
+                                  "  noteCount: ${_patternSpec!.noteCount}\n"
+                                  "  duration: ${_patternSpec!.patternDurationSec.toStringAsFixed(2)}s\n"
+                                  "  gap: ${_patternSpec!.gapBetweenPatterns.toStringAsFixed(2)}s\n"
+                                  "  maxDelta: ${_patternSpec!.maxMidiDelta}\n"
+                                  "  visualNotes: ${_transposedNotes.length}\n"
+                                  "  MIDI range: $_midiMin - $_midiMax\n"
+                                  "  totalDuration: ${_durationSec.toStringAsFixed(2)}s\n" : ""}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,

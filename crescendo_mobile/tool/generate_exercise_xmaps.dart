@@ -63,12 +63,14 @@ class _VocalExercise {
   final String name;
   final _PitchHighwaySpec? highwaySpec;
   final bool isGlide;
+  final double gapBetweenRepetitionsSec;
 
   _VocalExercise({
     required this.id,
     required this.name,
     this.highwaySpec,
     this.isGlide = false,
+    this.gapBetweenRepetitionsSec = 0.75, // Default, should match defaultGapBetweenRepetitionsSec in M4A generator
   });
 }
 
@@ -152,6 +154,7 @@ void main(List<String> args) async {
         lowestMidi: minMidi,
         highestMidi: maxMidi,
         leadInSec: leadInSec,
+        gapBetweenRepetitionsSec: exercise.gapBetweenRepetitionsSec,
       );
 
       if (notes.isEmpty) {
@@ -168,6 +171,7 @@ void main(List<String> args) async {
       final patternFile = await writePatternOnlyJson(
         exerciseId: exercise.id,
         scheduledNotes: sortedNotes,
+        gapBetweenRepetitionsSec: exercise.gapBetweenRepetitionsSec,
         outputPath: patternPath,
       );
 
@@ -287,6 +291,7 @@ _VocalExercise _exerciseFromJson(Map<String, dynamic> json) {
     name: json['name'] as String,
     highwaySpec: highwaySpec,
     isGlide: json['isGlide'] as bool? ?? false,
+    gapBetweenRepetitionsSec: (json['gapBetweenRepetitionsSec'] as num?)?.toDouble() ?? 0.75,
   );
 }
 
@@ -296,6 +301,7 @@ List<_ReferenceNote> _buildTransposedSequence({
   required int lowestMidi,
   required int highestMidi,
   required double leadInSec,
+  required double gapBetweenRepetitionsSec,
 }) {
   final spec = exercise.highwaySpec;
   if (spec == null || spec.segments.isEmpty) return [];
@@ -335,7 +341,6 @@ List<_ReferenceNote> _buildTransposedSequence({
   final allNotes = <_ReferenceNote>[];
   var transpositionSemitones = 0;
   var currentTimeSec = leadInSec;
-  const double gapBetweenRepetitionsSec = 2.0;
 
   while (true) {
     final rootMidi = firstRootMidi + transpositionSemitones;
@@ -488,9 +493,11 @@ Future<File?> writeExerciseXMapJson({
 
 /// Generate pattern-only JSON (single mini-exercise pattern).
 /// Extracts the first pattern using gap detection and outputs simplified JSON.
+/// Uses gapBetweenRepetitionsSec from exercises.json as the source of truth.
 Future<File?> writePatternOnlyJson({
   required String exerciseId,
   required List<_ReferenceNote> scheduledNotes,
+  required double gapBetweenRepetitionsSec,
   required String outputPath,
 }) async {
   if (scheduledNotes.isEmpty) {
@@ -544,41 +551,9 @@ Future<File?> writePatternOnlyJson({
     return null;
   }
 
-  // Calculate gapBetweenPatterns by finding gaps between pattern repeats
-  // Look for all gaps >= gapThresholdSec in the full exercise
-  final patternGaps = <double>[];
-  for (var i = 1; i < sortedNotes.length; i++) {
-    final prevNote = sortedNotes[i - 1];
-    final currNote = sortedNotes[i];
-    final gapSec = currNote.startSec - prevNote.endSec;
-
-    if (gapSec >= gapThresholdSec) {
-      patternGaps.add(gapSec);
-    }
-  }
-
-  // Calculate average gap (or use detected gap if only one found)
-  double gapBetweenPatterns;
-  if (patternGaps.isEmpty) {
-    // No gaps found, use a default or the detected gap
-    gapBetweenPatterns = detectedGapSec ?? 1.0;
-    print('[PATTERN_GEN] WARNING: No pattern gaps found, using default: ${gapBetweenPatterns.toStringAsFixed(2)}s');
-  } else {
-    // Use average of all pattern gaps
-    final sum = patternGaps.reduce((a, b) => a + b);
-    gapBetweenPatterns = sum / patternGaps.length;
-    
-    // Check for significant variation
-    final minGap = patternGaps.reduce((a, b) => a < b ? a : b);
-    final maxGap = patternGaps.reduce((a, b) => a > b ? a : b);
-    final variation = maxGap - minGap;
-    if (variation > 0.5) {
-      print('[PATTERN_GEN] WARNING: gapBetweenPatterns varies significantly: min=${minGap.toStringAsFixed(2)}s, max=${maxGap.toStringAsFixed(2)}s, avg=${gapBetweenPatterns.toStringAsFixed(2)}s');
-    }
-  }
-
-  // Clamp to >= 0.0
-  gapBetweenPatterns = gapBetweenPatterns.clamp(0.0, double.infinity);
+  // Use gapBetweenRepetitionsSec from exercises.json as the source of truth
+  // This ensures consistency between audio generation and visual pattern generation
+  final gapBetweenPatterns = gapBetweenRepetitionsSec.clamp(0.0, double.infinity);
 
   // Build pattern-relative notes with midiDelta
   final xmapNotes = <Map<String, dynamic>>[];
@@ -639,7 +614,7 @@ Future<File?> writePatternOnlyJson({
   print('[PATTERN_GEN] rootMidi=$rootMidi (for debugging only)');
   print('[PATTERN_GEN] noteCount=${xmapNotes.length}');
   print('[PATTERN_GEN] patternDurationSec=${patternDurationSec.toStringAsFixed(2)}');
-  print('[PATTERN_GEN] gapBetweenPatterns=${roundedGap.toStringAsFixed(2)}');
+  print('[PATTERN_GEN] gapBetweenPatterns=${roundedGap.toStringAsFixed(2)} (from exercises.json)');
   print('[PATTERN_GEN] midiDeltas=$midiDeltas');
   if (detectedGapSec != null) {
     print('[PATTERN_GEN] boundaryGapSec=${detectedGapSec.toStringAsFixed(3)}');

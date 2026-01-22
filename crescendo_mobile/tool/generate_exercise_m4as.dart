@@ -20,14 +20,13 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 // Configuration
-const int defaultSampleRate = 48000;
-const String defaultBitrate = '96k';
+const int defaultSampleRate = 8000;
+const String defaultBitrate = '64k';
 const int defaultMinMidi = 36; // C2
 const int defaultMaxMidi = 96; // C7
 const double fadeInOutMs = 8.0; // 8ms fade per note
 const double amplitude = 0.3; // Safe volume level
 const double leadInSec = 2.0; // Lead-in time
-const double gapBetweenRepetitionsSec = 0.75; // Gap between pattern repetitions
 
 // Minimal model classes (standalone, no Flutter)
 class _ReferenceNote {
@@ -69,12 +68,14 @@ class _VocalExercise {
   final String name;
   final _PitchHighwaySpec? highwaySpec;
   final bool isGlide;
+  final double gapBetweenRepetitionsSec;
 
   _VocalExercise({
     required this.id,
     required this.name,
     this.highwaySpec,
     this.isGlide = false,
+    required this.gapBetweenRepetitionsSec,
   });
 }
 
@@ -309,11 +310,21 @@ _VocalExercise _exerciseFromJson(Map<String, dynamic> json) {
     highwaySpec = _PitchHighwaySpec(segments: segments);
   }
 
+  // Require gapBetweenRepetitionsSec to be present in JSON
+  final gapBetweenRepetitionsSecJson = json['gapBetweenRepetitionsSec'];
+  if (gapBetweenRepetitionsSecJson == null) {
+    throw Exception(
+        'Exercise "${json['id']}" is missing required field "gapBetweenRepetitionsSec" in exercises.json');
+  }
+  final gapBetweenRepetitionsSec =
+      (gapBetweenRepetitionsSecJson as num).toDouble();
+
   return _VocalExercise(
     id: json['id'] as String,
     name: json['name'] as String,
     highwaySpec: highwaySpec,
     isGlide: json['isGlide'] as bool? ?? false,
+    gapBetweenRepetitionsSec: gapBetweenRepetitionsSec,
   );
 }
 
@@ -331,6 +342,7 @@ Future<Map<String, dynamic>?> _generateExerciseAudio({
     lowestMidi: minMidi,
     highestMidi: maxMidi,
     leadInSec: leadInSec,
+    gapBetweenRepetitionsSec: exercise.gapBetweenRepetitionsSec,
   );
 
   if (notes.isEmpty) {
@@ -468,6 +480,7 @@ List<_ReferenceNote> _buildTransposedSequence({
   required int lowestMidi,
   required int highestMidi,
   required double leadInSec,
+  required double gapBetweenRepetitionsSec,
 }) {
   final spec = exercise.highwaySpec;
   if (spec == null || spec.segments.isEmpty) return [];

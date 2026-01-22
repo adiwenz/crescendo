@@ -14,6 +14,8 @@ enum PitchMatch { good, near, off }
 
 final Set<int> _loggedNoteMappingPainters = <int>{};
 int? _lastLoggedRunId; // Track last logged runId for painter logging
+int?
+    _lastFirstNoteAlignmentLogRunId; // Track if we've logged first note alignment
 
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -34,7 +36,8 @@ class PitchHighwayPainter extends CustomPainter {
   final List<TailPoint>? tailPoints;
   final bool debugLogMapping;
   final int? runId; // For debugging: track which run this painter belongs to
-  final SirenPath? sirenPath; // Optional visual path for Sirens (separate from audio notes)
+  final SirenPath?
+      sirenPath; // Optional visual path for Sirens (separate from audio notes)
 
   PitchHighwayPainter({
     required this.notes,
@@ -68,15 +71,13 @@ class PitchHighwayPainter extends CustomPainter {
       _lastLoggedRunId = runId;
       final pitchPointsCount = pitchTail.length;
       final tailPointsCount = tailPoints?.length ?? 0;
-      debugPrint(
-        '[Painter] runId=$runId '
-        'pitchPoints=$pitchPointsCount '
-        'tailPoints=$tailPointsCount '
-        'notes=${notes.length} '
-        'time=${time.value}'
-      );
+      debugPrint('[Painter] runId=$runId '
+          'pitchPoints=$pitchPointsCount '
+          'tailPoints=$tailPointsCount '
+          'notes=${notes.length} '
+          'time=${time.value}');
     }
-    
+
     // Use time.value directly - notes already have absolute times including lead-in
     // At time.value=0, notes with startSec=2.0 will be positioned 2 seconds to the right
     // As time.value increases, notes slide left toward the playhead
@@ -95,7 +96,8 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final gridPaint = Paint()
-      ..color = colors.divider.withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
+      ..color = colors.divider
+          .withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
       ..strokeWidth = 1;
     final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
     for (var midi = midiMin; midi <= midiMax; midi += gridStep) {
@@ -120,7 +122,9 @@ class PitchHighwayPainter extends CustomPainter {
     final smoothedMidi = liveMidi?.value ?? _smoothedMidiAt(currentTime);
     final currentStatus = _statusForTime(currentTime, smoothedMidi);
 
-    if (debugLogMapping && kDebugMode && _loggedNoteMappingPainters.add(identityHashCode(this))) {
+    if (debugLogMapping &&
+        kDebugMode &&
+        _loggedNoteMappingPainters.add(identityHashCode(this))) {
       assert(midiMax > midiMin);
       for (var i = 0; i < math.min(3, notes.length); i++) {
         final n = notes[i];
@@ -152,7 +156,7 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..color = noteColor;
-      
+
       final sirenGlowPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 8.0
@@ -161,13 +165,13 @@ class PitchHighwayPainter extends CustomPainter {
         ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
             .withOpacity(colors.isMagical ? 0.4 : 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-      
+
       // Group points into cycles by detecting time gaps (> 1 second gap = new cycle)
       final cycleSegments = <List<Offset>>[];
       List<Offset>? currentSegment;
       double? lastTimeSec;
       const gapThresholdSec = 1.0; // If gap > 1s, start a new segment
-      
+
       for (final point in sirenPath!.points) {
         final x = playheadX + (point.tSec - currentTime) * pixelsPerSecond;
         // Skip points outside visible area
@@ -175,16 +179,17 @@ class PitchHighwayPainter extends CustomPainter {
           lastTimeSec = point.tSec;
           continue;
         }
-        
+
         final y = PitchMath.midiToY(
           midi: point.midiFloat,
           height: size.height,
           midiMin: midiMin,
           midiMax: midiMax,
         );
-        
+
         // Check if this point starts a new cycle (large time gap from previous)
-        if (lastTimeSec != null && (point.tSec - lastTimeSec) > gapThresholdSec) {
+        if (lastTimeSec != null &&
+            (point.tSec - lastTimeSec) > gapThresholdSec) {
           // Save current segment and start a new one
           if (currentSegment != null && currentSegment.length >= 2) {
             cycleSegments.add(currentSegment);
@@ -195,27 +200,27 @@ class PitchHighwayPainter extends CustomPainter {
           currentSegment ??= [];
           currentSegment.add(Offset(x, y));
         }
-        
+
         lastTimeSec = point.tSec;
       }
-      
+
       // Add final segment
       if (currentSegment != null && currentSegment.length >= 2) {
         cycleSegments.add(currentSegment);
       }
-      
+
       // Draw each cycle segment as a separate path
       for (final segment in cycleSegments) {
         if (segment.length < 2) continue;
-        
+
         final path = Path();
         path.moveTo(segment.first.dx, segment.first.dy);
-        
+
         // Build smooth path through this segment's points
         for (var i = 1; i < segment.length; i++) {
           final prev = segment[i - 1];
           final curr = segment[i];
-          
+
           if (i == 1) {
             // First segment: use midpoint for smooth start
             final midX = (prev.dx + curr.dx) / 2;
@@ -235,11 +240,11 @@ class PitchHighwayPainter extends CustomPainter {
             path.quadraticBezierTo(controlX, controlY, curr.dx, curr.dy);
           }
         }
-        
+
         canvas.drawPath(path, sirenGlowPaint);
         canvas.drawPath(path, sirenPaint);
       }
-      
+
       // Skip all notes in regular rendering (Sirens uses visual path only)
       // Audio notes are still used for pitch detection matching
     } else {
@@ -255,14 +260,19 @@ class PitchHighwayPainter extends CustomPainter {
               break;
             }
           }
-          
+
           if (glideEnd != null) {
+            // Skip glides during lead-in
+            if (n.startSec < 2.0) continue;
+
             // Draw continuous curve between start and end
-            final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
-            final endX = playheadX + (glideEnd.endSec - currentTime) * pixelsPerSecond;
-            
+            final startX =
+                playheadX + (n.startSec - currentTime) * pixelsPerSecond;
+            final endX =
+                playheadX + (glideEnd.endSec - currentTime) * pixelsPerSecond;
+
             if (endX < -32 || startX > size.width + 32) continue;
-            
+
             final startY = PitchMath.midiToY(
               midi: n.midi.toDouble(),
               height: size.height,
@@ -275,26 +285,29 @@ class PitchHighwayPainter extends CustomPainter {
               midiMin: midiMin,
               midiMax: midiMax,
             );
-            
+
             // Draw glide curve as a smooth path
             final glidePath = Path();
             glidePath.moveTo(startX, startY);
-            
+
             // Use a cubic bezier for smooth curve (control points create smooth interpolation)
             final controlPoint1X = startX + (endX - startX) * 0.33;
             final controlPoint2X = startX + (endX - startX) * 0.67;
             glidePath.cubicTo(
-              controlPoint1X, startY,
-              controlPoint2X, endY,
-              endX, endY,
+              controlPoint1X,
+              startY,
+              controlPoint2X,
+              endY,
+              endX,
+              endY,
             );
-            
+
             final glidePaint = Paint()
               ..style = PaintingStyle.stroke
               ..strokeWidth = 3.0
               ..strokeCap = StrokeCap.round
               ..color = noteColor;
-            
+
             final glowPaint = Paint()
               ..style = PaintingStyle.stroke
               ..strokeWidth = 6.0
@@ -302,76 +315,94 @@ class PitchHighwayPainter extends CustomPainter {
               ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
                   .withOpacity(colors.isMagical ? 0.4 : 0.3)
               ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-            
+
             canvas.drawPath(glidePath, glowPaint);
             canvas.drawPath(glidePath, glidePaint);
-            
+
             // Draw small endpoint markers
             final endpointRadius = 4.0;
-            canvas.drawCircle(Offset(startX, startY), endpointRadius, glidePaint);
+            canvas.drawCircle(
+                Offset(startX, startY), endpointRadius, glidePaint);
             canvas.drawCircle(Offset(endX, endY), endpointRadius, glidePaint);
-            
+
             // Skip the glide end note in the regular loop
             continue;
           }
         }
-        
+
         // Skip glide endpoints (they're handled above)
         if (n.isGlideEnd) continue;
-        
+
         // Regular note rendering (non-glide notes)
+        // Skip notes during lead-in (leadInSec = 2.0s)
+        // Pattern notes are built with: startSec = leadInSec + patternStartSec + xStart
+        // For first pattern (k=0): patternStartSec = 2.0, so first note has startSec = 2.0 + 0.0 = 2.0
+        // This check (< 2.0) skips notes BEFORE lead-in ends, but allows notes AT 2.0 (first note)
+        if (n.startSec < 2.0) continue;
+
         final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
         final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;
-      if (endX < -32 || startX > size.width + 32) continue;
-      final y = PitchMath.midiToY(
-        midi: n.midi.toDouble(),
-        height: size.height,
-        midiMin: midiMin,
-        midiMax: midiMax,
-      );
-      final rect = RRect.fromLTRBR(
-        startX,
-        y - barHeight / 2,
-        endX,
-        y + barHeight / 2,
-        radius,
-      );
-      final Color barColor;
-      if (identical(n, currentNote)) {
-        if (colors.isDark) {
-          barColor = switch (currentStatus) {
-            PitchMatch.good => colors.textPrimary.withOpacity(0.95),
-            PitchMatch.near => colors.textPrimary.withOpacity(0.8),
-            PitchMatch.off => colors.textPrimary.withOpacity(0.6),
-          };
-        } else {
-          barColor = switch (currentStatus) {
-            PitchMatch.good => colors.accentPurple.withOpacity(0.95),
-            PitchMatch.near => colors.accentPurple.withOpacity(0.75),
-            PitchMatch.off => colors.accentPurple.withOpacity(0.55),
-          };
-        }
-      } else {
-        barColor = noteColor;
-      }
-      final glowPaint = Paint()
-        ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
-            .withOpacity(colors.isMagical ? 0.4 : 1)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-      final paint = Paint()..color = barColor;
-      canvas.drawRRect(rect, glowPaint);
-      canvas.drawRRect(rect, paint);
 
-      if (n.lyric != null && n.lyric!.isNotEmpty) {
-        final tp = TextPainter(
-          text: TextSpan(
-            text: n.lyric,
-            style: TextStyle(color: colors.textPrimary, fontSize: 12),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout(maxWidth: math.max(0, endX - startX - 8));
-        tp.paint(canvas, Offset(startX + 4, y - tp.height / 2));
-      }
+        // Debug: Log alignment when first note crosses playline
+        if (runId != null &&
+            i == 0 &&
+            _lastFirstNoteAlignmentLogRunId != runId &&
+            (currentTime - n.startSec).abs() < 0.05) {
+          final diffPx = startX - playheadX;
+          debugPrint(
+              '[NoteAlign] First note alignment: runId=$runId, currentTime=${currentTime.toStringAsFixed(3)}, noteStartSec=${n.startSec.toStringAsFixed(3)}, startX=${startX.toStringAsFixed(1)}, playlineX=${playheadX.toStringAsFixed(1)}, diffPx=${diffPx.toStringAsFixed(1)}');
+          _lastFirstNoteAlignmentLogRunId = runId;
+        }
+        if (endX < -32 || startX > size.width + 32) continue;
+        final y = PitchMath.midiToY(
+          midi: n.midi.toDouble(),
+          height: size.height,
+          midiMin: midiMin,
+          midiMax: midiMax,
+        );
+        final rect = RRect.fromLTRBR(
+          startX,
+          y - barHeight / 2,
+          endX,
+          y + barHeight / 2,
+          radius,
+        );
+        final Color barColor;
+        if (identical(n, currentNote)) {
+          if (colors.isDark) {
+            barColor = switch (currentStatus) {
+              PitchMatch.good => colors.textPrimary.withOpacity(0.95),
+              PitchMatch.near => colors.textPrimary.withOpacity(0.8),
+              PitchMatch.off => colors.textPrimary.withOpacity(0.6),
+            };
+          } else {
+            barColor = switch (currentStatus) {
+              PitchMatch.good => colors.accentPurple.withOpacity(0.95),
+              PitchMatch.near => colors.accentPurple.withOpacity(0.75),
+              PitchMatch.off => colors.accentPurple.withOpacity(0.55),
+            };
+          }
+        } else {
+          barColor = noteColor;
+        }
+        final glowPaint = Paint()
+          ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
+              .withOpacity(colors.isMagical ? 0.4 : 1)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+        final paint = Paint()..color = barColor;
+        canvas.drawRRect(rect, glowPaint);
+        canvas.drawRRect(rect, paint);
+
+        if (n.lyric != null && n.lyric!.isNotEmpty) {
+          final tp = TextPainter(
+            text: TextSpan(
+              text: n.lyric,
+              style: TextStyle(color: colors.textPrimary, fontSize: 12),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout(maxWidth: math.max(0, endX - startX - 8));
+          tp.paint(canvas, Offset(startX + 4, y - tp.height / 2));
+        }
       }
     }
 
@@ -451,14 +482,15 @@ class PitchHighwayPainter extends CustomPainter {
       final playheadPaint = Paint()
         ..color = colors.accentBlue.withOpacity(0.7)
         ..strokeWidth = 2.0;
-      canvas.drawLine(Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
+      canvas.drawLine(
+          Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
     }
   }
 
   ReferenceNote? _noteAtTime(double t) {
     for (var i = 0; i < notes.length; i++) {
       final n = notes[i];
-      
+
       // Check if we're in a glide
       if (n.isGlideStart && n.glideEndMidi != null) {
         ReferenceNote? glideEnd;
@@ -481,7 +513,7 @@ class PitchHighwayPainter extends CustomPainter {
           );
         }
       }
-      
+
       // Regular note check
       if (t >= n.startSec && t <= n.endSec && !n.isGlideEnd) return n;
     }
@@ -656,8 +688,10 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..color = colors.textPrimary.withOpacity(alpha);
-      canvas.drawLine(Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
-      canvas.drawLine(Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), corePaint);
+      canvas.drawLine(
+          Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
+      canvas.drawLine(
+          Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), corePaint);
     }
   }
 
