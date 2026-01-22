@@ -16,6 +16,8 @@ final Set<int> _loggedNoteMappingPainters = <int>{};
 int? _lastLoggedRunId; // Track last logged runId for painter logging
 int?
     _lastFirstNoteAlignmentLogRunId; // Track if we've logged first note alignment
+final Set<String> _firstNotePositionLogs =
+    <String>{}; // Track logged first note positions for debug
 
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -352,6 +354,21 @@ class PitchHighwayPainter extends CustomPainter {
           debugPrint(
               '[NoteAlign] First note alignment: runId=$runId, currentTime=${currentTime.toStringAsFixed(3)}, noteStartSec=${n.startSec.toStringAsFixed(3)}, startX=${startX.toStringAsFixed(1)}, playlineX=${playheadX.toStringAsFixed(1)}, diffPx=${diffPx.toStringAsFixed(1)}');
           _lastFirstNoteAlignmentLogRunId = runId;
+        }
+
+        // Debug instrumentation: log first note position during first 5 seconds
+        if (kDebugMode && runId != null && i == 0 && currentTime < 5.0) {
+          final diffPx = startX - playheadX;
+          // Log every 500ms to avoid spam, clear logs when runId changes
+          if (_lastFirstNoteAlignmentLogRunId != runId) {
+            _firstNotePositionLogs.clear();
+          }
+          final logKey = '${runId}_${(currentTime * 2).floor()}';
+          if (!_firstNotePositionLogs.contains(logKey)) {
+            _firstNotePositionLogs.add(logKey);
+            debugPrint(
+                '[TIMING_DEBUG] [PAINTER] runId=$runId currentTime=${currentTime.toStringAsFixed(3)} firstNoteStartSec=${n.startSec.toStringAsFixed(3)} firstNoteLeftX=${startX.toStringAsFixed(1)} playlineX=${playheadX.toStringAsFixed(1)} dx=${diffPx.toStringAsFixed(1)}');
+          }
         }
         if (endX < -32 || startX > size.width + 32) continue;
         final y = PitchMath.midiToY(

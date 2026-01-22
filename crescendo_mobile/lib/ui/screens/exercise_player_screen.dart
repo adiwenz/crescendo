@@ -226,12 +226,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   int? _exerciseStartEpochMs;
   int? _audioPlayCalledEpochMs; // When audio.play() was called
   int? _audioPlayingEpochMs; // When audio.play() returned successfully
+  int? _audioResumeCalledEpochMs; // When audio.resume() was called
+  int? _audioProgressStartEpochMs; // When audio position actually starts advancing
+  double? _seekTargetMs; // Target seek position in milliseconds
+  double? _sliceStartSec; // Slice start time in seconds
   bool _isImmediateTick =
       false; // Flag to prevent double logging on immediate tick
   int _runId = 0; // Increment on each start to ignore stale async callbacks
   Key? _pitchHighwayKey; // Key to force remount of pitch highway widget
   bool _loggedFirstTick = false; // Track if we've logged the first ticker tick
   PerfTrace? _startTrace; // Store trace for ticker access
+  Timer? _timingDebugTimer; // Timer for periodic timing debug logs
+  bool _audioProgressDetected = false; // Track if audio progress has been detected
 
   // Per-run start guards to prevent double-starting
   bool _visualsStarted = false; // Visuals (clock/ticker) started for this run
@@ -285,6 +291,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _exerciseStartEpochMs = null;
     _audioPlayCalledEpochMs = null;
     _audioPlayingEpochMs = null;
+    _audioResumeCalledEpochMs = null;
+    _audioProgressStartEpochMs = null;
+    _seekTargetMs = null;
+    _sliceStartSec = null;
+    _audioProgressDetected = false;
+    _timingDebugTimer?.cancel();
+    _timingDebugTimer = null;
     _setTimelineStartEpochMs(null, src: 'initState');
     _lastModelHash = null;
     _lastRepaintHash = null;
@@ -637,6 +650,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _exerciseStartEpochMs = null;
     _audioPlayCalledEpochMs = null;
     _audioPlayingEpochMs = null;
+    _audioResumeCalledEpochMs = null;
+    _audioProgressStartEpochMs = null;
+    _seekTargetMs = null;
+    _sliceStartSec = null;
+    _audioProgressDetected = false;
+    _timingDebugTimer?.cancel();
+    _timingDebugTimer = null;
     _timelineStartEpochMs = null;
     _visualsStarted = false;
     _isImmediateTick = false;
@@ -687,10 +707,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // CRITICAL: Use single-anchor time calculation based on _timelineStartEpochMs
     // This ensures time is monotonic and never jumps backwards when audio starts
+    // If clock is frozen until audio, use clock's frozen value (stays at 0)
     final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
     double next;
-    if (_timelineStartEpochMs != null) {
+    
+    // If audio hasn't progressed yet, keep visual time at 0 (clock is frozen)
+    if (!_audioProgressDetected && _timelineStartEpochMs != null) {
+      next = 0.0; // Keep frozen at 0 until audio progresses
+    } else if (_timelineStartEpochMs != null) {
       // Single source of truth: time = (now - anchor) / 1000.0
+      // After audio progresses, anchor is set so visual time aligns with audio
       next = (nowEpochMs - _timelineStartEpochMs!) / 1000.0;
     } else {
       // Fallback to clock if anchor not set (shouldn't happen during play)
@@ -804,6 +830,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _exerciseStartEpochMs = null;
     _audioPlayCalledEpochMs = null;
     _audioPlayingEpochMs = null;
+    _audioResumeCalledEpochMs = null;
+    _audioProgressStartEpochMs = null;
+    _seekTargetMs = null;
+    _sliceStartSec = null;
+    _audioProgressDetected = false;
+    _timingDebugTimer?.cancel();
+    _timingDebugTimer = null;
     _setTimelineStartEpochMs(null,
         src: '_resetRunState'); // Reset timeline anchor
     _startedAt = null;
@@ -912,6 +945,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final tapTime = DateTime.now();
     final t0 = tapTime.millisecondsSinceEpoch;
     debugPrint('[Start] tap at $t0');
+    
+    // Debug instrumentation: log start button tap
+    if (kDebugMode) {
+      debugPrint('[TIMING_DEBUG] [1] START_BUTTON_TAP runId=${_runId + 1} tapEpochMs=$t0');
+    }
 
     // Create performance trace for this start
     final trace = PerfTrace('StartExercise runId=${_runId + 1}');
@@ -995,15 +1033,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     debugPrint(
         '[Visuals] started once runId=$runId startEpoch=$startEpochMs (at $nowMs)');
 
-    // Start clock and ticker immediately (visuals start moving)
-    // Clock starts at 0, audio will align naturally (notes have 2s lead-in built in)
+    // Debug instrumentation: log visuals start
+    if (kDebugMode) {
+      debugPrint('[TIMING_DEBUG] [2] VISUALS_START runId=$runId visualsStartEpochMs=$nowMs');
+    }
+
+    // CRITICAL FIX: Do NOT start clock immediately - wait for audio progress
+    // This prevents visual notes from crossing playline before audio begins
+    // Clock will be started when audio actually begins progressing (see audio position listener)
     _clock.setLatencyCompensationMs(_audioLatencyMs + _manualOffsetMs);
+    
+    // Set freezeUntilAudio flag so clock stays at 0 until audio progresses
+    _clock.start(offsetSec: 0.0, freezeUntilAudio: true);
 
-    // Tripwire: detect clock restart
-    DebugLog.event(LogCat.lifecycle, 'clock_start', runId: runId);
-    _clock.start(offsetSec: 0.0, freezeUntilAudio: false);
-
-    // Tripwire: detect ticker restart
+    // Start ticker (but clock is frozen, so visuals won't advance yet)
     DebugLog.event(LogCat.lifecycle, 'ticker_start', runId: runId);
     _ticker?.start();
 
@@ -1020,6 +1063,89 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final afterVisuals = DateTime.now();
     debugPrint(
         '[Visuals] visuals started <= ${afterVisuals.millisecondsSinceEpoch - startEpochMs}ms');
+  }
+
+  /// Start visual clock when audio actually begins progressing
+  /// This ensures visual notes align with audio timing
+  void _startVisualClockOnAudioProgress({required int runId, required double audioPosMs}) {
+    if (runId != _runId) return; // Ignore stale callbacks
+    
+    if (_timelineStartEpochMs == null) {
+      debugPrint('[TIMING_DEBUG] ERROR: timelineStartEpochMs is null when audio progresses');
+      return;
+    }
+    
+    // Calculate visual time offset: audio is at audioPosMs, but we want visual time to start at leadInSec
+    // Visual notes are positioned relative to leadInSec (first note starts at leadInSec)
+    // When audio begins progressing, we want visual time to be at leadInSec
+    // This ensures the first note (at leadInSec) aligns with when audio starts
+    final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
+    final audioPosSec = audioPosMs / 1000.0;
+    
+    // Update timeline anchor: visual time = (now - anchor) / 1000.0
+    // We want: visualTime = leadInSec at this moment (when audio starts)
+    // So: leadInSec = (now - anchor) / 1000.0
+    // Therefore: anchor = now - leadInSec * 1000
+    final newAnchorMs = nowEpochMs - (_leadInSec * 1000).round();
+    _setTimelineStartEpochMs(newAnchorMs, src: '_startVisualClockOnAudioProgress');
+    
+    // Unfreeze the clock (it was frozen until audio progress)
+    _clock.start(offsetSec: 0.0, freezeUntilAudio: false);
+    
+    if (kDebugMode) {
+      debugPrint('[TIMING_DEBUG] [5] VISUAL_CLOCK_STARTED runId=$runId nowEpochMs=$nowEpochMs audioPosSec=${audioPosSec.toStringAsFixed(3)} newAnchorMs=$newAnchorMs');
+    }
+  }
+
+  /// Start periodic debug logging timer (first 5 seconds or until leadInSec+1.0)
+  void _startTimingDebugTimer({required int runId}) {
+    _timingDebugTimer?.cancel();
+    int logCount = 0;
+    _timingDebugTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (runId != _runId || !mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
+      final visualTimeSec = _time.value;
+      final audioPosMs = _audioPositionSec != null ? _audioPositionSec! * 1000.0 : null;
+      // Get audio state (simplified - just check if we have position)
+      final audioState = _audioPositionSec != null ? 'playing' : 'unknown';
+      
+      // Get first note position for logging
+      double? firstNoteStartSec;
+      double? firstNoteLeftX;
+      double? playlineX;
+      double? dx;
+      
+      if (_transposedNotes.isNotEmpty) {
+        firstNoteStartSec = _transposedNotes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
+        // Calculate note X position (simplified - actual calculation is in painter)
+        // This is approximate for logging purposes
+        if (_canvasSize != null && _pixelsPerSecond > 0) {
+          final playlineFraction = 0.35; // Match painter
+          playlineX = _canvasSize!.width * playlineFraction;
+          firstNoteLeftX = playlineX + (firstNoteStartSec - visualTimeSec) * _pixelsPerSecond;
+          dx = firstNoteLeftX - playlineX;
+        }
+      }
+      
+      // Stop logging after leadInSec+1.0 or 5 seconds, or when dx crosses 0
+      final shouldStop = visualTimeSec > _leadInSec + 1.0 || 
+                        visualTimeSec > 5.0 ||
+                        (dx != null && dx > 0 && logCount > 10); // Stop after dx crosses 0
+      
+      if (kDebugMode && !shouldStop) {
+        debugPrint('[TIMING_DEBUG] [6] PERIODIC_LOG runId=$runId nowEpochMs=$nowEpochMs visualTimeSec=${visualTimeSec.toStringAsFixed(3)} firstNoteStartSec=${firstNoteStartSec?.toStringAsFixed(3)} firstNoteLeftX=${firstNoteLeftX?.toStringAsFixed(1)} playlineX=${playlineX?.toStringAsFixed(1)} dx=${dx?.toStringAsFixed(1)} audioPosMs=${audioPosMs?.toStringAsFixed(1)} audioState=$audioState');
+        logCount++;
+      }
+      
+      if (shouldStop) {
+        timer.cancel();
+        _timingDebugTimer = null;
+      }
+    });
   }
 
   /// Fast engine start: mic access, recording (no heavy CPU work)
@@ -1316,6 +1442,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             final seekPosition = Duration(milliseconds: (slice.startSec * 1000).round());
             await _synth.seek(seekPosition, runId: runId);
             
+            // Store seek target and slice start for debug instrumentation
+            if (kDebugMode && runId == _runId) {
+              _seekTargetMs = slice.startSec * 1000.0;
+              _sliceStartSec = slice.startSec;
+            }
+            
             debugPrint('[Start] Asset audio loaded and paused at ${seekPosition.inMilliseconds}ms (slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s)');
             debugPrint('[Start] Waiting ${_leadInSec.toStringAsFixed(1)}s lead-in before resuming playback...');
             
@@ -1323,14 +1455,42 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             await Future.delayed(Duration(milliseconds: (_leadInSec * 1000).round()));
             
             // Resume playback
+            if (kDebugMode && runId == _runId) {
+              _audioResumeCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
+              debugPrint('[TIMING_DEBUG] [3] AUDIO_RESUME_CALLED runId=$runId audioResumeCalledEpochMs=${_audioResumeCalledEpochMs} seekTargetMs=${_seekTargetMs?.toStringAsFixed(1)} sliceStartSec=${_sliceStartSec?.toStringAsFixed(2)}');
+            }
             await _synth.resume();
             debugPrint('[Start] Audio playback resumed after ${_leadInSec.toStringAsFixed(1)}s lead-in');
             
-            // Set up position monitoring to stop at slice end
+            // Set up position monitoring to detect audio progress and stop at slice end
             // Cancel any existing subscription
             await _audioPosSub?.cancel();
             _audioPosSub = _synth.onPositionChanged.listen((position) {
-              final positionSec = position.inMilliseconds / 1000.0;
+              if (runId != _runId) return; // Ignore stale callbacks
+              
+              final positionMs = position.inMilliseconds.toDouble();
+              final positionSec = positionMs / 1000.0;
+              
+              // Update audio position for clock
+              _audioPositionSec = positionSec;
+              
+              // Detect when audio actually starts progressing (position > seekTarget + 30ms)
+              if (kDebugMode && 
+                  !_audioProgressDetected && 
+                  _seekTargetMs != null && 
+                  positionMs > _seekTargetMs! + 30.0) {
+                _audioProgressDetected = true;
+                _audioProgressStartEpochMs = DateTime.now().millisecondsSinceEpoch;
+                final deltaFromSeekMs = positionMs - _seekTargetMs!;
+                final deltaFromResumeCallMs = _audioResumeCalledEpochMs != null 
+                    ? _audioProgressStartEpochMs! - _audioResumeCalledEpochMs! 
+                    : null;
+                debugPrint('[TIMING_DEBUG] [4] AUDIO_PROGRESS_START runId=$runId nowEpochMs=${_audioProgressStartEpochMs} posMs=${positionMs.toStringAsFixed(1)} deltaFromSeekMs=${deltaFromSeekMs.toStringAsFixed(1)} deltaFromResumeCallMs=${deltaFromResumeCallMs?.toStringAsFixed(1)}');
+                
+                // Start visual clock now that audio is progressing
+                _startVisualClockOnAudioProgress(runId: runId, audioPosMs: positionMs);
+              }
+              
               // Stop audio when we reach the end of the slice
               if (positionSec >= slice.endSec) {
                 _synth.stop();
@@ -1338,6 +1498,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                 _audioPosSub = null;
               }
             });
+            
+            // Start periodic debug logging timer (only in debug mode, first 5 seconds)
+            if (kDebugMode && runId == _runId) {
+              _startTimingDebugTimer(runId: runId);
+            }
           } else {
             debugPrint('[Start] WARNING: No slice found for ${widget.exercise.id} (range: $lowestMidi-$highestMidi)');
             debugPrint('[Start] Exercise may not have valid index. Continuing without audio playback.');
