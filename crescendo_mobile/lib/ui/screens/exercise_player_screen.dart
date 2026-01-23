@@ -194,8 +194,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
   bool _audioStarted = false;
   Size? _canvasSize;
-  int _midiMin = 48;
-  int _midiMax = 72;
+  // Y-axis mapping: set once from user's vocal range, never changes during exercise
+  int _midiMin = 48; // Will be set from user's range in initState
+  int _midiMax = 72; // Will be set from user's range in initState
+  bool _midiRangeSet = false; // Guard to prevent changes after initial set
   int _prepRemaining = 0;
   Timer? _prepTimer;
   bool _captureEnabled = false;
@@ -314,6 +316,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _setPitchHighwayKey(ValueKey('pitchHighway_$_runId'),
         src: 'initState'); // Initialize key
 
+    // Load user's vocal range and set Y-axis mapping ONCE before any rendering
+    // This ensures no visual jumps - Y-axis mapping remains constant throughout exercise
+    unawaited(_loadUserVocalRange());
+
     _ticker = createTicker(_onTick);
     final afterTicker = DateTime.now();
     debugPrint(
@@ -427,72 +433,90 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     debugPrint(
         '[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
 
-    // Try to get cached notes first (instant - no generation needed)
-    final cacheService = ExerciseCacheService.instance;
-    final cachedNotes = cacheService.getCachedNotes(
-      exerciseId: widget.exercise.id,
-      difficulty: widget.pitchDifficulty,
-    );
+    // Try to load pattern JSON first (same logic as _startHeavyPrepare)
+    // This ensures consistency between initial load and playback start
+    _patternSpec =
+        await PatternSpecLoader.instance.loadPattern(widget.exercise.id);
 
     List<ReferenceNote> notes;
     SirenPath? sirenPath;
-    if (cachedNotes != null) {
+
+    if (_patternSpec != null) {
       debugPrint(
-          '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
-      notes = cachedNotes;
-      // For Sirens, regenerate visual path from cached audio notes
-      // (visual path is not cached, but audio notes are sufficient to regenerate it)
-      if (widget.exercise.id == 'sirens') {
-        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-          exercise: widget.exercise,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: _leadInSec,
-          difficulty: widget.pitchDifficulty,
-        );
-        sirenPath = sirenResult.visualPath;
-        // Use cached audio notes (should match what we just generated)
-        notes = cachedNotes;
-      } else {
-        sirenPath = null;
-      }
+          '[ExercisePlayerScreen] Found pattern JSON for ${widget.exercise.id}, using PatternVisualNoteBuilder');
+      final patternNotes = PatternVisualNoteBuilder.buildVisualNotesFromPattern(
+        pattern: _patternSpec!,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: _leadInSec,
+      );
+      notes = patternNotes;
+      sirenPath = null;
     } else {
-      // Fallback: generate on the fly if not cached (shouldn't happen if cache is working)
-      debugPrint(
-          '[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
-      final buildStartTime = DateTime.now();
+      // Fallback: try to get cached notes
+      final cacheService = ExerciseCacheService.instance;
+      final cachedNotes = cacheService.getCachedNotes(
+        exerciseId: widget.exercise.id,
+        difficulty: widget.pitchDifficulty,
+      );
 
-      // Special handling for Sirens: use visual path + minimal audio notes
-      SirenPath? sirenPath;
-      if (widget.exercise.id == 'sirens') {
-        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-          exercise: widget.exercise,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: _leadInSec,
-          difficulty: widget.pitchDifficulty,
-        );
-        notes = sirenResult.audioNotes; // Only 3 notes for audio
-        sirenPath = sirenResult.visualPath; // High-res path for visual
+      if (cachedNotes != null) {
+        debugPrint(
+            '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
+        notes = cachedNotes;
+        // For Sirens, regenerate visual path from cached audio notes
+        if (widget.exercise.id == 'sirens') {
+          final sirenResult =
+              TransposedExerciseBuilder.buildSirensWithVisualPath(
+            exercise: widget.exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: _leadInSec,
+            difficulty: widget.pitchDifficulty,
+          );
+          sirenPath = sirenResult.visualPath;
+          notes = cachedNotes;
+        } else {
+          sirenPath = null;
+        }
       } else {
-        notes = TransposedExerciseBuilder.buildTransposedSequence(
-          exercise: widget.exercise,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: _leadInSec,
-          difficulty: widget.pitchDifficulty,
-        );
-        sirenPath = null;
-      }
+        // Fallback: generate on the fly if not cached
+        debugPrint(
+            '[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
+        final buildStartTime = DateTime.now();
 
-      final buildEndTime = DateTime.now();
-      debugPrint(
-          '[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+        // Special handling for Sirens
+        if (widget.exercise.id == 'sirens') {
+          final sirenResult =
+              TransposedExerciseBuilder.buildSirensWithVisualPath(
+            exercise: widget.exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: _leadInSec,
+            difficulty: widget.pitchDifficulty,
+          );
+          notes = sirenResult.audioNotes;
+          sirenPath = sirenResult.visualPath;
+        } else {
+          notes = TransposedExerciseBuilder.buildTransposedSequence(
+            exercise: widget.exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: _leadInSec,
+            difficulty: widget.pitchDifficulty,
+          );
+          sirenPath = null;
+        }
 
-      if (mounted) {
-        setState(() {
-          _sirenVisualPath = sirenPath;
-        });
+        final buildEndTime = DateTime.now();
+        debugPrint(
+            '[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+
+        if (mounted) {
+          setState(() {
+            _sirenVisualPath = sirenPath;
+          });
+        }
       }
     }
 
@@ -503,23 +527,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             sirenPath; // Set visual path (from cache or generation)
         _notesLoaded = true;
         _rangeError = null;
-        // Update MIDI range based on all notes (or visual path for Sirens)
-        if (widget.exercise.id == 'sirens' &&
-            sirenPath != null &&
-            sirenPath.points.isNotEmpty) {
-          // Use visual path for MIDI range (more accurate for Sirens)
-          final midiValues = sirenPath.points.map((p) => p.midiFloat).toList();
-          _midiMin = (midiValues.reduce((a, b) => a < b ? a : b).floor() - 4)
-              .clamp(36, 127);
-          _midiMax = (midiValues.reduce((a, b) => a > b ? a : b).ceil() + 4)
-              .clamp(36, 127);
-        } else if (notes.isNotEmpty) {
-          final midiValues = notes.map((n) => n.midi).toList();
-          _midiMin = (midiValues.reduce(math.min) - 4).clamp(36, 127);
-          _midiMax = (midiValues.reduce(math.max) + 4).clamp(36, 127);
+        // Y-axis mapping is set once from user's vocal range in initState
+        // Do NOT adjust based on notes - this would cause visual jumps
+        // _midiMin and _midiMax remain constant throughout the exercise
 
-          // Initialize pitch ball at first target note so it appears immediately
-          // This ensures the pitch ball is visible from the start, even before recording starts
+        // Initialize pitch ball at first target note so it appears immediately
+        // This ensures the pitch ball is visible from the start, even before recording starts
+        if (notes.isNotEmpty) {
           final firstNoteMidi = notes.first.midi.toDouble();
           _liveMidi.value = firstNoteMidi;
           _visualState.update(
@@ -801,6 +815,34 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       await _synth.stop(); // Ensure clean state
     } catch (e) {
       debugPrint('[ExercisePlayerScreen] Error priming audio: $e');
+    }
+  }
+
+  /// Load user's vocal range and set Y-axis mapping once before exercise begins
+  /// This ensures Y-axis mapping is constant and prevents visual jumps
+  Future<void> _loadUserVocalRange() async {
+    if (_midiRangeSet) return; // Already set, don't change
+
+    try {
+      final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
+      if (mounted && !_midiRangeSet) {
+        setState(() {
+          _midiMin = lowestMidi;
+          _midiMax = highestMidi;
+          _midiRangeSet = true;
+        });
+        debugPrint(
+            '[ExercisePlayerScreen] Y-axis mapping set: $_midiMin - $_midiMax (user range)');
+      }
+    } catch (e) {
+      debugPrint('[ExercisePlayerScreen] Error loading vocal range: $e');
+      // Keep default values (48-72) if loading fails
+      if (mounted && !_midiRangeSet) {
+        setState(() {
+          _midiRangeSet =
+              true; // Mark as set even with defaults to prevent retry
+        });
+      }
     }
   }
 
@@ -1316,9 +1358,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           _transposedNotes = patternNotes;
           _notesLoaded = true;
 
-          // Set MIDI range to user's vocal range (for Y-axis mapping)
-          _midiMin = lowestMidi;
-          _midiMax = highestMidi;
+          // Y-axis mapping should already be set from user's vocal range in initState
+          // Do NOT change it here - it's set once and remains constant
+          // Verify it matches (for debugging)
+          if (_midiMin != lowestMidi || _midiMax != highestMidi) {
+            debugPrint(
+                '[PatternNotes] WARNING: MIDI range mismatch - user range: $lowestMidi-$highestMidi, current: $_midiMin-$_midiMax');
+          }
 
           debugPrint(
               '[PatternNotes] Using pattern-based notes: ${patternNotes.length} notes');
@@ -2151,19 +2197,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
     final notes = _buildReferenceNotes();
-    // Update MIDI range
-    if (_patternSpec != null && _transposedNotes.isNotEmpty) {
-      // For pattern-based notes, use user's vocal range directly (already set during pattern loading)
-      // _midiMin and _midiMax are already set to user's range
-      // No need to recalculate from notes
-    } else if (notes.isNotEmpty) {
-      // For old method, calculate from notes
-      final midiValues = notes.map((n) => n.midi).toList();
-      final minMidi = (midiValues.reduce(math.min) - 4).clamp(36, 127);
-      final maxMidi = (midiValues.reduce(math.max) + 4).clamp(36, 127);
-      _midiMin = minMidi;
-      _midiMax = maxMidi;
-    }
+    // Y-axis mapping is set once from user's vocal range in initState
+    // Do NOT recalculate from notes - this would cause visual jumps
+    // _midiMin and _midiMax remain constant throughout the exercise
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
     return WillPopScope(

@@ -382,7 +382,8 @@ class PitchHighwayPainter extends CustomPainter {
           y - barHeight / 2,
           endX,
           y + barHeight / 2,
-          radius,
+          // Use half-height radius for proper pill shape
+          const Radius.circular(8.0),
         );
         final Color barColor;
         if (identical(n, currentNote)) {
