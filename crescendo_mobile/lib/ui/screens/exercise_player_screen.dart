@@ -827,12 +827,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
       if (mounted && !_midiRangeSet) {
         setState(() {
-          _midiMin = lowestMidi;
-          _midiMax = highestMidi;
+          // Add 3 semitones of visual padding to top and bottom as requested
+          // This ensures notes don't appear at the very edges of the screen
+          const paddingMidi = 3;
+          _midiMin = lowestMidi - paddingMidi;
+          _midiMax = highestMidi + paddingMidi;
           _midiRangeSet = true;
         });
         debugPrint(
-            '[ExercisePlayerScreen] Y-axis mapping set: $_midiMin - $_midiMax (user range)');
+            '[ExercisePlayerScreen] Y-axis mapping set: $_midiMin - $_midiMax (user range $lowestMidi-$highestMidi + 3 padding)');
       }
     } catch (e) {
       debugPrint('[ExercisePlayerScreen] Error loading vocal range: $e');
