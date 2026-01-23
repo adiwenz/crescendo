@@ -18,6 +18,7 @@ int?
     _lastFirstNoteAlignmentLogRunId; // Track if we've logged first note alignment
 final Set<String> _firstNotePositionLogs =
     <String>{}; // Track logged first note positions for debug
+final Map<String, int> _logThrottle = {};
 
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -441,6 +442,7 @@ class PitchHighwayPainter extends CustomPainter {
               height: size.height,
               midiMin: midiMin,
               midiMax: midiMax,
+              clamp: false,
             );
             return (tailY - ballY).abs() < 0.1;
           } else if (pitchTail.isNotEmpty) {
@@ -451,12 +453,14 @@ class PitchHighwayPainter extends CustomPainter {
                 height: size.height,
                 midiMin: midiMin,
                 midiMax: midiMax,
+                clamp: false,
               );
               final ballY = PitchMath.midiToY(
                 midi: smoothedMidi,
                 height: size.height,
                 midiMin: midiMin,
                 midiMax: midiMax,
+                clamp: false,
               );
               return (tailY - ballY).abs() < 0.1;
             }
@@ -468,7 +472,54 @@ class PitchHighwayPainter extends CustomPainter {
           height: size.height,
           midiMin: midiMin,
           midiMax: midiMax,
+          clamp: false, // Allow ball to go off-grid
         );
+        if (kDebugMode) {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (runId != null) {
+            final lastLog = _logThrottle['${runId}_pitch_ball'] ?? 0;
+            if (now - lastLog > 1000) {
+              _logThrottle['${runId}_pitch_ball'] = now;
+              
+              final clampedY = PitchMath.midiToY(
+                midi: smoothedMidi,
+                height: size.height,
+                midiMin: midiMin,
+                midiMax: midiMax,
+                clamp: true,
+              );
+
+              // Calculate lowest note Y
+              double? lowestY;
+              if (notes.isNotEmpty) {
+                int minMidi = 127;
+                for (final n in notes) {
+                  if (n.midi < minMidi) minMidi = n.midi;
+                  if (n.glideEndMidi != null && n.glideEndMidi! < minMidi) {
+                     minMidi = n.glideEndMidi!;
+                  }
+                }
+                lowestY = PitchMath.midiToY(
+                  midi: minMidi.toDouble(),
+                  height: size.height,
+                  midiMin: midiMin,
+                  midiMax: midiMax,
+                  clamp: false,
+                );
+              }
+
+              debugPrint('\n--- Pitch Ball Log ---');
+              debugPrint('detectedMidi: ${smoothedMidi.toStringAsFixed(2)}');
+              debugPrint('mappedY: ${y.toStringAsFixed(2)}');
+              debugPrint('finalRenderedY: ${y.toStringAsFixed(2)}');
+              debugPrint('clampedY: ${clampedY.toStringAsFixed(2)}');
+              if (lowestY != null) {
+                debugPrint('lowestExerciseNoteY: ${lowestY.toStringAsFixed(2)}');
+              }
+              debugPrint('\n');
+            }
+          }
+        }
         final head = Offset(playheadX, y);
         canvas.drawCircle(
           head,
@@ -595,6 +646,7 @@ class PitchHighwayPainter extends CustomPainter {
         height: size.height,
         midiMin: midiMin,
         midiMax: midiMax,
+        clamp: false, // Allow tail to go off-grid
       );
       if (lastY != null && (y - lastY).abs() > maxJumpPx) continue;
       lastY = y;
@@ -609,6 +661,7 @@ class PitchHighwayPainter extends CustomPainter {
         height: size.height,
         midiMin: midiMin,
         midiMax: midiMax,
+        clamp: false, // Allow ball to go off-grid
       );
       final shortTrailSec = 0.2;
       final startX = playheadX + (-shortTrailSec) * pixelsPerSecond;
