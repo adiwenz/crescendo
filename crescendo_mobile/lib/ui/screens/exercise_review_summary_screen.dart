@@ -29,10 +29,12 @@ class ExerciseReviewSummaryScreen extends StatefulWidget {
   });
 
   @override
-  State<ExerciseReviewSummaryScreen> createState() => _ExerciseReviewSummaryScreenState();
+  State<ExerciseReviewSummaryScreen> createState() =>
+      _ExerciseReviewSummaryScreenState();
 }
 
-class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScreen> {
+class _ExerciseReviewSummaryScreenState
+    extends State<ExerciseReviewSummaryScreen> {
   final VocalRangeService _vocalRangeService = VocalRangeService();
   List<PitchSample> _samples = const [];
   List<TargetNote> _targets = const [];
@@ -49,18 +51,18 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
   Future<void> _loadReviewData() async {
     // Parse contour data (pitch samples)
     _samples = _parseContour(widget.attempt.contourJson);
-    
+
     // Parse target notes from saved data or build from exercise
-    _targets = _parseTargetNotes(widget.attempt.targetNotesJson) ?? 
+    _targets = _parseTargetNotes(widget.attempt.targetNotesJson) ??
         await _buildTargetNotesFromExercise();
-    
+
     // Parse segments
     final allSegments = _parseSegments(widget.attempt.segmentsJson);
-    
+
     // Filter segments to only include those that have recorded pitch data
     // A segment is considered "recorded" if there are pitch samples within its time range
     _segments = _filterRecordedSegments(allSegments, _samples);
-    
+
     // Calculate duration
     if (_samples.isNotEmpty) {
       _durationMs = _samples.map((s) => s.timeMs).reduce(math.max);
@@ -69,37 +71,37 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
     } else {
       _durationMs = 6000; // Default
     }
-    
+
     setState(() => _loading = false);
   }
-  
+
   /// Filter segments to only include those that have recorded pitch data
   List<ExerciseSegment> _filterRecordedSegments(
     List<ExerciseSegment> allSegments,
     List<PitchSample> samples,
   ) {
     if (samples.isEmpty) return const [];
-    
+
     // Find the actual recorded duration from pitch samples
     final recordedEndMs = samples.map((s) => s.timeMs).reduce(math.max);
-    
+
     // Filter segments to only those that:
     // 1. Start before the recorded end time
     // 2. Have at least some pitch samples within their time range
     return allSegments.where((segment) {
       // Segment must start before recorded end (with some tolerance)
       if (segment.startMs > recordedEndMs + 500) return false;
-      
+
       // Check if there are pitch samples within this segment's time range
       // Use a tolerance to account for timing differences
       const toleranceMs = 200;
       final segmentStart = segment.startMs - toleranceMs;
       final segmentEnd = segment.endMs + toleranceMs;
-      
+
       final hasRecordedData = samples.any((sample) {
         return sample.timeMs >= segmentStart && sample.timeMs <= segmentEnd;
       });
-      
+
       return hasRecordedData;
     }).toList();
   }
@@ -169,7 +171,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
     final difficulty = widget.attempt.pitchDifficulty != null
         ? pitchHighwayDifficultyFromName(widget.attempt.pitchDifficulty!)
         : PitchHighwayDifficulty.medium;
-    
+
     // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
     final List<ReferenceNote> notes;
     if (widget.exercise.id == 'sirens') {
@@ -190,7 +192,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         difficulty: difficulty,
       );
     }
-    
+
     return notes.map((n) {
       return TargetNote(
         startMs: (n.startSec * 1000).round(),
@@ -234,7 +236,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
     final segmentStartSec = segment.startMs / 1000.0;
     final segmentEndSec = segment.endMs / 1000.0;
     final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
-    
+
     // Log segment tap
     DebugLog.event(
       LogCat.seek,
@@ -246,7 +248,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         'replayStartSec': replayStartSec,
       },
     );
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -305,7 +307,8 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
                   children: [
                     const Text(
                       'Overall Score',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                     ),
                     Text(
                       '${widget.attempt.overallScore.toStringAsFixed(0)}%',
@@ -320,7 +323,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // Overview Graph
             const Text(
               'Overview',
@@ -338,9 +341,9 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Text('No pitch data available'),
               ),
-            
+
             const SizedBox(height: 32),
-            
+
             // Actions
             const Text(
               'Review Options',
@@ -361,7 +364,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
                 ),
               ),
             ),
-            
+
             if (_segments.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Text(
@@ -375,7 +378,8 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
                   child: OutlinedButton(
                     onPressed: () => _openSegmentReplay(segment),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -420,22 +424,22 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
       final toleranceMs = 100;
       final segmentTargets = _targets.where((target) {
         final targetMid = (target.startMs + target.endMs) ~/ 2;
-        return targetMid >= (segment.startMs - toleranceMs) && 
-               targetMid <= (segment.endMs + toleranceMs);
+        return targetMid >= (segment.startMs - toleranceMs) &&
+            targetMid <= (segment.endMs + toleranceMs);
       }).toList();
-      
+
       if (segmentTargets.length >= 3) {
         // Sort by time to get: bottom1, top, bottom2
         segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
         final bottom1 = segmentTargets.first;
         final top = segmentTargets[1]; // Middle note should be the top
         final bottom2 = segmentTargets.last;
-        
+
         // Verify pattern: first and last should be same MIDI, middle should be higher
         final bottom1Midi = bottom1.midi.round();
         final topMidi = top.midi.round();
         final bottom2Midi = bottom2.midi.round();
-        
+
         if (bottom1Midi == bottom2Midi && topMidi > bottom1Midi) {
           final startNote = PitchMath.midiToName(bottom1Midi);
           final topNote = PitchMath.midiToName(topMidi);
@@ -443,24 +447,25 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
           return '$startNote → $topNote → $endNote';
         }
       }
-      
+
       // Fallback: if we can't find 3 notes, try to find at least start and top
       if (segmentTargets.length >= 2) {
         segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
         final firstNote = segmentTargets.first;
-        final highestNote = segmentTargets.reduce((a, b) => a.midi > b.midi ? a : b);
+        final highestNote =
+            segmentTargets.reduce((a, b) => a.midi > b.midi ? a : b);
         final lastNote = segmentTargets.last;
-        
+
         final startNote = PitchMath.midiToName(firstNote.midi.round());
         final topNote = PitchMath.midiToName(highestNote.midi.round());
         final endNote = PitchMath.midiToName(lastNote.midi.round());
-        
+
         // If first and last are the same, show start → top → end
         if (firstNote.midi.round() == lastNote.midi.round()) {
           return '$startNote → $topNote → $endNote';
         }
       }
-      
+
       // Final fallback: show start → end
       if (segmentTargets.isNotEmpty) {
         segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
@@ -471,22 +476,22 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         return '$startNote → $endNote';
       }
     }
-    
+
     // Special handling for Octave Slides and NG Slides exercises
     // Both have pattern: bottom note, 1s silence, top note
     // But segments might be split at the silence gap, so we need to look for adjacent segments
     final isOctaveSlides = widget.exercise.id == 'octave_slides';
     final isNgSlides = widget.exercise.id == 'ng_slides';
-    
+
     if (isOctaveSlides || isNgSlides) {
       // Find target notes within this segment's time range
       final toleranceMs = 100;
       final segmentTargets = _targets.where((target) {
         final targetMid = (target.startMs + target.endMs) ~/ 2;
-        return targetMid >= (segment.startMs - toleranceMs) && 
-               targetMid <= (segment.endMs + toleranceMs);
+        return targetMid >= (segment.startMs - toleranceMs) &&
+            targetMid <= (segment.endMs + toleranceMs);
       }).toList();
-      
+
       // For octave slides, also check the next segment (if it exists) to find the top note
       // Segments are likely split: first segment = bottom note, second segment = top note
       final segmentIndex = _segments.indexOf(segment);
@@ -495,24 +500,26 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         // Check if next segment is close in time (within 3 seconds) and has same transposition
         // This indicates it's part of the same octave slide pattern
         final timeGap = nextSegment.startMs - segment.endMs;
-        if (timeGap < 3000 && nextSegment.transposeSemitone == segment.transposeSemitone) {
+        if (timeGap < 3000 &&
+            nextSegment.transposeSemitone == segment.transposeSemitone) {
           final nextSegmentTargets = _targets.where((target) {
             final targetMid = (target.startMs + target.endMs) ~/ 2;
-            return targetMid >= (nextSegment.startMs - toleranceMs) && 
-                   targetMid <= (nextSegment.endMs + toleranceMs);
+            return targetMid >= (nextSegment.startMs - toleranceMs) &&
+                targetMid <= (nextSegment.endMs + toleranceMs);
           }).toList();
-          
+
           if (segmentTargets.isNotEmpty && nextSegmentTargets.isNotEmpty) {
             // Combine both segments to find bottom and top notes
             final allTargets = [...segmentTargets, ...nextSegmentTargets];
             allTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
             final firstNote = allTargets.first;
             final lastNote = allTargets.last;
-            
+
             if (isOctaveSlides) {
               // Verify they're an octave apart (or close to it)
               final midiDiff = (lastNote.midi - firstNote.midi).abs();
-              if (midiDiff >= 10 && midiDiff <= 14) { // Octave is 12 semitones, allow some tolerance
+              if (midiDiff >= 10 && midiDiff <= 14) {
+                // Octave is 12 semitones, allow some tolerance
                 final startNote = PitchMath.midiToName(firstNote.midi.round());
                 final endNote = PitchMath.midiToName(lastNote.midi.round());
                 return '$startNote → $endNote';
@@ -528,13 +535,13 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
           }
         }
       }
-      
+
       // If segments are combined (single segment contains both notes), find bottom and top
       if (segmentTargets.length >= 2) {
         segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
         final firstNote = segmentTargets.first;
         final lastNote = segmentTargets.last;
-        
+
         // Verify the pattern: first note should be lower than last note
         if (lastNote.midi > firstNote.midi) {
           final startNote = PitchMath.midiToName(firstNote.midi.round());
@@ -542,7 +549,7 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
           return '$startNote → $endNote';
         }
       }
-      
+
       // Fallback: if we can't find the pattern, use the segment's own notes
       if (segmentTargets.isNotEmpty) {
         segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
@@ -553,16 +560,16 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
         return '$startNote → $endNote';
       }
     }
-    
+
     // Standard handling for other exercises
     // Find target notes within this segment's time range
     final toleranceMs = 100;
     final segmentTargets = _targets.where((target) {
       final targetMid = (target.startMs + target.endMs) ~/ 2;
-      return targetMid >= (segment.startMs - toleranceMs) && 
-             targetMid <= (segment.endMs + toleranceMs);
+      return targetMid >= (segment.startMs - toleranceMs) &&
+          targetMid <= (segment.endMs + toleranceMs);
     }).toList();
-    
+
     if (segmentTargets.isEmpty) {
       // Fallback: use transposition to estimate based on exercise pattern
       // Use default base MIDI (C4 = 60) if range not available
@@ -572,21 +579,22 @@ class _ExerciseReviewSummaryScreenState extends State<ExerciseReviewSummaryScree
       final endMidi = startMidi + 7;
       return '${PitchMath.midiToName(startMidi)} → ${PitchMath.midiToName(endMidi)}';
     }
-    
+
     // Get first note (by time) and highest note (by MIDI) in segment
     segmentTargets.sort((a, b) => a.startMs.compareTo(b.startMs));
     final firstNote = segmentTargets.first;
-    final highestNote = segmentTargets.reduce((a, b) => a.midi > b.midi ? a : b);
+    final highestNote =
+        segmentTargets.reduce((a, b) => a.midi > b.midi ? a : b);
     final lastNote = segmentTargets.last;
-    
+
     // Use first note as start, and prefer highest note as end (for ascending patterns)
     // but fall back to last note if highest is not significantly higher
     final startNote = PitchMath.midiToName(firstNote.midi.round());
-    final endMidi = (highestNote.midi - lastNote.midi).abs() < 2 
-        ? lastNote.midi  // If highest and last are close, use last
-        : highestNote.midi;  // Otherwise use highest
+    final endMidi = (highestNote.midi - lastNote.midi).abs() < 2
+        ? lastNote.midi // If highest and last are close, use last
+        : highestNote.midi; // Otherwise use highest
     final endNote = PitchMath.midiToName(endMidi.round());
-    
+
     return '$startNote → $endNote';
   }
 }
@@ -608,7 +616,7 @@ class ExerciseSegment {
 class _OverviewGraph extends StatelessWidget {
   final List<PitchSample> samples;
   final List<ExerciseSegment> segments;
-  final int durationMs;
+  final int durationMs; // kept for compatibility; not used for x-domain
 
   const _OverviewGraph({
     required this.samples,
@@ -619,20 +627,26 @@ class _OverviewGraph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (samples.isEmpty) return const SizedBox.shrink();
-    
-    // Compute viewport from samples only
+
+    // Compute midis from samples only
     final sampleMidis = samples
-        .map((s) => s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null))
+        .map((s) =>
+            s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null))
         .whereType<double>()
         .toList();
     if (sampleMidis.isEmpty) return const SizedBox.shrink();
-    
+
     final minMidi = sampleMidis.reduce(math.min) - 3;
     final maxMidi = sampleMidis.reduce(math.max) + 3;
-    
-    // Smooth samples for readability
+
+    // Smooth samples for readability (keeps original timeMs)
     final smoothed = _smoothSamples(samples);
-    
+
+    // Compute sample-only time domain (this trims left whitespace)
+    final domain = _computeSampleDomain(smoothed);
+    final domainStartMs = domain.$1;
+    final domainDurationMs = domain.$2;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -655,7 +669,7 @@ class _OverviewGraph extends StatelessWidget {
             final height = constraints.maxHeight;
             const topPad = 8.0;
             const bottomPad = 8.0;
-            
+
             return Stack(
               children: [
                 // Grid lines
@@ -668,22 +682,30 @@ class _OverviewGraph extends StatelessWidget {
                     bottomPad: bottomPad,
                   ),
                 ),
-                // Pitch contour line
+
+                // Pitch contour line (sample-only domain)
                 CustomPaint(
                   size: Size(width, height),
                   painter: _OverviewContourPainter(
                     samples: smoothed,
-                    durationMs: durationMs,
+                    domainStartMs: domainStartMs,
+                    domainDurationMs: domainDurationMs,
                     minMidi: minMidi,
                     maxMidi: maxMidi,
                     topPad: topPad,
                     bottomPad: bottomPad,
                   ),
                 ),
-                // Segment markers (subtle)
+
+                // Segment markers (rebased to sample-only domain)
                 if (segments.isNotEmpty)
                   ...segments.map((segment) {
-                    final x = (segment.startMs / durationMs) * width;
+                    final x = _timeToX(
+                      segment.startMs,
+                      width,
+                      domainStartMs,
+                      domainDurationMs,
+                    );
                     return Positioned(
                       left: x.clamp(0.0, width - 1),
                       top: 0,
@@ -702,37 +724,72 @@ class _OverviewGraph extends StatelessWidget {
     );
   }
 
+  /// Returns (domainStartMs, domainDurationMs) computed ONLY from samples.
+  /// Starts exactly at the first recorded sample -> no left whitespace.
+  (int, int) _computeSampleDomain(List<PitchSample> samples) {
+    if (samples.isEmpty) return (0, 1);
+
+    var minMs = samples.first.timeMs;
+    var maxMs = samples.first.timeMs;
+    for (final s in samples) {
+      if (s.timeMs < minMs) minMs = s.timeMs;
+      if (s.timeMs > maxMs) maxMs = s.timeMs;
+    }
+    final dur = math.max(1, maxMs - minMs);
+    return (minMs, dur);
+  }
+
+  double _timeToX(
+      int timeMs, double width, int domainStartMs, int domainDurationMs) {
+    if (domainDurationMs <= 0) return 0;
+    final t = (timeMs - domainStartMs) / domainDurationMs;
+    return (t.clamp(0.0, 1.0)) * width;
+  }
+
   List<PitchSample> _smoothSamples(List<PitchSample> samples) {
     if (samples.length < 3) return samples;
     final smoothed = <PitchSample>[];
+
     for (var i = 0; i < samples.length; i++) {
-      final midi = samples[i].midi ?? (samples[i].freqHz != null ? PitchMath.hzToMidi(samples[i].freqHz!) : null);
+      final midi = samples[i].midi ??
+          (samples[i].freqHz != null
+              ? PitchMath.hzToMidi(samples[i].freqHz!)
+              : null);
       if (midi == null) continue;
-      
+
       // Simple moving average with window of 3
       var sum = midi;
       var count = 1;
+
       if (i > 0) {
-        final prevMidi = samples[i - 1].midi ?? (samples[i - 1].freqHz != null ? PitchMath.hzToMidi(samples[i - 1].freqHz!) : null);
+        final prevMidi = samples[i - 1].midi ??
+            (samples[i - 1].freqHz != null
+                ? PitchMath.hzToMidi(samples[i - 1].freqHz!)
+                : null);
         if (prevMidi != null) {
           sum += prevMidi;
           count++;
         }
       }
+
       if (i < samples.length - 1) {
-        final nextMidi = samples[i + 1].midi ?? (samples[i + 1].freqHz != null ? PitchMath.hzToMidi(samples[i + 1].freqHz!) : null);
+        final nextMidi = samples[i + 1].midi ??
+            (samples[i + 1].freqHz != null
+                ? PitchMath.hzToMidi(samples[i + 1].freqHz!)
+                : null);
         if (nextMidi != null) {
           sum += nextMidi;
           count++;
         }
       }
-      
+
       smoothed.add(PitchSample(
-        timeMs: samples[i].timeMs,
+        timeMs: samples[i].timeMs, // IMPORTANT: keep original timeMs
         midi: sum / count,
         freqHz: samples[i].freqHz,
       ));
     }
+
     return smoothed;
   }
 }
@@ -755,9 +812,11 @@ class _OverviewGridPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = const Color(0xFFE6EEF3)
       ..strokeWidth = 1;
+
     for (var i = 0; i <= 4; i++) {
       final midi = minMidi + (maxMidi - minMidi) * (i / 4);
-      final y = _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
+      final y =
+          _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
   }
@@ -765,17 +824,31 @@ class _OverviewGridPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _OverviewGridPainter oldDelegate) => false;
 
-  double _midiToY(double midi, double minMidi, double maxMidi, double height, double topPad, double bottomPad) {
+  double _midiToY(
+    double midi,
+    double minMidi,
+    double maxMidi,
+    double height,
+    double topPad,
+    double bottomPad,
+  ) {
     final clamped = midi.clamp(minMidi, maxMidi);
     final usableHeight = (height - topPad - bottomPad).clamp(1.0, height);
-    final ratio = (clamped - minMidi) / (maxMidi - minMidi);
+    final denom =
+        (maxMidi - minMidi).abs() < 0.0001 ? 1.0 : (maxMidi - minMidi);
+    final ratio = (clamped - minMidi) / denom;
     return (height - bottomPad) - ratio * usableHeight;
   }
 }
 
 class _OverviewContourPainter extends CustomPainter {
   final List<PitchSample> samples;
-  final int durationMs;
+
+  /// Sample-only x domain:
+  /// x = (timeMs - domainStartMs) / domainDurationMs
+  final int domainStartMs;
+  final int domainDurationMs;
+
   final double minMidi;
   final double maxMidi;
   final double topPad;
@@ -783,7 +856,8 @@ class _OverviewContourPainter extends CustomPainter {
 
   _OverviewContourPainter({
     required this.samples,
-    required this.durationMs,
+    required this.domainStartMs,
+    required this.domainDurationMs,
     required this.minMidi,
     required this.maxMidi,
     required this.topPad,
@@ -794,14 +868,16 @@ class _OverviewContourPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final path = Path();
     bool started = false;
-    
+
     for (final s in samples) {
-      final midi = s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null);
+      final midi =
+          s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null);
       if (midi == null || !midi.isFinite) continue;
-      
-      final x = (s.timeMs / durationMs) * size.width;
-      final y = _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
-      
+
+      final x = _timeToX(s.timeMs, size.width, domainStartMs, domainDurationMs);
+      final y =
+          _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
+
       if (!started) {
         path.moveTo(x, y);
         started = true;
@@ -809,28 +885,48 @@ class _OverviewContourPainter extends CustomPainter {
         path.lineTo(x, y);
       }
     }
-    
+
     final contourPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..color = const Color(0xFFFFB347);
-    canvas.drawPath(path, contourPaint);
+
+    if (started) {
+      canvas.drawPath(path, contourPaint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _OverviewContourPainter oldDelegate) {
     return oldDelegate.samples != samples ||
-        oldDelegate.durationMs != durationMs ||
+        oldDelegate.domainStartMs != domainStartMs ||
+        oldDelegate.domainDurationMs != domainDurationMs ||
         oldDelegate.minMidi != minMidi ||
         oldDelegate.maxMidi != maxMidi;
   }
 
-  double _midiToY(double midi, double minMidi, double maxMidi, double height, double topPad, double bottomPad) {
+  double _timeToX(
+      int timeMs, double width, int domainStartMs, int domainDurationMs) {
+    if (domainDurationMs <= 0) return 0;
+    final t = (timeMs - domainStartMs) / domainDurationMs;
+    return (t.clamp(0.0, 1.0)) * width;
+  }
+
+  double _midiToY(
+    double midi,
+    double minMidi,
+    double maxMidi,
+    double height,
+    double topPad,
+    double bottomPad,
+  ) {
     final clamped = midi.clamp(minMidi, maxMidi);
     final usableHeight = (height - topPad - bottomPad).clamp(1.0, height);
-    final ratio = (clamped - minMidi) / (maxMidi - minMidi);
+    final denom =
+        (maxMidi - minMidi).abs() < 0.0001 ? 1.0 : (maxMidi - minMidi);
+    final ratio = (clamped - minMidi) / denom;
     return (height - bottomPad) - ratio * usableHeight;
   }
 }
@@ -863,25 +959,26 @@ class _DetailGraphState extends State<_DetailGraph> {
   @override
   Widget build(BuildContext context) {
     if (widget.samples.isEmpty) return const SizedBox.shrink();
-    
+
     // Compute viewport from samples
     final sampleMidis = widget.samples
-        .map((s) => s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null))
+        .map((s) =>
+            s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null))
         .whereType<double>()
         .toList();
     if (sampleMidis.isEmpty) return const SizedBox.shrink();
-    
+
     final minMidi = sampleMidis.reduce(math.min) - 3;
     final maxMidi = sampleMidis.reduce(math.max) + 3;
-    
+
     // Smooth samples
     final smoothed = _smoothSamples(widget.samples);
-    
+
     // Calculate width for full duration (e.g., 100 pixels per second)
     const pixelsPerSecond = 100.0;
     final graphWidth = (widget.durationMs / 1000.0) * pixelsPerSecond;
     final actualWidth = math.max(MediaQuery.of(context).size.width, graphWidth);
-    
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -940,27 +1037,36 @@ class _DetailGraphState extends State<_DetailGraph> {
     if (samples.length < 3) return samples;
     final smoothed = <PitchSample>[];
     for (var i = 0; i < samples.length; i++) {
-      final midi = samples[i].midi ?? (samples[i].freqHz != null ? PitchMath.hzToMidi(samples[i].freqHz!) : null);
+      final midi = samples[i].midi ??
+          (samples[i].freqHz != null
+              ? PitchMath.hzToMidi(samples[i].freqHz!)
+              : null);
       if (midi == null) continue;
-      
+
       // Simple moving average with window of 3
       var sum = midi;
       var count = 1;
       if (i > 0) {
-        final prevMidi = samples[i - 1].midi ?? (samples[i - 1].freqHz != null ? PitchMath.hzToMidi(samples[i - 1].freqHz!) : null);
+        final prevMidi = samples[i - 1].midi ??
+            (samples[i - 1].freqHz != null
+                ? PitchMath.hzToMidi(samples[i - 1].freqHz!)
+                : null);
         if (prevMidi != null) {
           sum += prevMidi;
           count++;
         }
       }
       if (i < samples.length - 1) {
-        final nextMidi = samples[i + 1].midi ?? (samples[i + 1].freqHz != null ? PitchMath.hzToMidi(samples[i + 1].freqHz!) : null);
+        final nextMidi = samples[i + 1].midi ??
+            (samples[i + 1].freqHz != null
+                ? PitchMath.hzToMidi(samples[i + 1].freqHz!)
+                : null);
         if (nextMidi != null) {
           sum += nextMidi;
           count++;
         }
       }
-      
+
       smoothed.add(PitchSample(
         timeMs: samples[i].timeMs,
         midi: sum / count,
@@ -990,49 +1096,54 @@ class _DetailGraphPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const topPad = 8.0;
     const bottomPad = 8.0;
-    
+
     // Grid lines
     final gridPaint = Paint()
       ..color = const Color(0xFFE6EEF3)
       ..strokeWidth = 1;
     for (var i = 0; i <= 6; i++) {
       final midi = minMidi + (maxMidi - minMidi) * (i / 6);
-      final y = _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
+      final y =
+          _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
-    
+
     // Target bands (faint, if enabled)
     if (targets.isNotEmpty) {
       final targetPaint = Paint()
         ..color = const Color(0x1AFFD6A1) // Very faint
         ..style = PaintingStyle.fill;
-      
+
       for (final target in targets) {
         final startX = (target.startMs / durationMs) * size.width;
         final endX = (target.endMs / durationMs) * size.width;
-        final y = _midiToY(target.midi, minMidi, maxMidi, size.height, topPad, bottomPad);
+        final y = _midiToY(
+            target.midi, minMidi, maxMidi, size.height, topPad, bottomPad);
         final bandHeight = 8.0;
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            Rect.fromLTWH(startX, y - bandHeight / 2, endX - startX, bandHeight),
+            Rect.fromLTWH(
+                startX, y - bandHeight / 2, endX - startX, bandHeight),
             const Radius.circular(2),
           ),
           targetPaint,
         );
       }
     }
-    
+
     // Pitch contour line
     final path = Path();
     bool started = false;
-    
+
     for (final s in samples) {
-      final midi = s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null);
+      final midi =
+          s.midi ?? (s.freqHz != null ? PitchMath.hzToMidi(s.freqHz!) : null);
       if (midi == null || !midi.isFinite) continue;
-      
+
       final x = (s.timeMs / durationMs) * size.width;
-      final y = _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
-      
+      final y =
+          _midiToY(midi, minMidi, maxMidi, size.height, topPad, bottomPad);
+
       if (!started) {
         path.moveTo(x, y);
         started = true;
@@ -1040,7 +1151,7 @@ class _DetailGraphPainter extends CustomPainter {
         path.lineTo(x, y);
       }
     }
-    
+
     final contourPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
@@ -1059,7 +1170,8 @@ class _DetailGraphPainter extends CustomPainter {
         oldDelegate.maxMidi != maxMidi;
   }
 
-  double _midiToY(double midi, double minMidi, double maxMidi, double height, double topPad, double bottomPad) {
+  double _midiToY(double midi, double minMidi, double maxMidi, double height,
+      double topPad, double bottomPad) {
     final clamped = midi.clamp(minMidi, maxMidi);
     final usableHeight = (height - topPad - bottomPad).clamp(1.0, height);
     final ratio = (clamped - minMidi) / (maxMidi - minMidi);
