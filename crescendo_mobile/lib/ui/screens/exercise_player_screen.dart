@@ -53,6 +53,10 @@ import '../../services/pattern_spec_loader.dart';
 import '../../services/pattern_visual_note_builder.dart';
 import '../../models/pattern_spec.dart';
 
+/// Buffer size for recording service.
+/// 1024 samples (~23ms at 44.1kHz) is needed for reliable low-frequency pitch detection.
+const int _kBufferSize = 1024;
+
 /// Single source of truth for exercise start state
 enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
 
@@ -357,7 +361,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
       // Initialize recording service (but don't start yet - will start in _start())
       if (_useMic) {
-        _recording = RecordingService(owner: 'exercise', bufferSize: 512);
+        _recording = RecordingService(owner: 'exercise', bufferSize: _kBufferSize);
         debugPrint(
             '[ExercisePlayerScreen] RecordingService created (not started yet)');
       }
@@ -1220,19 +1224,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       }
 
       if (_useMic) {
-        // Enforce buffer size upgrade (handling hot reload state)
-        if (_recording != null && _recording!.bufferSize != 1024) {
-          debugPrint('[Start] Disposing old RecordingService (buffer=${_recording!.bufferSize}) to upgrade to 1024');
-          await _recording!.dispose();
-          _recording = null;
-        }
-
         // Recording service should already be initialized
         if (_recording == null) {
           trace.mark('creating RecordingService');
           debugPrint('[Start] Creating RecordingService in _startEngines()');
-          // Increase buffer size to 1024 for better low-end pitch detection
-          _recording = RecordingService(owner: 'exercise', bufferSize: 1024);
+          // Increase buffer size to _kBufferSize for better low-end pitch detection
+          // 512 samples (~11.6ms) is too short for reliable detection below ~100Hz
+          _recording = RecordingService(owner: 'exercise', bufferSize: _kBufferSize);
         }
 
         // Stop any existing recording first
@@ -1294,16 +1292,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
               (frame.hz != null
                   ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2
                   : null);
-
-          // Debug logging for raw stream
-          if (kDebugMode && frame.hz != null) {
-             final nowLog = DateTime.now().millisecondsSinceEpoch;
-             // Shared throttle with painter? No, use local static/field.
-             // Just simple throttle to avoid spam
-             if (_runId % 30 == 0) { // Log roughly every ~0.5-1s depending on frame rate
-                debugPrint('[ExerciseRaw] hz=${frame.hz?.toStringAsFixed(1)} midi=${midi?.toStringAsFixed(2)} voicedProb=${frame.voicedProb} rms=${frame.rms}');
-             }
-          }
 
           final now = (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0))
               .clamp(-2.0, 3600.0);

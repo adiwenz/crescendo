@@ -62,7 +62,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   int _bufferSize = 1024;
   bool _micPermissionGranted = false;
   DateTime? _lastUiUpdate;
-  DateTime? _lastDebugLog;
 
   @override
   void initState() {
@@ -170,28 +169,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
           
           // Update tracker (runs at high rate, ~50-100Hz)
           _tracker.updateFromReading(frame);
-
-          // Throttled Debug Logging (every 1s)
-          if (_lastDebugLog == null || 
-              now.difference(_lastDebugLog!).inMilliseconds >= 1000) {
-             _lastDebugLog = now;
-             
-             double? rawMidi;
-             if (frame.frequencyHz > 0) {
-               rawMidi = 69 + 12 * (math.log(frame.frequencyHz / 440.0) / math.ln2);
-             }
-             
-             debugPrint('\n--- Piano Pitch Log ---');
-             debugPrint('Raw Input:');
-             debugPrint('  freq: ${frame.frequencyHz.toStringAsFixed(1)} Hz');
-             debugPrint('  midi: ${rawMidi?.toStringAsFixed(2) ?? "null"}');
-             debugPrint('  conf: ${frame.confidence.toStringAsFixed(2)}');
-             debugPrint('Tracker (Smoothed):');
-             debugPrint('  freq: ${_tracker.currentFreqHz?.toStringAsFixed(1) ?? "null"} Hz');
-             debugPrint('  midi: ${_tracker.currentMidi ?? "null"}');
-             debugPrint('  note: ${_tracker.currentNoteName ?? "null"}');
-             debugPrint('\n');
-          }
           
           // Throttle UI updates to 45fps
           if (_lastUiUpdate == null || 

@@ -84,8 +84,27 @@ class PitchSnapshotView extends StatelessWidget {
           builder: (context, constraints) {
             final width = constraints.maxWidth;
             final offsetMs = _computeNoteStartOffsetMs(normalized, targetNotes);
+            
+            // Dynamic start time to avoid whitespace for sliced exercises
+            var startMs = 0;
+            if (targetNotes.isNotEmpty || normalized.isNotEmpty) {
+              var minTv = 999999999;
+              if (targetNotes.isNotEmpty) {
+                final noteStart = _firstNoteMs(targetNotes) + offsetMs;
+                if (noteStart < minTv) minTv = noteStart;
+              }
+              if (normalized.isNotEmpty) {
+                final sampleStart = _firstSampleMs(normalized);
+                if (sampleStart < minTv) minTv = sampleStart;
+              }
+              // If we found a valid start time > 0, use it (with padding)
+              if (minTv < 999999999) {
+                 startMs = math.max(0, minTv - 500); // 500ms lead-in padding
+              }
+            }
+
             final domainEndMs = _computeDomainEndMs(durationMs, normalized, targetNotes, offsetMs);
-            final domain = (0, domainEndMs);
+            final domain = (startMs, domainEndMs);
             final minMax = _computeViewport(targetNotes, pitchSamples);
             final minMidi = minMax.$1;
             final maxMidi = minMax.$2;
