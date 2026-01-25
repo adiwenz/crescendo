@@ -288,7 +288,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         micGain: 1.0,
         refGain: 1.0,
         micOffsetSec: _micOffsetSec,
-        refOffsetSec: (widget.lastTake.offsetMs ?? 150.0) / 1000.0,
+        refOffsetSec: (widget.lastTake.offsetMs ?? AudioConstants.manualSyncOffsetMs) / 1000.0,
         duckMicWhileRef: false,
       );
       

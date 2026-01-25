@@ -43,7 +43,7 @@ class _TimingHarnessScreenState extends State<TimingHarnessScreen>
     super.initState();
     _ticker = createTicker(_onTick);
     _synth = AudioSynthService();
-    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 150.0 : 200.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
     _buildClicks(bpm: 120, beats: 16);

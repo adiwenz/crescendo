@@ -343,7 +343,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     _pixelsPerSecond =
         PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
-    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? AudioConstants.iosSyncOffsetMs : AudioConstants.manualSyncOffsetMs);
     _audioClock = AudioClock(_synth.player);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
 
@@ -1478,8 +1478,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       computedOffsetMs = offsetSec * 1000.0;
       debugPrint('[Sync] Computed headphone offset: ${computedOffsetMs!.toStringAsFixed(2)}ms');
     } else {
-      // Fallback to legacy 150ms for speakers until ultrasonic calibration is implemented
-      computedOffsetMs = 150.0;
+      // Fallback to legacy baseline for speakers until ultrasonic calibration is implemented
+      computedOffsetMs = AudioConstants.manualSyncOffsetMs;
       debugPrint('[Sync] Fixed speaker offset: ${computedOffsetMs.round()}ms');
     }
 

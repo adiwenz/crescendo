@@ -105,7 +105,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _scoring = ScoringService();
     _repo = TakeRepository();
     _ticker = createTicker(_onTick);
-    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 150.0 : 200.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
   }

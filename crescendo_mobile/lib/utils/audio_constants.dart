@@ -6,6 +6,12 @@ class AudioConstants {
   /// Lead-in time in seconds (for convenience)
   static const double leadInSec = 2.0;
   
+  /// Centralized synchronization compensation value for speakers (200ms fallback)
+  static const double manualSyncOffsetMs = 200.0;
+  
+  /// Centralized iOS-specific synchronization baseline (200ms)
+  static const double iosSyncOffsetMs = 200.0;
+  
   /// Standard audio sample rate for recording and playback (48kHz)
   static const int audioSampleRate = 48000;
   
