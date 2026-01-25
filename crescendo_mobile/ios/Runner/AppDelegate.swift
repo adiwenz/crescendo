@@ -18,36 +18,6 @@ import AudioToolbox
       binaryMessenger: controller.binaryMessenger
     )
     
-    audioSessionChannel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
-      guard call.method == "overrideOutputPort" else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
-      
-      guard let args = call.arguments as? [String: Any],
-            let useSpeaker = args["useSpeaker"] as? Bool else {
-        result(FlutterError(
-          code: "INVALID_ARGUMENT",
-          message: "Missing or invalid 'useSpeaker' argument",
-          details: nil
-        ))
-        return
-      }
-      
-      do {
-        let session = AVAudioSession.sharedInstance()
-        if useSpeaker {
-          try session.overrideOutputAudioPort(.speaker)
-          #if DEBUG
-          print("[AppDelegate] Overrode output port to speaker")
-          #endif
-        } else {
-          try session.overrideOutputAudioPort(.none)
-          #if DEBUG
-          print("[AppDelegate] Reset output port override (using default routing)")
-          #endif
-        }
-        result(true)
       } catch {
         #if DEBUG
         print("[AppDelegate] ERROR overriding output port: \(error)")
@@ -57,6 +27,47 @@ import AudioToolbox
           message: "Failed to override output port: \(error.localizedDescription)",
           details: nil
         ))
+      }
+    }
+    
+    audioSessionChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      let session = AVAudioSession.sharedInstance()
+      
+      switch call.method {
+      case "overrideOutputPort":
+        guard let args = call.arguments as? [String: Any],
+              let useSpeaker = args["useSpeaker"] as? Bool else {
+          result(FlutterError(code: "INVALID_ARGUMENT", message: "Missing useSpeaker", details: nil))
+          return
+        }
+        do {
+          try session.overrideOutputAudioPort(useSpeaker ? .speaker : .none)
+          result(true)
+        } catch {
+          result(FlutterError(code: "AUDIO_SESSION_ERROR", message: error.localizedDescription, details: nil))
+        }
+        
+      case "getSyncMetrics":
+        let currentRoute = session.currentRoute
+        let isHeadphones = currentRoute.outputs.contains { output in
+            output.portType == .headphones || 
+            output.portType == .bluetoothA2DP || 
+            output.portType == .bluetoothHFP ||
+            output.portType == .bluetoothLE
+        }
+        
+        let metrics: [String: Any] = [
+            "inputLatency": session.inputLatency,
+            "outputLatency": session.outputLatency,
+            "ioBufferDuration": session.ioBufferDuration,
+            "isHeadphones": isHeadphones,
+            "sampleRate": session.sampleRate,
+            "currentHostTime": CACurrentMediaTime()
+        ]
+        result(metrics)
+        
+      default:
+        result(FlutterMethodNotImplemented)
       }
     }
     

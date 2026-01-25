@@ -137,15 +137,6 @@ class PitchHighwayPainter extends CustomPainter {
           midiMin: midiMin,
           midiMax: midiMax,
         );
-        debugPrint(
-          'NOTE Y: label=${n.lyric ?? ''} midi=${n.midi.toStringAsFixed(2)} '
-          'y=${y.toStringAsFixed(2)}',
-        );
-        debugPrint(
-          'NOTE PILL TOP: label=${n.lyric ?? ''} '
-          'pillTop=${(y - barHeight / 2).toStringAsFixed(2)} '
-          'pillHeight=$barHeight',
-        );
       }
     }
 
@@ -366,8 +357,6 @@ class PitchHighwayPainter extends CustomPainter {
           final logKey = '${runId}_${(currentTime * 2).floor()}';
           if (!_firstNotePositionLogs.contains(logKey)) {
             _firstNotePositionLogs.add(logKey);
-            debugPrint(
-                '[TIMING_DEBUG] [PAINTER] runId=$runId currentTime=${currentTime.toStringAsFixed(3)} firstNoteStartSec=${n.startSec.toStringAsFixed(3)} firstNoteLeftX=${startX.toStringAsFixed(1)} playlineX=${playheadX.toStringAsFixed(1)} dx=${diffPx.toStringAsFixed(1)}');
           }
         }
         if (endX < -32 || startX > size.width + 32) continue;

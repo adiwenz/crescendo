@@ -140,8 +140,55 @@ class AudioSessionService {
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[AudioSessionService] [$tag] ERROR applying review session: $e');
+        debugPrint('[AudioSessionService] Error applying review session: $e');
       }
     }
+  }
+
+  static Future<SyncMetrics?> getSyncMetrics() async {
+    if (!Platform.isIOS) return null;
+    try {
+      final Map<dynamic, dynamic>? result = await _channel.invokeMethod('getSyncMetrics');
+      if (result == null) return null;
+      
+      return SyncMetrics(
+        inputLatency: result['inputLatency'] as double,
+        outputLatency: result['outputLatency'] as double,
+        ioBufferDuration: result['ioBufferDuration'] as double,
+        isHeadphones: result['isHeadphones'] as bool,
+        sampleRate: result['sampleRate'] as double,
+        currentHostTime: result['currentHostTime'] as double,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AudioSessionService] Error getting sync metrics: $e');
+      }
+      return null;
+    }
+  }
+}
+
+class SyncMetrics {
+  final double inputLatency;
+  final double outputLatency;
+  final double ioBufferDuration;
+  final bool isHeadphones;
+  final double sampleRate;
+  final double currentHostTime;
+
+  SyncMetrics({
+    required this.inputLatency,
+    required this.outputLatency,
+    required this.ioBufferDuration,
+    required this.isHeadphones,
+    required this.sampleRate,
+    required this.currentHostTime,
+  });
+
+  @override
+  String toString() {
+    return 'SyncMetrics(inLat=${(inputLatency * 1000).toStringAsFixed(1)}ms, '
+           'outLat=${(outputLatency * 1000).toStringAsFixed(1)}ms, '
+           'isHP=$isHeadphones, hostTime=$currentHostTime)';
   }
 }

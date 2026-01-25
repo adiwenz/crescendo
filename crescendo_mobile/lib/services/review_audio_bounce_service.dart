@@ -140,12 +140,14 @@ class ReviewAudioBounceService {
     required double micGain,
     required double refGain,
     double micOffsetSec = 0.0,
+    double refOffsetSec = 0.0,
     bool duckMicWhileRef = false,
   }) async {
     final startTime = DateTime.now();
     
     if (kDebugMode) {
-      debugPrint('[ReviewBounce] Mixing WAVs: mic=${micWav.path}, ref=${referenceWav.path}, offset=${micOffsetSec.toStringAsFixed(3)}s');
+      debugPrint('[ReviewBounce] Mixing WAVs: mic=${micWav.path}, ref=${referenceWav.path}');
+      debugPrint('[ReviewBounce] Offsets: mic=${micOffsetSec.toStringAsFixed(3)}s, ref=${refOffsetSec.toStringAsFixed(3)}s');
       debugPrint('[ReviewBounce] Gains: mic=$micGain, ref=$refGain, duckMic=$duckMicWhileRef');
     }
     
@@ -183,16 +185,19 @@ class ReviewAudioBounceService {
     }
     
     final micOffsetSamples = (micOffsetSec * sampleRate).round();
+    final refOffsetSamples = (refOffsetSec * sampleRate).round();
     
-    // Determine output length (use the longer of the two, accounting for offset)
-    final outputLength = math.max(micSamples.length + micOffsetSamples, refSamples.length);
+    // Determine output length (use the longer of the two, accounting for offsets)
+    final outputLength = math.max(micSamples.length + micOffsetSamples, refSamples.length + refOffsetSamples);
     final mixedSamples = Float32List(outputLength);
     
     // Mix sample-by-sample
     for (var i = 0; i < outputLength; i++) {
       final micSampleIdx = i - micOffsetSamples;
+      final refSampleIdx = i - refOffsetSamples;
+      
       var micSample = (micSampleIdx >= 0 && micSampleIdx < micSamples.length) ? micSamples[micSampleIdx] * micGain : 0.0;
-      var refSample = i < refSamples.length ? refSamples[i] * refGain : 0.0;
+      var refSample = (refSampleIdx >= 0 && refSampleIdx < refSamples.length) ? refSamples[refSampleIdx] * refGain : 0.0;
       
       // Duck mic while reference is playing (if enabled)
       if (duckMicWhileRef && refSample.abs() > 0.001) {

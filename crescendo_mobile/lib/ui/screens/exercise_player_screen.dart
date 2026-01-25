@@ -267,6 +267,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double _lastTime = 0.0; // Track last time value for backwards detection
   bool _showDebugOverlay =
       false; // Toggle for debug overlay (set to true to enable)
+  
+  // Sync metrics for headphone detection and precision alignment
+  SyncMetrics? _syncMetrics;
+  double? _playbackStartHostTime;
+  double? _recordingStartHostTime;
 
   double get _durationSec {
     return widget.exercisePlan?.durationSec ?? 0.0;
@@ -995,6 +1000,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final currentRunId = _runId;
     unawaited(_startFastEngines(runId: currentRunId, t0: t0, trace: trace));
 
+    // Capture sync metrics immediately on start if possible
+    unawaited(_captureInitialSyncMetrics());
+
     // CRITICAL: Schedule heavy audio preparation AFTER first frame paints
     // This ensures the clean-slate UI is visible immediately before heavy work begins
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1071,6 +1079,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     final afterVisuals = DateTime.now();
     debugPrint(
         '[Visuals] visuals started <= ${afterVisuals.millisecondsSinceEpoch - startEpochMs}ms');
+  }
+
+  Future<void> _captureInitialSyncMetrics() async {
+    final metrics = await AudioSessionService.getSyncMetrics();
+    if (mounted) {
+      setState(() {
+        _syncMetrics = metrics;
+      });
+      if (metrics != null && kDebugMode) {
+        debugPrint('[Sync] Initial metrics: $metrics');
+      }
+    }
   }
 
   /// Called when audio begins progressing (for logging/debugging only)
@@ -1201,7 +1221,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         trace.mark('before recorder.start');
         dev.Timeline.startSync('recorder.start');
         final beforeRecorder = DateTime.now();
-        _recorderStartSec = _time.value; // Use master visual exercise time as anchor
+        // Capture host time right before recorder start
+        final startMetrics = await AudioSessionService.getSyncMetrics();
+        _recordingStartHostTime = startMetrics?.currentHostTime;
+        
         await _recording?.start();
         final afterRecorder = DateTime.now();
         dev.Timeline.finishSync();
@@ -1315,7 +1338,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       try {
         // Start recording alignment
         // Dynamic reference starts at 0, hardware clock provides sample-accurate position.
-        _recorderStartSec = 0.0; 
+        // Capture host time right before playback start
+        final startMetrics = await AudioSessionService.getSyncMetrics();
+        _playbackStartHostTime = startMetrics?.currentHostTime;
 
         // Start playing the synthesized WAV
         await _synth.playFile(plan.wavFilePath);
@@ -1444,6 +1469,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         rms: f.rms,
       );
     }).toList();
+    double? computedOffsetMs;
+    // Headphone-safe formula: offsetMs = ((recHostTime + inLatency) - (playHostTime + outLatency)) * 1000
+    if (_syncMetrics != null && _syncMetrics!.isHeadphones && 
+        _recordingStartHostTime != null && _playbackStartHostTime != null) {
+      final offsetSec = (_recordingStartHostTime! + _syncMetrics!.inputLatency) - 
+                        (_playbackStartHostTime! + _syncMetrics!.outputLatency);
+      computedOffsetMs = offsetSec * 1000.0;
+      debugPrint('[Sync] Computed headphone offset: ${computedOffsetMs!.toStringAsFixed(2)}ms');
+    } else {
+      // Fallback to legacy 150ms for speakers until ultrasonic calibration is implemented
+      computedOffsetMs = 150.0;
+      debugPrint('[Sync] Fixed speaker offset: ${computedOffsetMs.round()}ms');
+    }
+
     final take = LastTake(
       exerciseId: widget.exercise.id,
       recordedAt: DateTime.now(),
@@ -1451,6 +1490,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       durationSec: duration.clamp(0.0, _durationSec),
       audioPath: (audioPath != null && audioPath.isNotEmpty) ? audioPath : null,
       pitchDifficulty: widget.pitchDifficulty.name,
+      offsetMs: computedOffsetMs,
     );
     await _lastTakeStore.saveLastTake(take);
   }

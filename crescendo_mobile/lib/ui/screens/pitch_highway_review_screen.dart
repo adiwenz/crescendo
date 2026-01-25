@@ -86,12 +86,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   int _reviewRunId = 0; // Run ID for review MIDI playback
   int? _midiOnlyStartTime; // Start time for MIDI-only timer (set after MIDI sequence is initialized)
   
-  // Sync compensation (debug only)
-  static const bool kEnableSyncCompensation = true; // Set to false to disable compensation
-  int? _syncOffsetMs; // Cached sync offset from diagnostic
-  int _manualOffsetMs = 0; // Manual offset adjustment (can be positive or negative)
-  bool _compensationEnabled = true; // Toggle to enable/disable compensation (default: enabled)
-
   // Rebase state
   List<PitchFrame> _rebasedFrames = const [];
   double _sliceStartSec = 0.0;
@@ -152,11 +146,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
     // Step 2: Check recorded audio path
     _recordedAudioPath = widget.lastTake.audioPath;
-    
-    // Load sync offset for compensation (debug only)
-    if (kDebugMode && kEnableSyncCompensation) {
-      _loadSyncOffset();
-    }
     
     // Log replay start (now with assigned paths)
     unawaited(_logReplayStart());
@@ -299,6 +288,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         micGain: 1.0,
         refGain: 1.0,
         micOffsetSec: _micOffsetSec,
+        refOffsetSec: (widget.lastTake.offsetMs ?? 150.0) / 1000.0,
         duckMicWhileRef: false,
       );
       
@@ -392,25 +382,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     return filteredNotes;
   }
 
-  /// Load sync offset from SharedPreferences (debug only)
-  Future<void> _loadSyncOffset() async {
-    if (!kDebugMode || !kEnableSyncCompensation) return;
-    
-    try {
-      final offset = await SyncDiagnosticService.getSavedOffset();
-      if (mounted) {
-        setState(() {
-          _syncOffsetMs = offset;
-        });
-        if (offset != null) {
-          debugPrint('[Review] Loaded sync offset: ${offset}ms');
-        }
-      }
-    } catch (e) {
-      debugPrint('[Review] Error loading sync offset: $e');
-    }
-  }
-
   Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
     
@@ -466,15 +437,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       // Otherwise, preload completion will trigger auto-start
       if (rebasedNotes.isNotEmpty && !_playing && _preloadComplete) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_playing && _notes.isNotEmpty && _preloadComplete) {
-            if (kDebugMode) {
-              debugPrint('[Review] Auto-starting from notes loaded: notes=${_notes.length}');
-            }
-            _start();
-          }
+          _start();
         });
       }
-    }
+  }
 
 
   // Route change handlers removed - ReferenceMidiEngine handles route changes automatically
@@ -575,21 +541,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _playbackStartEpoch = DateTime.now();
     final playbackStartTime = _playbackStartEpoch!.millisecondsSinceEpoch;
     
-    // Apply sync compensation if enabled (debug only)
-    int? compensationMs;
-    if (kDebugMode && kEnableSyncCompensation && _syncOffsetMs != null) {
-      // If offsetMs > 0 (recorded audio is late), delay MIDI by offsetMs
-      // This shifts MIDI scheduling to align with recorded audio
-      compensationMs = _syncOffsetMs! > 0 ? _syncOffsetMs : 0;
-      if (compensationMs != null && compensationMs > 0) {
-        debugPrint('[Review Start] Applying sync compensation: ${compensationMs}ms delay to MIDI playback');
-      }
-    }
-    
     if (kDebugMode) {
       debugPrint('[Review Start] playbackStartEpoch=$playbackStartTime (captured after seek), '
-          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${AudioConstants.leadInMs}, '
-          'syncOffsetMs=${_syncOffsetMs ?? "none"}, compensationMs=${compensationMs ?? "none"}');
+          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${AudioConstants.leadInMs}');
     }
     
     // Check runId after async call
@@ -842,14 +796,14 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     // For Sirens, use visual path for MIDI range (more accurate)
     final minMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
-        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce((a, b) => a < b ? a : b).floor() - 3)
+        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce(math.min<double>).floor() - 3)
         : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
-            ? ([...noteMidis, ...contourMidis].reduce(math.min).floor() - 3)
+            ? ([...noteMidis, ...contourMidis].reduce(math.min<double>).floor() - 3)
             : 48);
     final maxMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
-        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce((a, b) => a > b ? a : b).ceil() + 3)
+        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce(math.max<double>).ceil() + 3)
         : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
-            ? ([...noteMidis, ...contourMidis].reduce(math.max).ceil() + 3)
+            ? ([...noteMidis, ...contourMidis].reduce(math.max<double>).ceil() + 3)
             : 72);
     assert(() {
       debugPrint('[Review] exerciseId: ${widget.lastTake.exerciseId}');
@@ -921,41 +875,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                 final difficulty = pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ?? PitchHighwayDifficulty.medium;
                 await _bounceAndMixAudio(difficulty);
                 if (mounted) setState(() {});
-              },
-            ),
-          // Manual offset adjustment controls (debug only)
-          if (kDebugMode)
-            _OffsetAdjustmentControls(
-              currentOffsetMs: _manualOffsetMs,
-              diagnosticOffsetMs: _syncOffsetMs,
-              compensationEnabled: _compensationEnabled,
-              onOffsetChanged: (newOffsetMs) {
-                setState(() {
-                  _manualOffsetMs = newOffsetMs;
-                });
-                // Restart playback if currently playing to apply new offset
-                if (_playing) {
-                  _stop();
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    if (mounted && _preloadComplete) {
-                      _start();
-                    }
-                  });
-                }
-              },
-              onCompensationToggled: (enabled) {
-                setState(() {
-                  _compensationEnabled = enabled;
-                });
-                // Restart playback if currently playing to apply toggle change
-                if (_playing) {
-                  _stop();
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    if (mounted && _preloadComplete) {
-                      _start();
-                    }
-                  });
-                }
               },
             ),
         ],
@@ -1132,194 +1051,5 @@ class _DebugYLinePainter extends CustomPainter {
         oldDelegate.midiMin != midiMin ||
         oldDelegate.midiMax != midiMax ||
         oldDelegate.color != color;
-  }
-}
-
-/// Manual offset adjustment controls widget (debug only)
-/// Allows fine-tuning MIDI playback timing relative to recorded audio
-class _OffsetAdjustmentControls extends StatelessWidget {
-  final int currentOffsetMs;
-  final int? diagnosticOffsetMs;
-  final bool compensationEnabled;
-  final ValueChanged<int> onOffsetChanged;
-  final ValueChanged<bool> onCompensationToggled;
-
-  const _OffsetAdjustmentControls({
-    required this.currentOffsetMs,
-    required this.diagnosticOffsetMs,
-    required this.compensationEnabled,
-    required this.onOffsetChanged,
-    required this.onCompensationToggled,
-  });
-
-  void _adjustOffset(int deltaMs) {
-    onOffsetChanged(currentOffsetMs + deltaMs);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final totalOffsetMs = (diagnosticOffsetMs ?? 0) + currentOffsetMs;
-    final isPositive = totalOffsetMs > 0;
-    final isNegative = totalOffsetMs < 0;
-    
-    return PopupMenuButton<String>(
-      tooltip: 'Adjust MIDI offset (${totalOffsetMs > 0 ? "+" : ""}$totalOffsetMs ms)',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isPositive ? Icons.arrow_forward : (isNegative ? Icons.arrow_back : Icons.sync),
-              color: isPositive 
-                  ? Colors.orange 
-                  : (isNegative ? Colors.blue : Colors.grey),
-              size: 20,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              '${totalOffsetMs > 0 ? "+" : ""}$totalOffsetMs',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isPositive 
-                    ? Colors.orange 
-                    : (isNegative ? Colors.blue : Colors.grey),
-              ),
-            ),
-          ],
-        ),
-      ),
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          enabled: false,
-          child: StatefulBuilder(
-            builder: (context, setMenuState) {
-              // Use local state that syncs with parent state
-              bool localEnabled = compensationEnabled;
-              
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'MIDI Offset',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Enable Compensation',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                      ),
-                      Switch(
-                        value: localEnabled,
-                        onChanged: (value) {
-                          // Update local state immediately for visual feedback
-                          setMenuState(() {
-                            localEnabled = value;
-                          });
-                          // Update parent state
-                          onCompensationToggled(value);
-                        },
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    localEnabled 
-                        ? 'Total: ${totalOffsetMs > 0 ? "+" : ""}$totalOffsetMs ms'
-                        : 'Compensation OFF (using audio-position sync)',
-                    style: TextStyle(
-                      fontSize: 12, 
-                      color: localEnabled ? Colors.grey[700] : Colors.grey[500],
-                      fontStyle: localEnabled ? FontStyle.normal : FontStyle.italic,
-                    ),
-                  ),
-                  if (localEnabled && diagnosticOffsetMs != null)
-                    Text(
-                      'Diagnostic: ${diagnosticOffsetMs! > 0 ? "+" : ""}${diagnosticOffsetMs!} ms',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                  if (localEnabled)
-                    Text(
-                      'Manual: ${currentOffsetMs > 0 ? "+" : ""}$currentOffsetMs ms',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Delay MIDI (+50ms)'),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                onPressed: () => _adjustOffset(50),
-                tooltip: 'Delay MIDI by 50ms',
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Delay MIDI (+10ms)'),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                onPressed: () => _adjustOffset(10),
-                tooltip: 'Delay MIDI by 10ms',
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Advance MIDI (-10ms)'),
-              IconButton(
-                icon: const Icon(Icons.remove, size: 18),
-                onPressed: () => _adjustOffset(-10),
-                tooltip: 'Advance MIDI by 10ms',
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Advance MIDI (-50ms)'),
-              IconButton(
-                icon: const Icon(Icons.remove, size: 18),
-                onPressed: () => _adjustOffset(-50),
-                tooltip: 'Advance MIDI by 50ms',
-              ),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Reset to diagnostic'),
-              TextButton(
-                onPressed: () => onOffsetChanged(0),
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }
