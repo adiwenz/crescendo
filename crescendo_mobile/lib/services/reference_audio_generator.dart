@@ -2,13 +2,14 @@ import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint, compute;
 import '../models/reference_note.dart';
+import '../utils/audio_constants.dart';
 import 'aac_encoder_service.dart';
 
 /// Generates reference audio files from note schedules
 /// Uses simple piano synth (same as ReviewAudioBounceService) for consistency
 /// Outputs AAC-LC in M4A container for efficient storage
 class ReferenceAudioGenerator {
-  static const int defaultSampleRate = 48000;
+  static const int defaultSampleRate = AudioConstants.audioSampleRate;
   static const double fadeInOutMs = 8.0; // 8ms fade in/out per note
   static const int defaultBitrate = 128; // kbps (128-160 range)
   

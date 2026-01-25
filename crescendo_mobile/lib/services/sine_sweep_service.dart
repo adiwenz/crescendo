@@ -6,13 +6,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/reference_note.dart';
+import '../utils/audio_constants.dart';
 
 /// Service for generating smooth sine wave sweeps (glides) between MIDI notes.
 /// Uses continuous phase accumulation to prevent clicks and pops.
 class SineSweepService {
   final int sampleRate;
-
-  SineSweepService({this.sampleRate = 44100});
+ 
+  SineSweepService({this.sampleRate = AudioConstants.audioSampleRate});
 
   /// Convert MIDI note number to frequency in Hz
   double _midiToHz(double midi) => 440.0 * pow(2.0, (midi - 69.0) / 12.0);

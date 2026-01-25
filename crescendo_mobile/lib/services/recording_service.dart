@@ -8,9 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:pitch_detector_dart/pitch_detector.dart';
 import 'package:wav/wav.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import '../models/pitch_frame.dart';
+import '../utils/audio_constants.dart';
 import 'audio_session_manager.dart';
 
 class RecordingResult {
@@ -41,8 +42,8 @@ class RecordingService {
   double _timeCursor = 0;
 
   RecordingService({
-    this.sampleRate = 44100,
-    this.bufferSize = 1024, // Smaller buffer for lower latency (~23ms at 44.1kHz)
+    this.sampleRate = AudioConstants.audioSampleRate,
+    this.bufferSize = 1024, // Smaller buffer for lower latency (~21ms at 48kHz)
     String owner = 'exercise', // Default to 'exercise', Piano will use 'piano'
   })  : _owner = owner,
         _pitchDetector =
@@ -93,6 +94,11 @@ class RecordingService {
         numChannels: 1,
       ),
     );
+
+    // Get the actual config after starting (to see if sampleRate was honored)
+    if (kDebugMode) {
+      debugPrint('[RecordingService] Requested rate: $sampleRate');
+    }
 
     _sub = stream.listen((data) async {
       final buf = _pcm16BytesToDoubles(data);
@@ -147,6 +153,9 @@ class RecordingService {
     final dir = await getApplicationDocumentsDirectory();
     final path = customPath ?? p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
     final floats = Float64List.fromList(_samples);
+    if (kDebugMode) {
+      debugPrint('[RecordingService] Finalizing WAV: path=$path, sampleRate=$sampleRate, samples=${floats.length}');
+    }
     final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
     final bytes = wav.write();
     final file = File(path);

@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'preview_asset_service.dart';
 import 'sine_sweep_service.dart';
+import '../utils/audio_constants.dart';
 import 'midi_preview_generator.dart';
 import 'exercise_audio_asset_resolver.dart';
 import 'exercise_audio_slicer.dart';
@@ -19,7 +20,7 @@ import '../audio/midi_playback_config.dart';
 /// Uses MIDI for non-glide exercises, WAV assets for glide exercises.
 class PreviewAudioService {
   final AudioPlayer _player = AudioPlayer();
-  final SineSweepService _sweepService = SineSweepService(sampleRate: 44100);
+  final SineSweepService _sweepService = SineSweepService(sampleRate: AudioConstants.audioSampleRate);
   final ReferenceMidiSynth _midiSynth = ReferenceMidiSynth();
   StreamSubscription<void>? _completeSub;
   Completer<void>? _playbackCompleter;

@@ -45,17 +45,17 @@ class PitchContourPainter extends CustomPainter {
     final leftTime = currentTime - (playheadX / pixelsPerSecond);
     final rightTime = currentTime + ((size.width - playheadX) / pixelsPerSecond);
 
-    // --- DIAGNOSTIC LOGGING ---
-    if (kDebugMode) {
-      double minF = double.infinity;
-      double maxF = -double.infinity;
-      for (final f in frames) {
-        if (f.time < minF) minF = f.time;
-        if (f.time > maxF) maxF = f.time;
-      }
-      debugPrint('[Contour] instance=${identityHashCode(this)} frames=${frames.length} range=[${minF.toStringAsFixed(2)}..${maxF.toStringAsFixed(2)}] clock=${currentTime.toStringAsFixed(2)}');
-    }
-    // --------------------------
+    // // --- DIAGNOSTIC LOGGING ---
+    // if (kDebugMode) {
+    //   double minF = double.infinity;
+    //   double maxF = -double.infinity;
+    //   for (final f in frames) {
+    //     if (f.time < minF) minF = f.time;
+    //     if (f.time > maxF) maxF = f.time;
+    //   }
+    //   debugPrint('[Contour] instance=${identityHashCode(this)} frames=${frames.length} range=[${minF.toStringAsFixed(2)}..${maxF.toStringAsFixed(2)}] clock=${currentTime.toStringAsFixed(2)}');
+    // }
+    // // --------------------------
 
     final glowPaint = Paint()
       ..style = PaintingStyle.stroke

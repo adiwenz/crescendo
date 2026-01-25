@@ -5,7 +5,7 @@ import '../models/reference_note.dart';
 import '../services/exercise_repository.dart';
 import '../services/transposed_exercise_builder.dart';
 import '../services/vocal_range_service.dart';
-import '../utils/exercise_constants.dart';
+import '../utils/audio_constants.dart';
 
 /// Service that pre-generates and caches transposed exercises for the current vocal range.
 /// Exercises are generated offline when the range is set, allowing instant exercise start.
@@ -88,7 +88,7 @@ class ExerciseCacheService {
               exercise: exercise,
               lowestMidi: lowestMidi,
               highestMidi: highestMidi,
-              leadInSec: ExerciseConstants.leadInSec,
+              leadInSec: AudioConstants.leadInSec,
               difficulty: difficulty,
             );
             notes = sirenResult.audioNotes; // Cache only audio notes (3 notes)
@@ -97,7 +97,7 @@ class ExerciseCacheService {
               exercise: exercise,
               lowestMidi: lowestMidi,
               highestMidi: highestMidi,
-              leadInSec: ExerciseConstants.leadInSec,
+              leadInSec: AudioConstants.leadInSec,
               difficulty: difficulty,
             );
           }
@@ -116,7 +116,7 @@ class ExerciseCacheService {
             exercise: exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
-            leadInSec: ExerciseConstants.leadInSec,
+            leadInSec: AudioConstants.leadInSec,
             difficulty: null, // Default difficulty for cache
           );
           notesDefault = sirenResult.audioNotes;
@@ -125,7 +125,7 @@ class ExerciseCacheService {
             exercise: exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
-            leadInSec: ExerciseConstants.leadInSec,
+            leadInSec: AudioConstants.leadInSec,
             difficulty: null,
           );
         }

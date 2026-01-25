@@ -8,6 +8,7 @@ import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 
 import '../../services/pitch_service.dart';
 import '../../services/audio_session_manager.dart';
+import '../../utils/audio_constants.dart';
 import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
@@ -58,7 +59,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   static const bool _kShowDebugOverlay = false; // Change this to true to enable debug overlay
   bool _showDebugOverlay = _kShowDebugOverlay;
   String _audioRoute = 'Unknown';
-  int _sampleRate = 44100;
+  int _sampleRate = AudioConstants.audioSampleRate;
   int _bufferSize = 1024;
   bool _micPermissionGranted = false;
   DateTime? _lastUiUpdate;
@@ -110,7 +111,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
       
       // Get sample rate and buffer size from RecordingService
       // These are set in RecordingService constructor
-      _sampleRate = 44100; // Default, will be updated from actual recording
+      _sampleRate = AudioConstants.audioSampleRate; // Default, will be updated from actual recording
       _bufferSize = 1024; // Updated to match RecordingService default for piano
       
       // Log audio session info

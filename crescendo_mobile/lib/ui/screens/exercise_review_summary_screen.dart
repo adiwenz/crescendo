@@ -11,7 +11,7 @@ import '../../models/reference_note.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
-import '../../utils/exercise_constants.dart';
+import '../../utils/audio_constants.dart';
 import '../../utils/pitch_math.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../widgets/overview_graph.dart';
@@ -180,7 +180,7 @@ class _ExerciseReviewSummaryScreenState
         exercise: widget.exercise,
         lowestMidi: lowestMidi,
         highestMidi: highestMidi,
-        leadInSec: ExerciseConstants.leadInSec,
+        leadInSec: AudioConstants.leadInSec,
         difficulty: difficulty,
       );
       notes = sirenResult.audioNotes; // Get the 3 notes per cycle
@@ -189,7 +189,7 @@ class _ExerciseReviewSummaryScreenState
         exercise: widget.exercise,
         lowestMidi: lowestMidi,
         highestMidi: highestMidi,
-        leadInSec: ExerciseConstants.leadInSec,
+        leadInSec: AudioConstants.leadInSec,
         difficulty: difficulty,
       );
     }

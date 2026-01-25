@@ -11,7 +11,7 @@ import '../services/storage/db.dart';
 import 'reference_audio_generator.dart';
 import 'exercise_repository.dart';
 import 'transposed_exercise_builder.dart';
-import '../utils/exercise_constants.dart';
+import '../utils/audio_constants.dart';
 
 /// Service for caching reference audio files for exercises
 /// Generates audio files when vocal range changes and stores them in DB + filesystem
@@ -168,7 +168,7 @@ class ReferenceAudioCacheService {
             exercise: exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
-            leadInSec: ExerciseConstants.leadInSec,
+            leadInSec: AudioConstants.leadInSec,
             difficulty: difficulty,
           );
           

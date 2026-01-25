@@ -22,7 +22,7 @@ import '../../services/vocal_range_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/performance_clock.dart';
-import '../../utils/exercise_constants.dart';
+import '../../utils/audio_constants.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/sync_diagnostic_service.dart';
 import '../../services/audio_session_service.dart';
@@ -69,7 +69,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   SirenPath? _sirenVisualPath; // Visual path for Sirens (separate from audio notes)
   double _durationSec = 1.0;
   // Use shared constant for lead-in time
-  static const double _leadInSec = ExerciseConstants.leadInSec;
+  static const double _leadInSec = AudioConstants.leadInSec;
   bool _loggedGraphInfo = false;
   late final double _pixelsPerSecond;
   
@@ -150,13 +150,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _time.value = 0.0; // Replayed domain always starts at 0.0
     // ----------------------
 
+    // Step 2: Check recorded audio path
+    _recordedAudioPath = widget.lastTake.audioPath;
     
     // Load sync offset for compensation (debug only)
     if (kDebugMode && kEnableSyncCompensation) {
       _loadSyncOffset();
     }
     
-    // Log replay start
+    // Log replay start (now with assigned paths)
     unawaited(_logReplayStart());
     
     _preloadEverything(difficulty);
@@ -586,7 +588,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     
     if (kDebugMode) {
       debugPrint('[Review Start] playbackStartEpoch=$playbackStartTime (captured after seek), '
-          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${ExerciseConstants.leadInMs}, '
+          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${AudioConstants.leadInMs}, '
           'syncOffsetMs=${_syncOffsetMs ?? "none"}, compensationMs=${compensationMs ?? "none"}');
     }
     

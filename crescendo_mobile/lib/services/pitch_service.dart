@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../models/pitch_frame.dart' as recording;
+import '../utils/audio_constants.dart';
 import 'recording_service.dart';
 
 class PitchFrame {
@@ -37,8 +38,8 @@ class PitchService {
   PitchService({RecordingService? recording})
       : _recording = recording ?? RecordingService(
           owner: 'piano',
-          sampleRate: 44100,
-          bufferSize: 1024, // Smaller buffer for lower latency (~23ms at 44.1kHz)
+          sampleRate: AudioConstants.audioSampleRate,
+          bufferSize: 1024, // Smaller buffer for lower latency (~21ms at 48kHz)
         );
 
   Stream<PitchFrame> get stream => _controller.stream;

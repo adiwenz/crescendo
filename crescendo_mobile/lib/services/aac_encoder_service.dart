@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/services.dart';
+import '../utils/audio_constants.dart';
 
 /// Service for encoding PCM audio to AAC (M4A) format
 /// Uses platform channels to call native encoders (iOS AVAudioFile, Android MediaCodec)
@@ -26,8 +27,8 @@ class AacEncoderService {
       throw UnsupportedError('AAC encoding is only supported on iOS and Android');
     }
     
-    if (sampleRate != 48000) {
-      throw ArgumentError('Sample rate must be 48000 Hz, got $sampleRate');
+    if (sampleRate != AudioConstants.audioSampleRate) {
+      throw ArgumentError('Sample rate must be ${AudioConstants.audioSampleRate} Hz, got $sampleRate');
     }
     
     if (bitrate < 128 || bitrate > 160) {

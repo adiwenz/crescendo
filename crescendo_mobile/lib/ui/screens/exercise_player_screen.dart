@@ -45,7 +45,7 @@ import '../../utils/pitch_ball_controller.dart';
 import '../../utils/pitch_state.dart';
 import '../../utils/pitch_visual_state.dart';
 import '../../utils/pitch_tail_buffer.dart';
-import '../../utils/exercise_constants.dart';
+import '../../utils/audio_constants.dart';
 import '../widgets/cents_meter.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/audio_session_service.dart';
@@ -182,7 +182,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final VocalRangeService _vocalRangeService = VocalRangeService();
   final _tailWindowSec = 4.0;
   // Use shared constant for lead-in time
-  static const double _leadInSec = ExerciseConstants.leadInSec;
+  static const double _leadInSec = AudioConstants.leadInSec;
   Ticker? _ticker;
 
   /// Single source of truth for exercise state
@@ -2127,7 +2127,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     if (notes.isEmpty || _captured.isEmpty) return 0.0;
     // Filter out frames captured during lead-in period (do not score during lead-in)
     final scoredFrames = _captured
-        .where((f) => ExerciseConstants.shouldScoreAtTime(f.time))
+        .where((f) => AudioConstants.shouldScoreAtTime(f.time))
         .toList();
     if (scoredFrames.isEmpty) return 0.0;
     final result =

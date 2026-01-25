@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'sine_sweep_service.dart';
+import '../utils/audio_constants.dart';
 
 /// Generates preview audio using sine waves (tones and sweeps).
 /// Used for exercise previews that should be clean sine waves, not MIDI instruments.
@@ -12,8 +13,8 @@ class SinePreviewAudioGenerator {
   final SineSweepService _sweepService;
   final int sampleRate;
 
-  SinePreviewAudioGenerator({this.sampleRate = 44100})
-      : _sweepService = SineSweepService(sampleRate: 44100);
+  SinePreviewAudioGenerator({this.sampleRate = AudioConstants.audioSampleRate})
+      : _sweepService = SineSweepService(sampleRate: AudioConstants.audioSampleRate);
 
   /// Generate a single tone WAV file.
   /// [noteMidi]: MIDI note number (e.g., 60 = C4)

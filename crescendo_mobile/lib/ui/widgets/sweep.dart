@@ -1,6 +1,6 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-
+import '../../utils/audio_constants.dart';
 import '../../services/sine_sweep_service.dart';
 
 class SineSweepButton extends StatefulWidget {
@@ -12,7 +12,7 @@ class SineSweepButton extends StatefulWidget {
 
 class _SineSweepButtonState extends State<SineSweepButton> {
   final AudioPlayer _player = AudioPlayer();
-  final SineSweepService _sweepService = SineSweepService(sampleRate: 48000);
+  final SineSweepService _sweepService = SineSweepService(sampleRate: AudioConstants.audioSampleRate);
   bool _busy = false;
 
   @override

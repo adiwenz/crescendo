@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wav/wav.dart';
 
 import '../models/reference_note.dart';
+import '../utils/audio_constants.dart';
 
 class AudioSynthService {
   static const double tailSeconds = 1.0;
@@ -22,7 +23,7 @@ class AudioSynthService {
       _secondaryPreparedPath; // Track which file secondary player is prepared for
   bool _secondaryPrepared = false;
 
-  AudioSynthService({this.sampleRate = 44100, bool enableMixing = false})
+  AudioSynthService({this.sampleRate = AudioConstants.audioSampleRate, bool enableMixing = false})
       : _player = AudioPlayer(),
         _secondaryPlayer = enableMixing ? AudioPlayer() : null {
     _player.setReleaseMode(ReleaseMode.stop);

@@ -9,12 +9,33 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/reference_note.dart';
 import '../audio/wav_writer.dart';
+import '../utils/audio_constants.dart';
 
 /// Service for rendering MIDI notes to WAV and mixing with recorded audio
 /// This eliminates timer-based real-time MIDI scheduling during review playback
 class ReviewAudioBounceService {
-  static const int defaultSampleRate = 44100;
+  static const int defaultSampleRate = AudioConstants.audioSampleRate;
   static const double fadeInOutMs = 8.0; // 8ms fade in/out per note
+  
+  // Sine Lookup Table for performance optimization
+  static const int _sineTableSize = 4096;
+  static final Float32List _sineTable = _generateSineTable();
+  
+  static Float32List _generateSineTable() {
+    final table = Float32List(_sineTableSize);
+    for (var i = 0; i < _sineTableSize; i++) {
+      table[i] = math.sin(2 * math.pi * i / _sineTableSize);
+    }
+    return table;
+  }
+  
+  /// Optimized sine function using lookup table
+  double _fastSin(double phase) {
+    // Normalize phase to [0, 1]
+    final normalized = phase - phase.floor();
+    final index = (normalized * _sineTableSize).floor() % _sineTableSize;
+    return _sineTable[index];
+  }
   
   /// Generate a cache key for the bounced audio
   static String generateCacheKey({
@@ -70,25 +91,26 @@ class ReviewAudioBounceService {
       debugPrint('[ReviewBounce] Rendering reference WAV: ${notes.length} notes, duration=${durationSec.toStringAsFixed(2)}s, sampleRate=$sampleRate');
     }
     
-    // Generate samples using the same synth as AudioSynthService
+    // Generate samples using optimized synthesis
     final samples = _generateSamples(
       notes: notes,
       sampleRate: sampleRate,
       durationSec: durationSec,
     );
     
-    // Convert to 16-bit PCM
-    final pcmSamples = samples.map((s) {
-      // Clamp to [-1.0, 1.0] and convert to int16
-      final clamped = s.clamp(-1.0, 1.0);
-      return (clamped * 32767.0).round().clamp(-32768, 32767);
-    }).toList();
+    // Convert to 16-bit PCM using efficient loop
+    final pcmSamples = Int16List(samples.length);
+    for (var i = 0; i < samples.length; i++) {
+      final s = samples[i];
+      final clamped = s < -1.0 ? -1.0 : (s > 1.0 ? 1.0 : s);
+      pcmSamples[i] = (clamped * 32767.0).round();
+    }
     
     // Write WAV file
     final cacheDir = await getCacheDirectory();
     final tempFile = File(p.join(cacheDir.path, 'reference_${DateTime.now().millisecondsSinceEpoch}.wav'));
     await WavWriter.writePcm16Mono(
-      samples: pcmSamples,
+      samples: pcmSamples.toList(), // Convert back to list for existing WavWriter
       sampleRate: sampleRate,
       path: tempFile.path,
     );
@@ -133,7 +155,12 @@ class ReviewAudioBounceService {
     }
     
     if (micWavInfo.sampleRate != refWavInfo.sampleRate) {
+      debugPrint('[ReviewBounce] ERROR: Sample rate mismatch! mic=${micWavInfo.sampleRate}, ref=${refWavInfo.sampleRate}');
       throw Exception('Sample rate mismatch: mic=${micWavInfo.sampleRate}, ref=${refWavInfo.sampleRate}');
+    }
+    
+    if (kDebugMode) {
+      debugPrint('[ReviewBounce] Mixing: micRate=${micWavInfo.sampleRate}, refRate=${refWavInfo.sampleRate}, outputRate=${micWavInfo.sampleRate}');
     }
     
     final sampleRate = micWavInfo.sampleRate;
@@ -194,14 +221,14 @@ class ReviewAudioBounceService {
   }
   
   /// Generate audio samples from reference notes
-  /// Uses the same piano synth as AudioSynthService for consistency
-  List<double> _generateSamples({
+  /// Optimized using typed data and sine lookup
+  Float32List _generateSamples({
     required List<ReferenceNote> notes,
     required int sampleRate,
     required double durationSec,
   }) {
     final totalFrames = (durationSec * sampleRate).ceil();
-    final samples = List<double>.filled(totalFrames, 0.0);
+    final samples = Float32List(totalFrames);
     final fadeFrames = ((fadeInOutMs / 1000.0) * sampleRate).round();
     
     for (final note in notes) {
@@ -212,23 +239,34 @@ class ReviewAudioBounceService {
       if (noteFrames <= 0 || startFrame < 0 || startFrame >= totalFrames) continue;
       
       final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
+      final phaseStep = hz / sampleRate;
       
       for (var f = 0; f < noteFrames; f++) {
         final frameIndex = startFrame + f;
         if (frameIndex >= totalFrames) break;
         
         final noteTime = f / sampleRate;
-        final sample = _pianoSample(hz, noteTime);
+        final phase = noteTime * hz;
+        
+        // Sum harmonics using fast lookup
+        final fundamental = _fastSin(phase);
+        final harmonic2 = 0.6 * _fastSin(phase * 2);
+        final harmonic3 = 0.3 * _fastSin(phase * 3);
+        final harmonic4 = 0.15 * _fastSin(phase * 4);
+        
+        final attack = (noteTime / 0.02);
+        final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
+        final sample = 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
         
         // Apply fade in/out
         double fade = 1.0;
         if (f < fadeFrames) {
-          fade = f / fadeFrames; // Fade in
+          fade = f / fadeFrames;
         } else if (f >= noteFrames - fadeFrames) {
-          fade = (noteFrames - f) / fadeFrames; // Fade out
+          fade = (noteFrames - f) / fadeFrames;
         }
         
-        samples[frameIndex] += sample * fade;
+        samples[frameIndex] += (sample * fade);
       }
     }
     

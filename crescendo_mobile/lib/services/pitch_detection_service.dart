@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_pitch_detection/flutter_pitch_detection.dart';
+import '../utils/audio_constants.dart';
 
 class PitchData {
   final double frequency;
@@ -25,7 +26,7 @@ class PitchDetectionService {
 
   Stream<PitchData> get pitchStream => _controller.stream;
 
-  Future<void> start({int sampleRate = 44100, int bufferSize = 8192}) async {
+  Future<void> start({int sampleRate = AudioConstants.audioSampleRate, int bufferSize = 8192}) async {
     if (_running) return;
     _running = true;
     await _detector.startDetection(sampleRate: sampleRate, bufferSize: bufferSize);

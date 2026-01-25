@@ -20,6 +20,10 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:audioplayers/audioplayers.dart';
+import '../../services/review_audio_bounce_service.dart';
+import '../../services/range_store.dart';
+import '../../utils/audio_constants.dart';
 import 'styles.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,6 +36,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Exercise>? _dailyExercises;
   bool _isLoading = true;
+  int? _debugRenderingTimeMs;
+  String? _debugError;
 
   @override
   void initState() {
@@ -67,59 +73,110 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: HomeScreenStyles.homeScreenGradient,
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome',
-                      style: AppText.h1.copyWith(fontSize: 28),
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: HomeScreenStyles.homeScreenGradient,
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Welcome',
+                          style: AppText.h1.copyWith(fontSize: 28),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Let\'s train your voice',
+                          style: AppText.body.copyWith(fontSize: 15),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Let\'s train your voice',
-                      style: AppText.body.copyWith(fontSize: 15),
+                  ),
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Today\'s Progress', style: AppText.h2),
+                        const SizedBox(height: 12),
+                        _TodaysProgressCard(dailyExercises: _dailyExercises),
+                        const SizedBox(height: 24),
+                        Text('Today\'s Exercises', style: AppText.h2),
+                        const SizedBox(height: 12),
+                        _ExercisesWithProgressIndicator(
+                          exercises: _dailyExercises,
+                          isLoading: _isLoading,
+                        ),
+                        // Debug section (only in debug mode)
+                        if (kDebugMode) ...[
+                          const SizedBox(height: 24),
+                          _DebugSection(
+                            onDebugResult: (timeMs, error) {
+                              setState(() {
+                                _debugRenderingTimeMs = timeMs;
+                                _debugError = error;
+                              });
+                              // Auto-hide after 5s
+                              Future.delayed(const Duration(seconds: 5), () {
+                                if (mounted) {
+                                  setState(() {
+                                    _debugRenderingTimeMs = null;
+                                    _debugError = null;
+                                  });
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Today\'s Progress', style: AppText.h2),
-                    const SizedBox(height: 12),
-                    _TodaysProgressCard(dailyExercises: _dailyExercises),
-                    const SizedBox(height: 24),
-                    Text('Today\'s Exercises', style: AppText.h2),
-                    const SizedBox(height: 12),
-                    _ExercisesWithProgressIndicator(
-                      exercises: _dailyExercises,
-                      isLoading: _isLoading,
-                    ),
-                    // Debug section (only in debug mode)
-                    if (kDebugMode) ...[
-                      const SizedBox(height: 24),
-                      _DebugSection(),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          // TOP OVERLAY FOR PERFORMANCE
+          if (_debugRenderingTimeMs != null || _debugError != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              left: 16,
+              right: 16,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: 1.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _debugError != null
+                          ? Colors.red.withOpacity(0.9)
+                          : Colors.black.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _debugError ?? '✅ Rendered in ${_debugRenderingTimeMs}ms (48kHz)',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -139,7 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
 /// - Negative offsetMs: recorded audio is EARLY relative to scheduled reference (MIDI plays too late)
 /// - Typical values: 0-100ms (good sync), 100-300ms (noticeable drift), >300ms (significant issue)
 class _DebugSection extends StatefulWidget {
-  const _DebugSection();
+  final Function(int? timeMs, String? error) onDebugResult;
+  const _DebugSection({required this.onDebugResult});
 
   @override
   State<_DebugSection> createState() => _DebugSectionState();
@@ -153,7 +211,9 @@ class _DebugSectionState extends State<_DebugSection> {
   int _testRunId = 0;
   bool _audioPlaying = false;
   final AudioSynthService _audioSynth = AudioSynthService();
+  final AudioPlayer _directPlayer = AudioPlayer(); // For direct WAV playback
   StreamSubscription? _audioCompleteSub;
+  bool _isGeneratingFiveTone = false;
   bool _generatingCache = false;
   int _cacheProgress = 0;
   int _cacheTotal = 0;
@@ -172,6 +232,7 @@ class _DebugSectionState extends State<_DebugSection> {
   void dispose() {
     _audioCompleteSub?.cancel();
     _audioSynth.dispose();
+    _directPlayer.dispose();
     super.dispose();
   }
 
@@ -302,6 +363,82 @@ class _DebugSectionState extends State<_DebugSection> {
       setState(() {
         _testPlaying = false;
       });
+    }
+  }
+
+  Future<void> _generateAndPlayFiveTone() async {
+    if (_isGeneratingFiveTone) return;
+
+    setState(() {
+      _isGeneratingFiveTone = true;
+    });
+    widget.onDebugResult(null, null);
+
+    try {
+      final startTime = DateTime.now();
+
+      // 1. Get user range
+      final rangeStore = RangeStore();
+      final range = await rangeStore.getRange();
+      final lowestMidi = range.$1 ?? 48; // Default C3
+      final highestMidi = range.$2 ?? 72; // Default C5
+      
+      debugPrint('[DebugGen] Range: $lowestMidi to $highestMidi');
+
+      // 2. Setup Full Range Sequence
+      // We loop from lowest to highest, generating a 5-tone scale at each step
+      final offsets = [0, 2, 4, 5, 7, 5, 4, 2, 0];
+      const noteDurationSec = 0.4; // Slightly faster for full range test
+      const gapDurationSec = 0.5;
+      const leadInSec = 2.0;
+
+      final notes = <ReferenceNote>[];
+      var currentTime = leadInSec;
+
+      for (var baseMidi = lowestMidi; baseMidi <= highestMidi; baseMidi++) {
+        for (var i = 0; i < offsets.length; i++) {
+          notes.add(ReferenceNote(
+            midi: baseMidi + offsets[i],
+            startSec: currentTime,
+            endSec: currentTime + noteDurationSec,
+          ));
+          currentTime += noteDurationSec;
+        }
+        currentTime += gapDurationSec; // Gap between repetitions
+      }
+
+      final totalDurationSec = currentTime + 1.0;
+
+      // 3. Render
+      final bounceService = ReviewAudioBounceService();
+      final renderedFile = await bounceService.renderReferenceWav(
+        notes: notes,
+        durationSec: totalDurationSec,
+        sampleRate: AudioConstants.audioSampleRate,
+        soundFontAssetPath: 'assets/soundfonts/default.sf2',
+        program: 0,
+      );
+
+      final elapsed = DateTime.now().difference(startTime);
+
+      if (mounted) {
+        setState(() {
+          _isGeneratingFiveTone = false;
+        });
+        widget.onDebugResult(elapsed.inMilliseconds, null);
+      }
+
+      // 4. Play
+      await _directPlayer.stop();
+      await _directPlayer.play(DeviceFileSource(renderedFile.path));
+    } catch (e) {
+      debugPrint('[DebugGen] Error: $e');
+      if (mounted) {
+        setState(() {
+          _isGeneratingFiveTone = false;
+        });
+        widget.onDebugResult(null, e.toString());
+      }
     }
   }
 
@@ -481,6 +618,34 @@ class _DebugSectionState extends State<_DebugSection> {
                   ),
                 ))),
           ],
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text(
+            'Dynamic Reference Gen',
+            style:
+                AppText.h2.copyWith(color: Colors.red.shade700, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Generates a 5-tone scale on-the-fly at 48kHz, transposed to your range, with a 2s lead-in.',
+            style: AppText.body
+                .copyWith(fontSize: 11, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: _isGeneratingFiveTone ? null : _generateAndPlayFiveTone,
+            icon: _isGeneratingFiveTone
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.music_note, size: 18),
+            label: Text(_isGeneratingFiveTone
+                ? 'Generating...'
+                : 'Generate 5-Tone Scale'),
+          ),
         ],
       ),
     );
@@ -1002,3 +1167,4 @@ class _TodaysProgressCard extends StatelessWidget {
     );
   }
 }
+

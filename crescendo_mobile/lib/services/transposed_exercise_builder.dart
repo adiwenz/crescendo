@@ -9,7 +9,7 @@ import '../models/siren_exercise_result.dart';
 import '../models/siren_path.dart';
 import '../models/vocal_exercise.dart';
 import '../utils/pitch_highway_tempo.dart';
-import '../utils/exercise_constants.dart';
+import '../utils/audio_constants.dart';
 import '../utils/pitch_math.dart';
 
 /// Builds a complete transposed exercise sequence that starts at the user's lowest note
@@ -28,7 +28,7 @@ class TransposedExerciseBuilder {
     PitchHighwayDifficulty? difficulty,
   }) {
     // Use shared constant if leadInSec not provided
-    final effectiveLeadInSec = leadInSec ?? ExerciseConstants.leadInSec;
+    final effectiveLeadInSec = leadInSec ?? AudioConstants.leadInSec;
     final spec = exercise.highwaySpec;
     if (spec == null || spec.segments.isEmpty) return const [];
 

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:mic_stream/mic_stream.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../utils/audio_constants.dart';
 
 class RecordingService {
   final int sampleRate;
@@ -19,7 +20,7 @@ class RecordingService {
   static const double _joinJumpThreshold = 0.04; // in [-1,1] float domain
 
   RecordingService(
-      {this.sampleRate = 44100, this.frameSize = 2048, this.hopSize = 256});
+      {this.sampleRate = AudioConstants.audioSampleRate, this.frameSize = 2048, this.hopSize = 256});
 
   Future<void> start() async {
     final status = await Permission.microphone.request();
