@@ -13,7 +13,7 @@ import '../audio/wav_writer.dart';
 /// Service for rendering MIDI notes to WAV and mixing with recorded audio
 /// This eliminates timer-based real-time MIDI scheduling during review playback
 class ReviewAudioBounceService {
-  static const int defaultSampleRate = 48000;
+  static const int defaultSampleRate = 44100;
   static const double fadeInOutMs = 8.0; // 8ms fade in/out per note
   
   /// Generate a cache key for the bounced audio
@@ -24,8 +24,9 @@ class ReviewAudioBounceService {
     required String soundFontName,
     required int program,
     required int sampleRate,
+    double renderStartSec = 0.0,
   }) {
-    final keyString = '$takeFileName|$exerciseId|$transposeSemitones|$soundFontName|$program|$sampleRate';
+    final keyString = '$takeFileName|$exerciseId|$transposeSemitones|$soundFontName|$program|$sampleRate|${renderStartSec.toStringAsFixed(3)}';
     final bytes = utf8.encode(keyString);
     final digest = sha256.convert(bytes);
     return digest.toString().substring(0, 16); // Use first 16 chars of hash
@@ -109,12 +110,13 @@ class ReviewAudioBounceService {
     required File referenceWav,
     required double micGain,
     required double refGain,
+    double micOffsetSec = 0.0,
     bool duckMicWhileRef = false,
   }) async {
     final startTime = DateTime.now();
     
     if (kDebugMode) {
-      debugPrint('[ReviewBounce] Mixing WAVs: mic=${micWav.path}, ref=${referenceWav.path}');
+      debugPrint('[ReviewBounce] Mixing WAVs: mic=${micWav.path}, ref=${referenceWav.path}, offset=${micOffsetSec.toStringAsFixed(3)}s');
       debugPrint('[ReviewBounce] Gains: mic=$micGain, ref=$refGain, duckMic=$duckMicWhileRef');
     }
     
@@ -138,13 +140,22 @@ class ReviewAudioBounceService {
     final micSamples = _readWavSamples(micBytes, micWavInfo);
     final refSamples = _readWavSamples(refBytes, refWavInfo);
     
-    // Determine output length (use the longer of the two)
-    final outputLength = math.max(micSamples.length, refSamples.length);
+    if (kDebugMode) {
+      final micMax = micSamples.isEmpty ? 0.0 : micSamples.map((s) => s.abs()).reduce(math.max);
+      final refMax = refSamples.isEmpty ? 0.0 : refSamples.map((s) => s.abs()).reduce(math.max);
+      debugPrint('[ReviewBounce] Signal Check: micMax=${micMax.toStringAsFixed(3)}, refMax=${refMax.toStringAsFixed(3)}');
+    }
+    
+    final micOffsetSamples = (micOffsetSec * sampleRate).round();
+    
+    // Determine output length (use the longer of the two, accounting for offset)
+    final outputLength = math.max(micSamples.length + micOffsetSamples, refSamples.length);
     final mixedSamples = Float32List(outputLength);
     
     // Mix sample-by-sample
     for (var i = 0; i < outputLength; i++) {
-      var micSample = i < micSamples.length ? micSamples[i] * micGain : 0.0;
+      final micSampleIdx = i - micOffsetSamples;
+      var micSample = (micSampleIdx >= 0 && micSampleIdx < micSamples.length) ? micSamples[micSampleIdx] * micGain : 0.0;
       var refSample = i < refSamples.length ? refSamples[i] * refGain : 0.0;
       
       // Duck mic while reference is playing (if enabled)

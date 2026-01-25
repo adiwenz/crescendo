@@ -95,6 +95,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   // Rebase state
   List<PitchFrame> _rebasedFrames = const [];
   double _sliceStartSec = 0.0;
+  double _renderStartSec = 0.0; // Anchor for visual 0.0
+  double _micOffsetSec = 0.0; // Where the mic starts in the replayed file
 
   @override
   void initState() {
@@ -124,13 +126,28 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Use the explicit recorder start time from the take
     _sliceStartSec = widget.lastTake.recorderStartSec ?? 0.0;
 
-    // Pitch frames are now natively recorded relative to 0.0 in ExercisePlayerScreen
-    _rebasedFrames = widget.lastTake.frames;
+    // Determine the anchor for all visuals and audio (0.0 in the rebased domain)
+    // We prioritize providing the 2s lead-in before the recording start.
+    // If a specific startTimeSec was requested (e.g. 26s for a 28s segment), we use it.
+    _renderStartSec = widget.startTimeSec;
+    if (_renderStartSec > _sliceStartSec) {
+      // If requested start is AFTER recording, we still rebase to show context if possible
+      // but typical case is segment_start - 2s.
+    }
     
-    // Adjust startTimeSec (if it was absolute exercise time)
-    // widget.startTimeSec is the target seek position in the replayed file.
-    // If it's already 0-based relative to the start of the m4a, we use it as-is.
-    _time.value = widget.startTimeSec;
+    _micOffsetSec = math.max(0.0, _sliceStartSec - _renderStartSec);
+
+    // Shift frames to be relative to renderStartSec
+    // widget.lastTake.frames are natively 0-based relative to recorder start
+    _rebasedFrames = widget.lastTake.frames.map<PitchFrame>((f) => PitchFrame(
+      time: f.time + _micOffsetSec,
+      hz: f.hz,
+      midi: f.midi,
+      voicedProb: f.voicedProb,
+      rms: f.rms,
+    )).toList();
+    
+    _time.value = 0.0; // Replayed domain always starts at 0.0
     // ----------------------
 
     
@@ -234,6 +251,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       // Generate cache key
       final takeFileName = p.basename(_recordedAudioPath ?? '');
       final reviewConfig = MidiPlaybackConfig.review();
+      
+      if (kDebugMode) {
+        debugPrint('[Review Bounce] Notes count: ${_notes.length}, duration=${_durationSec.toStringAsFixed(2)}s, renderStart=${_renderStartSec.toStringAsFixed(2)}s, micOffset=${_micOffsetSec.toStringAsFixed(2)}s');
+      }
+      
       final cacheKey = ReviewAudioBounceService.generateCacheKey(
         takeFileName: takeFileName,
         exerciseId: widget.exercise.id,
@@ -241,6 +263,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         soundFontName: reviewConfig.soundFontName,
         program: reviewConfig.program,
         sampleRate: ReviewAudioBounceService.defaultSampleRate,
+        renderStartSec: _renderStartSec,
       );
       
       // Check cache first
@@ -273,6 +296,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         referenceWav: referenceWav,
         micGain: 1.0,
         refGain: 1.0,
+        micOffsetSec: _micOffsetSec,
         duckMicWhileRef: false,
       );
       
@@ -414,8 +438,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         // --- REBASE NOTES ---
       final rebasedNotes = notes.map<ReferenceNote>((n) => ReferenceNote(
         midi: n.midi,
-        startSec: math.max(0, n.startSec - _sliceStartSec),
-        endSec: math.max(0, n.endSec - _sliceStartSec),
+        startSec: math.max(0, n.startSec - _renderStartSec),
+        endSec: math.max(0, n.endSec - _renderStartSec),
         lyric: n.lyric,
         isGlideStart: n.isGlideStart,
         isGlideEnd: n.isGlideEnd,
@@ -423,7 +447,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
 
       final rebasedSirenPath = sirenPath != null ? SirenPath(
         points: sirenPath.points.map<SirenPoint>((p) => SirenPoint(
-          tSec: math.max(0, p.tSec - _sliceStartSec),
+          tSec: math.max(0, p.tSec - _renderStartSec),
           midiFloat: p.midiFloat,
         )).where((p) => p.tSec >= 0).toList()
       ) : null;
@@ -433,7 +457,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       setState(() {
         _notes = rebasedNotes;
         _sirenVisualPath = rebasedSirenPath;
-        _durationSec = _computeDuration(rebasedNotes);
+        _durationSec = widget.lastTake.durationSec + _micOffsetSec;
       });
       
       // Try to auto-start if preload is already complete
@@ -506,9 +530,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     final currentRunId = _reviewRunId;
     
     final tapTime = DateTime.now().millisecondsSinceEpoch;
-    // startOffsetSec is the absolute exercise time. 
-    // We must rebase it to 0-based for the TRIMMED audio file and rebased visuals.
-    final startOffsetSec = math.max(0.0, widget.startTimeSec - _sliceStartSec);
+    // Current rendered file already includes requested lead-in and starts at _renderStartSec.
+    // Visual domain 0.0 = audio file 0.0 = Exercise time _renderStartSec.
+    final startOffsetSec = 0.0;
     
     DebugLog.event(
       LogCat.replay,
@@ -516,17 +540,16 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       runId: currentRunId,
       fields: {
         'tapTime': tapTime,
-        'startOffsetSec': startOffsetSec,
-        'notesCount': _notes.length,
+        'renderStartSec': _renderStartSec,
+        'micOffsetSec': _micOffsetSec,
         'durationSec': _durationSec,
       },
     );
     
-    // Set visual time to start offset immediately (before audio starts)
-    _time.value = startOffsetSec;
+    _time.value = 0.0;
     
     _playing = true;
-    _audioPositionSec = startOffsetSec; // Initialize to start offset
+    _audioPositionSec = 0.0;
     _audioStarted = false;
     
     // Reset clock - visuals will be driven directly by audio position
@@ -668,72 +691,35 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       // Play mixed WAV (mic + reference)
       audioToPlay = _mixedAudioPath;
       if (kDebugMode) {
-        debugPrint('[Review] Playing mixed WAV (with reference): ${audioToPlay}');
+        debugPrint('[Review] SUCCESS: Playing MIXED WAV (piano + voice): ${audioToPlay}');
       }
     } else if (_showReference && _referenceAudioPath != null) {
       // Play reference-only WAV (no recorded audio)
       audioToPlay = _referenceAudioPath;
       if (kDebugMode) {
-        debugPrint('[Review] Playing reference-only WAV: ${audioToPlay}');
+        debugPrint('[Review] INFO: Playing REFERENCE-ONLY WAV: ${audioToPlay}');
       }
-    } else if (_recordedAudioPath != null) {
-      // Play recorded audio only (reference toggle off)
+    } else {
+      // Play recorded audio only (reference toggle off or mixing failed)
       audioToPlay = _recordedAudioPath;
       if (kDebugMode) {
-        debugPrint('[Review] Playing recorded audio only (reference off): ${audioToPlay}');
+        if (_showReference) {
+          debugPrint('[Review] WARNING: Mixing failed or mixed file missing. Falling back to MIC-ONLY: ${audioToPlay}');
+        } else {
+          debugPrint('[Review] INFO: Playing MIC-ONLY (reference toggled off): ${audioToPlay}');
+        }
       }
     }
     
     if (audioToPlay != null) {
       // Play the bounced/mixed WAV or recorded audio
+      // We play from the BEGINNING of this file as it's already pre-rendered for this review session.
       await _synth.playFile(audioToPlay);
       
       // Check runId after async call
       if (!mounted || currentRunId != _reviewRunId) return;
       
-      // Seek to the start offset
-      if (startOffsetSec > 0) {
-        final seekPos = Duration(milliseconds: (startOffsetSec * 1000).round());
-        
-        // Log seek actions
-        DebugLog.event(
-          LogCat.seek,
-          'segment_seek_audio',
-          runId: currentRunId,
-          fields: {
-            'targetSec': startOffsetSec,
-            'seekPosMs': seekPos.inMilliseconds,
-            'audioFile': p.basename(audioToPlay),
-          },
-        );
-        
-        // Seek audio player - non-blocking with timeout
-        final seekOk = await _synth.seek(seekPos, runId: currentRunId, timeout: const Duration(seconds: 2));
-        if (!mounted || currentRunId != _reviewRunId) return;
-        
-        if (!seekOk) {
-          DebugLog.event(
-            LogCat.seek,
-            'segment_seek_timeout',
-            runId: currentRunId,
-            fields: {
-              'targetSec': startOffsetSec,
-              'warning': 'Seek timed out, continuing playback',
-            },
-          );
-        }
-        
-        // Log after seek
-        DebugLog.event(
-          LogCat.seek,
-          'segment_seek_complete',
-          runId: currentRunId,
-          fields: {
-            'targetSec': startOffsetSec,
-            'result': 'sought',
-          },
-        );
-      }
+      // No internal seek needed - file starts at rebased 0.0
       
       // Set up position listener for visuals
       await _audioPosSub?.cancel();
@@ -744,8 +730,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
             debugPrint('[Review] Audio started, position stream active');
           }
         }
-        final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
-        _audioPositionSec = newPositionSec;
+        _audioPositionSec = pos.inMilliseconds / 1000.0;
         _lastPositionUpdateMs = DateTime.now().millisecondsSinceEpoch;
       });
       

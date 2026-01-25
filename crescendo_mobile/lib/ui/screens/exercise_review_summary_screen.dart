@@ -212,13 +212,19 @@ class _ExerciseReviewSummaryScreenState
       );
       return;
     }
+    
+    // Default to the very beginning, but if the recording started later,
+    // provide a 2s lead-in for context.
+    final sliceStartSec = take.recorderStartSec ?? 0.0;
+    final replayStartSec = math.max(0.0, sliceStartSec - 2.0);
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
           exercise: widget.exercise,
           lastTake: take,
-          startTimeSec: 0.0,
+          startTimeSec: replayStartSec,
         ),
       ),
     );
