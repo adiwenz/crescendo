@@ -185,6 +185,8 @@ class AudioSynthService {
 
   Future<Duration?> getCurrentPosition() => _player.getCurrentPosition();
 
+  AudioPlayer get player => _player;
+
   /// Seek the primary player to a specific position (with timeout protection)
   Future<bool> seek(Duration position,
       {int? runId, Duration timeout = const Duration(seconds: 2)}) async {

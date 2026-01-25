@@ -7,6 +7,7 @@ import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
+import '../../models/exercise_plan.dart';
 
 import '../../models/pitch_frame.dart';
 import '../../models/pitch_highway_difficulty.dart';
@@ -29,6 +30,7 @@ import '../../services/exercise_cache_service.dart';
 import '../../services/reference_audio_cache_service.dart';
 import '../../services/exercise_audio_asset_resolver.dart';
 import '../../services/exercise_audio_slicer.dart';
+import '../../services/audio_clock.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -81,11 +83,13 @@ class PerfTrace {
 class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
   final PitchHighwayDifficulty? pitchDifficulty;
+  final ExercisePlan? exercisePlan;
 
   const ExercisePlayerScreen({
     super.key,
     required this.exercise,
     this.pitchDifficulty,
+    this.exercisePlan,
   });
 
   @override
@@ -111,6 +115,7 @@ class ExercisePlayerScreen extends StatelessWidget {
                   exercise: exercise,
                   showBackButton: true,
                   pitchDifficulty: resolved,
+                  exercisePlan: exercisePlan,
                 );
               },
             )
@@ -118,6 +123,7 @@ class ExercisePlayerScreen extends StatelessWidget {
               exercise: exercise,
               showBackButton: true,
               pitchDifficulty: pitchDifficulty ?? PitchHighwayDifficulty.medium,
+              exercisePlan: exercisePlan,
             ),
       ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
       ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
@@ -151,12 +157,14 @@ class PitchHighwayPlayer extends StatefulWidget {
   final VocalExercise exercise;
   final bool showBackButton;
   final PitchHighwayDifficulty pitchDifficulty;
+  final ExercisePlan? exercisePlan;
 
   const PitchHighwayPlayer({
     super.key,
     required this.exercise,
     this.showBackButton = false,
     required this.pitchDifficulty,
+    this.exercisePlan,
   });
 
   @override
@@ -175,6 +183,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
   final PerformanceClock _clock = PerformanceClock();
+  late final AudioClock _audioClock;
   final PitchBallController _pitchBall = PitchBallController();
   final PitchState _pitchState = PitchState();
   final PitchVisualState _visualState = PitchVisualState();
@@ -260,15 +269,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       false; // Toggle for debug overlay (set to true to enable)
 
   double get _durationSec {
-    if (_transposedNotes.isEmpty) {
-      // Fallback to old calculation if notes aren't loaded yet
-      final base = (_scaledSpec?.totalMs ?? 0) / 1000.0;
-      if (base <= 0) return 0.0;
-      return base + _leadInSec + AudioSynthService.tailSeconds;
-    }
-    // Duration is based on the last note's end time
-    final maxEnd = _transposedNotes.map((n) => n.endSec).fold(0.0, math.max);
-    return maxEnd + AudioSynthService.tailSeconds;
+    return widget.exercisePlan?.durationSec ?? 0.0;
   }
 
   @override
@@ -338,6 +339,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _pixelsPerSecond =
         PitchHighwayTempo.pixelsPerSecondFor(widget.pitchDifficulty);
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _audioClock = AudioClock(_synth.player);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
 
     // Initialize MIDI synth (load SoundFont once)
@@ -704,110 +706,56 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void _onTick(Duration elapsed) {
     if (!isRunning && !isStarting) return;
 
-    // Log first ticker callback (not the immediate manual call)
-    if (!_isImmediateTick && !_loggedFirstTick) {
-      _loggedFirstTick = true;
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      DebugLog.log(
-          LogCat.ui, 'FIRST TICK at $nowMs elapsed=$elapsed runId=$_runId');
-      _startTrace?.mark('ticker first tick fired');
-      if (_tapEpochMs != null) {
-        final delayMs = nowMs - _tapEpochMs!;
-        DebugLog.log(LogCat.ui, 'FIRST TICK delay from tap: ${delayMs}ms');
+    // Drive visual time from audio clock if running
+    if (isRunning && _audioClock.audioStarted) {
+      final audioNow = _audioClock.nowSeconds;
+      _setTimeValue(audioNow, src: 'ticker_audio');
+      _audioPositionSec = audioNow;
+    } else if (isStarting) {
+      // Stay at 0 until audio actually starts
+      _setTimeValue(0.0, src: 'ticker_waiting');
+    }
+
+    final now = _time.value;
+    if (now != _lastTime) {
+      _lastTime = now;
+      
+      // Detected progress
+      if (now > 0 && !_audioProgressDetected) {
+        _audioProgressDetected = true;
+        _audioProgressStartEpochMs = DateTime.now().millisecondsSinceEpoch;
+        DebugLog.log(LogCat.audio, 'AUDIO PROGRESS DETECTED via clock');
       }
-    }
 
-    // Log first tick for instrumentation (but skip if this is the immediate manual call)
-    if (!_isImmediateTick &&
-        _tapEpochMs != null &&
-        elapsed.inMilliseconds < 20) {
-      final firstTickTime = DateTime.now().millisecondsSinceEpoch;
-      DebugLog.log(
-          LogCat.lifecycle, 'firstTick <= ${firstTickTime - _tapEpochMs!}ms');
-    }
-    _isImmediateTick = false; // Reset flag after first use
-
-    // CRITICAL: Use single-anchor time calculation based on _timelineStartEpochMs
-    // This ensures time is monotonic and never jumps backwards when audio starts
-    // If clock is frozen until audio, use clock's frozen value (stays at 0)
-    final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
-    double next;
-
-    // Visual time progresses continuously from tap time
-    // Timeline anchor is set 0.2s before tap time, so visual time = (now - anchor) / 1000.0
-    // This makes visual time 0.2s ahead: when real time is 2.0s, visual time is 2.2s
-    // Audio starts at 2.0s real time, notes intersect playhead at 2.2s visual time
-    if (_timelineStartEpochMs != null) {
-      // Single source of truth: time = (now - anchor) / 1000.0
-      // Visual time starts at 0.2s (due to anchor offset) and increases continuously
-      // After 2 seconds real time, visual time is 2.2s and audio starts
-      next = (nowEpochMs - _timelineStartEpochMs!) / 1000.0;
-    } else {
-      // Fallback to clock if anchor not set (shouldn't happen during play)
-      next = _clock.nowSeconds();
-    }
-
-    // Detect time going backwards (restart/jump to start)
-    if (next < _lastTime - 0.2 && _playing) {
-      // Detailed inputs snapshot for debugging
-      final clockTime = _clock.nowSeconds();
-      final inputs = 'nowEpochMs=$nowEpochMs '
-          '_timelineStartEpochMs=$_timelineStartEpochMs '
-          'computedTimeFromEpoch=$next '
-          '_clock.nowSeconds()=$clockTime '
-          '_audioPositionSec=$_audioPositionSec '
-          '_leadInSec=$_leadInSec '
-          '_playing=$_playing _preparing=$_preparing phase=$_phase '
-          'runId=$_runId '
-          'lastTime=$_lastTime';
-      DebugLog.tripwire(LogCat.error, 'time_backwards_inputs',
-          message: 'time went backwards: last=$_lastTime now=$next\n$inputs',
-          runId: _runId);
-    }
-
-    // Monotonic clamp safety: prevent UI from jumping backward even if bug remains
-    if (isRunning && next < _time.value) {
-      DebugLog.tripwire(LogCat.error, 'time_backwards_clamped',
-          message:
-              'time clamped: would be $next but clamped to ${_time.value} runId=$_runId',
-          runId: _runId);
-      next = _time.value; // Clamp to prevent visible restart
-    }
-
-    _lastTime = next;
-
-    // Update MIDI engine position for route change resumption
-    if (_phase == StartPhase.running) {
-      // No MIDI position update needed - using cached audio, position comes from audio player
-    }
-
-    final effectiveMidi = _pitchState.effectiveMidi;
-    final effectiveHz = _pitchState.effectiveHz;
-    _visualState.update(
-      timeSec: next,
-      pitchHz: effectiveHz,
-      pitchMidi: effectiveMidi,
-      voiced: _pitchState.isVoiced,
-    );
-    _setTimeValue(next, src: '_onTick');
-    _liveMidi.value = _visualState.visualPitchMidi;
-    final visualMidi = _visualState.visualPitchMidi;
-    if (_canvasSize != null && visualMidi != null) {
-      final y = PitchMath.midiToY(
-        midi: visualMidi,
-        height: _canvasSize!.height,
-        midiMin: _midiMin,
-        midiMax: _midiMax,
+      final effectiveMidi = _pitchState.effectiveMidi;
+      final effectiveHz = _pitchState.effectiveHz;
+      _visualState.update(
+        timeSec: now,
+        pitchHz: effectiveHz,
+        pitchMidi: effectiveMidi,
+        voiced: _pitchState.isVoiced,
       );
-      assert(y.isFinite);
-      _tailBuffer.addPoint(tSec: next, yPx: y, voiced: _visualState.isVoiced);
-      _tailBuffer.pruneOlderThan(next - _tailWindowSec);
-      assert(!_playing || _tailBuffer.points.isNotEmpty);
+      
+      final visualMidi = _visualState.visualPitchMidi;
+      if (_canvasSize != null && visualMidi != null) {
+        final y = PitchMath.midiToY(
+          midi: visualMidi,
+          height: _canvasSize!.height,
+          midiMin: _midiMin,
+          midiMax: _midiMax,
+        );
+        _tailBuffer.addPoint(tSec: now, yPx: y, voiced: _visualState.isVoiced);
+        _tailBuffer.pruneOlderThan(now - _tailWindowSec);
+      }
+
+      if (!_useMic) {
+        _simulatePitch(now);
+      }
+
+      _pitchState.updateUnvoiced(timeSec: now);
     }
-    if (!_useMic) {
-      _simulatePitch(next);
-    }
-    if (next >= _durationSec && isRunning) {
+
+    if (now >= _durationSec && isRunning) {
       _stop();
     }
   }
@@ -1347,329 +1295,71 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         return;
       }
 
-      // Try to load pattern JSON for JSON-driven rendering
-      trace.mark('before loadPattern');
-      final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
-      _patternSpec =
-          await PatternSpecLoader.instance.loadPattern(widget.exercise.id);
-
-      if (_patternSpec != null) {
-        // Build visual notes from pattern
-        trace.mark('before buildVisualNotesFromPattern');
-        final patternNotes =
-            PatternVisualNoteBuilder.buildVisualNotesFromPattern(
-          pattern: _patternSpec!,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: _leadInSec,
-        );
-        trace.mark('after buildVisualNotesFromPattern');
-
-        if (patternNotes.isNotEmpty) {
-          // Use pattern-based notes
-          _transposedNotes = patternNotes;
-          _notesLoaded = true;
-
-          // Y-axis mapping should already be set from user's vocal range in initState
-          // Do NOT change it here - it's set once and remains constant
-          // Verify it matches (for debugging)
-          if (_midiMin != lowestMidi || _midiMax != highestMidi) {
-            debugPrint(
-                '[PatternNotes] WARNING: MIDI range mismatch - user range: $lowestMidi-$highestMidi, current: $_midiMin-$_midiMax');
-          }
-
-          debugPrint(
-              '[PatternNotes] Using pattern-based notes: ${patternNotes.length} notes');
-          debugPrint(
-              '[PatternNotes] MIDI range: $_midiMin - $_midiMax (user range)');
-          debugPrint(
-              '[PatternNotes] Pattern: ${_patternSpec!.noteCount} notes, duration=${_patternSpec!.patternDurationSec.toStringAsFixed(2)}s, gap=${_patternSpec!.gapBetweenPatterns.toStringAsFixed(2)}s');
-        } else {
-          debugPrint(
-              '[PatternNotes] Pattern loaded but visual notes empty, falling back to old method');
-          _patternSpec = null; // Clear pattern spec to use fallback
-        }
-      } else {
-        debugPrint(
-            '[PatternNotes] No pattern JSON found for ${widget.exercise.id}, using old method');
-      }
-      trace.mark('after loadPattern');
-
-      // Build reference notes (lightweight - just data structure)
-      trace.mark('before buildReferenceNotes');
-      final notes = _buildReferenceNotes();
-      trace.mark('after buildReferenceNotes');
-
-      // Log note details for audio debugging
-      if (notes.isNotEmpty) {
-        final minStartSec =
-            notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
-        final maxEndSec =
-            notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
-        DebugLog.log(LogCat.audio,
-            'Building notes: count=${notes.length}, minStartSec=$minStartSec, maxEndSec=$maxEndSec');
-        DebugLog.log(LogCat.audio, 'First 3 notes:');
-        for (var i = 0; i < notes.length && i < 3; i++) {
-          final n = notes[i];
-          DebugLog.log(LogCat.audio,
-              '  note[$i]: startSec=${n.startSec}, durationSec=${n.endSec - n.startSec}, midi=${n.midi}');
-        }
-        // Check if lead-in is in note timestamps
-        final leadInSec = _leadInSec;
-        DebugLog.log(LogCat.audio, 'leadInSec=$leadInSec (from _leadInSec)');
-        DebugLog.log(LogCat.audio,
-            'First note startSec=$minStartSec (should be ~$leadInSec if lead-in applied)');
+      final plan = widget.exercisePlan;
+      if (plan == null) {
+        throw Exception('Dynamic Reference Pipeline requires an ExercisePlan');
       }
 
-      if (notes.isEmpty) {
-        trace.mark('abort - no notes');
-        trace.end();
-        return;
-      }
+      // Use notes from plan
+      _transposedNotes = plan.notes;
+      _notesLoaded = true;
 
-      // Schedule MIDI notes for real-time playback (no rendering, instant)
-      trace.mark('before scheduleNotes');
+      debugPrint('[Start] Using dynamic plan notes: ${plan.notes.length}');
+
+      // Schedule Dynamic WAV Playback
+      trace.mark('before playReferenceWav');
       _audioPlayCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
-      dev.Timeline.startSync('audio.scheduleNotes');
+      dev.Timeline.startSync('audio.playReferenceWav');
+      
       final beforeAudio = DateTime.now();
-
       try {
-        // Timeline anchor epoch for logging/debugging (not used for cached audio)
+        // Start recording alignment
+        // Dynamic reference starts at 0, hardware clock provides sample-accurate position.
+        _recorderStartSec = 0.0; 
 
-        // Sync check: verify visual and audio timelines align
-        if (notes.isNotEmpty) {
-          final firstVisualStartSec =
-              notes.map((n) => n.startSec).reduce((a, b) => a < b ? a : b);
-          final firstAudioStartSec =
-              firstVisualStartSec; // Same notes list, same startSec
-          final delta = (firstAudioStartSec - firstVisualStartSec).abs();
-          debugPrint(
-              '[SyncCheck] ex=${widget.exercise.id} leadIn=${_leadInSec.toStringAsFixed(1)} '
-              'firstVisualStart=${firstVisualStartSec.toStringAsFixed(2)} '
-              'firstAudioStart=${firstAudioStartSec.toStringAsFixed(2)} '
-              'delta=${delta.toStringAsFixed(2)}');
-
-          // Validation for Sirens: ensure timing aligns
-          if (widget.exercise.id == 'sirens') {
-            final expectedFirstStart = _leadInSec;
-            final startSecDiff =
-                (firstVisualStartSec - expectedFirstStart).abs();
-            if (startSecDiff > 0.02) {
-              debugPrint(
-                  '[SyncCheck] ERROR: Sirens first note startSec=$firstVisualStartSec '
-                  'expected ~$expectedFirstStart (lead-in mismatch, diff=${startSecDiff.toStringAsFixed(2)})');
-              // In debug builds, assert to catch this early
-              assert(
-                startSecDiff <= 0.02,
-                'Sirens first note startSec ($firstVisualStartSec) should be ~$_leadInSec (lead-in)',
-              );
-            }
-            if (delta > 0.02) {
-              debugPrint(
-                  '[SyncCheck] ERROR: Sirens visual/audio timeline mismatch: delta=$delta');
-              assert(delta <= 0.02,
-                  'Sirens visual/audio timeline mismatch: delta=$delta');
-            }
-          }
-        }
-
-        // Play reference audio from bundled M4A assets (sliced to user's vocal range)
-        // This eliminates MIDI/audio sync drift and route-change failures
-        final (lowestMidi, highestMidi) = await VocalRangeService().getRange();
-
-        // Check if exercise has a bundled M4A asset
-        final hasAsset =
-            await ExerciseAudioAssetResolver.hasAsset(widget.exercise.id);
-
-        if (hasAsset) {
-          // Get slice for user's vocal range
-          final slice = await ExerciseAudioSlicer.instance.getSlice(
-            exerciseId: widget.exercise.id,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-          );
-
-          if (slice != null) {
-            // Load asset to temp file
-            final assetPath =
-                ExerciseAudioAssetResolver.getM4aAssetPath(widget.exercise.id);
-            final byteData = await rootBundle.load(assetPath);
-            final bytes = byteData.buffer.asUint8List();
-
-            final dir = await getTemporaryDirectory();
-            final fileName = p.basename(assetPath);
-            final tempPath = p.join(dir.path,
-                'exercise_${DateTime.now().millisecondsSinceEpoch}_$fileName');
-            final file = File(tempPath);
-            await file.writeAsBytes(bytes, flush: true);
-
-            debugPrint(
-                '[Start] Playing asset audio for ${widget.exercise.id}:');
-            debugPrint(
-                '[Start]   Slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s');
-            debugPrint('[Start]   Range: $lowestMidi-$highestMidi');
-
-            // Load the file (playFile will auto-play, so we'll pause immediately)
-            await _synth.playFile(tempPath);
-
-            // Immediately pause (playFile auto-starts playback)
-            await _synth.pause();
-
-            // Seek to slice start (slice times already include lead-in from JSON)
-            // The slice.startSec is where the notes start in the file (after 2s lead-in)
-            final seekPosition =
-                Duration(milliseconds: (slice.startSec * 1000).round());
-            await _synth.seek(seekPosition, runId: runId);
-
-            // Store seek target and slice start for debug instrumentation
-            if (kDebugMode && runId == _runId) {
-              _seekTargetMs = slice.startSec * 1000.0;
-              _sliceStartSec = slice.startSec;
-            }
-
-            debugPrint(
-                '[Start] Asset audio loaded and paused at ${seekPosition.inMilliseconds}ms (slice: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s)');
-            debugPrint(
-                '[Start] Waiting ${_leadInSec.toStringAsFixed(1)}s lead-in before resuming playback...');
-
-            // Wait 2 seconds (lead-in count-in), then resume
-            await Future.delayed(
-                Duration(milliseconds: (_leadInSec * 1000).round()));
-
-            // Resume playback
-            if (kDebugMode && runId == _runId) {
-              _audioResumeCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
-              debugPrint(
-                  '[TIMING_DEBUG] [3] AUDIO_RESUME_CALLED runId=$runId audioResumeCalledEpochMs=${_audioResumeCalledEpochMs} seekTargetMs=${_seekTargetMs?.toStringAsFixed(1)} sliceStartSec=${_sliceStartSec?.toStringAsFixed(2)}');
-            }
-            await _synth.resume();
-            debugPrint(
-                '[Start] Audio playback resumed after ${_leadInSec.toStringAsFixed(1)}s lead-in');
-
-            // Set up position monitoring to detect audio progress and stop at slice end
-            // Cancel any existing subscription
-            await _audioPosSub?.cancel();
-            _audioPosSub = _synth.onPositionChanged.listen((position) {
-              if (runId != _runId) return; // Ignore stale callbacks
-
-              final positionMs = position.inMilliseconds.toDouble();
-              final positionSec = positionMs / 1000.0;
-
-              // Update audio position for clock
-              _audioPositionSec = positionSec;
-
-              // Detect when audio actually starts progressing (position > seekTarget + 30ms)
-              if (kDebugMode &&
-                  !_audioProgressDetected &&
-                  _seekTargetMs != null &&
-                  positionMs > _seekTargetMs! + 30.0) {
-                _audioProgressDetected = true;
-                _audioProgressStartEpochMs =
-                    DateTime.now().millisecondsSinceEpoch;
-                final deltaFromSeekMs = positionMs - _seekTargetMs!;
-                final deltaFromResumeCallMs = _audioResumeCalledEpochMs != null
-                    ? _audioProgressStartEpochMs! - _audioResumeCalledEpochMs!
-                    : null;
-                debugPrint(
-                    '[TIMING_DEBUG] [4] AUDIO_PROGRESS_START runId=$runId nowEpochMs=${_audioProgressStartEpochMs} posMs=${positionMs.toStringAsFixed(1)} deltaFromSeekMs=${deltaFromSeekMs.toStringAsFixed(1)} deltaFromResumeCallMs=${deltaFromResumeCallMs?.toStringAsFixed(1)}');
-
-                // Start visual clock now that audio is progressing
-                _startVisualClockOnAudioProgress(
-                    runId: runId, audioPosMs: positionMs);
-              }
-
-              // Stop audio when we reach the end of the slice
-              if (positionSec >= slice.endSec) {
-                _synth.stop();
-                _audioPosSub?.cancel();
-                _audioPosSub = null;
-              }
-            });
-
-            // Start periodic debug logging timer (only in debug mode, first 5 seconds)
-            if (kDebugMode && runId == _runId) {
-              _startTimingDebugTimer(runId: runId);
-            }
-          } else {
-            debugPrint(
-                '[Start] WARNING: No slice found for ${widget.exercise.id} (range: $lowestMidi-$highestMidi)');
-            debugPrint(
-                '[Start] Exercise may not have valid index. Continuing without audio playback.');
-          }
-        } else {
-          // Fallback: try cache for backward compatibility
-          final rangeHash = ReferenceAudioCacheService.generateRangeHash(
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-          );
-          final variantKey = widget.pitchDifficulty.name;
-
-          final cachedAudioPath =
-              await ReferenceAudioCacheService.instance.getCachedAudioPath(
-            exerciseId: widget.exercise.id,
-            rangeHash: rangeHash,
-            variantKey: variantKey,
-          );
-
-          if (cachedAudioPath != null) {
-            // Play cached audio file (fallback for exercises without assets)
-            await _synth.playFile(cachedAudioPath);
-            debugPrint(
-                '[Start] Playing cached reference audio (fallback): $cachedAudioPath');
-          } else {
-            debugPrint(
-                '[Start] WARNING: No asset or cached audio found for ${widget.exercise.id}');
-            debugPrint(
-                '[Start] Exercise may not have reference audio. Continuing without audio playback.');
-          }
-        }
-
-        // Update position tracking as playback progresses (will be updated in ticker)
-        // Initial position is 0, will be updated by ticker
-
-        dev.Timeline.finishSync();
+        // Start playing the synthesized WAV
+        await _synth.playFile(plan.wavFilePath);
+        
         final afterAudio = DateTime.now();
         _audioPlayingEpochMs = afterAudio.millisecondsSinceEpoch;
-        trace.mark('after playCachedAudio');
-        final elapsedFromTap = _audioPlayingEpochMs! - _tapEpochMs!;
-        debugPrint(
-            '[Start] Cached audio started in ${afterAudio.difference(beforeAudio).inMilliseconds}ms (${elapsedFromTap}ms after tap)');
+        final audioSpinMs = _audioPlayingEpochMs! - _audioPlayCalledEpochMs!;
+        debugPrint('[Start] audio playing, spinUp=${audioSpinMs}ms');
+        trace.mark('audio playing (spinUp=${audioSpinMs}ms)');
 
-        if (runId != _runId || !mounted) {
-          debugPrint(
-              '[Start] Aborted after audio - runId mismatch or unmounted');
-          trace.mark('abort after audio');
+        if (runId != _runId) {
+          debugPrint('[Start] Aborted after play - runId mismatch');
+          await _synth.stop();
+          trace.mark('abort after play');
           trace.end();
           return;
         }
 
-        // Audio is playing - transition to running phase immediately
         if (mounted && runId == _runId) {
           setState(() {
             _phase = StartPhase.running;
+            _audioStarted = true;
             _captureEnabled = true;
           });
           DebugLog.event(LogCat.lifecycle, 'phase_running',
-              runId: runId, fields: {'elapsedFromTap': elapsedFromTap});
+              runId: runId, fields: {'spinUp': audioSpinMs});
           trace.mark('set running');
         }
+
       } catch (e) {
-        // Audio scheduling failed - still transition to running but mark audio as disabled
-        dev.Timeline.finishSync();
-        debugPrint(
-            '[Start] MIDI scheduling failed: $e - continuing without audio');
+        debugPrint('[Start] audio playback FAILED: $e');
+        trace.mark('ERROR playing audio: $e');
         if (runId == _runId && mounted) {
           setState(() {
             _phase = StartPhase.running;
             _captureEnabled = true;
-            // Audio will be disabled implicitly
           });
-          DebugLog.event(LogCat.lifecycle, 'phase_running_audio_failed',
-              runId: runId);
         }
+      } finally {
+        dev.Timeline.finishSync();
       }
+
+      trace.mark('heavy prepare complete');
       trace.end();
-      debugPrint('[Start] running (runId=$runId) phase=$_phase');
     } catch (e, stackTrace) {
       debugPrint('[Start] ERROR in _startHeavyPrepare: $e');
       debugPrint('[Start] Stack trace: $stackTrace');
@@ -1681,15 +1371,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           _phase = StartPhase.idle;
         });
         _ticker?.stop();
-        _clock.pause();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start exercise: $e')),
         );
-        DebugLog.event(LogCat.error, 'phase_idle_error',
-            runId: runId, fields: {'error': e.toString()});
       }
     }
   }
+
 
   Future<void> _stop() async {
     if (_phase == StartPhase.stopping ||

@@ -14,6 +14,8 @@ import 'dart:async';
 import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
+import '../../models/exercise_plan.dart';
+import '../../services/reference_audio_generator.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -40,6 +42,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   int? _highlightedLevel;
   Map<int, int> _bestScoresByLevel = const <int, int>{};
   bool _progressLoaded = false;
+  Future<ExercisePlan>? _planFuture;
+  bool _isPreparing = false;
 
   @override
   void initState() {
@@ -88,6 +92,18 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
       _loading = false;
     });
+    _triggerPreparation();
+  }
+
+  void _triggerPreparation() {
+    final ex = _exercise;
+    if (ex == null) return;
+    
+    final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    
+    setState(() {
+      _planFuture = ReferenceAudioGenerator.instance.prepare(ex, difficulty);
+    });
   }
 
   Future<void> _refreshLatest() async {
@@ -127,6 +143,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
+    _triggerPreparation(); // Refresh plan for new level
     if (levelUp && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
@@ -280,6 +297,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                                                 exerciseId: widget.exerciseId,
                                                 level: level,
                                               );
+                                              _triggerPreparation(); // Refresh plan for new level
                                             }
                                           : null,
                                     ),
@@ -366,8 +384,30 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     // Stop preview immediately when starting exercise
     await _previewAudio.stop();
     if (mounted) {
-      setState(() => _previewing = false);
+      setState(() {
+        _previewing = false;
+        _isPreparing = true;
+      });
     }
+
+    // Wait for the dynamic plan to be ready
+    ExercisePlan? plan;
+    try {
+      plan = await _planFuture;
+    } catch (e) {
+      debugPrint('[Preview] Preparation failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Audio preparation failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparing = false);
+      }
+    }
+
+    if (plan == null) return;
 
     if (_exercise?.usesPitchHighway == true) {
       await _levelProgress.setLastSelectedLevel(
@@ -379,6 +419,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       context,
       widget.exerciseId,
       difficultyLevel: _selectedLevel,
+      exercisePlan: plan,
     );
     if (!opened) {
       ScaffoldMessenger.of(context).showSnackBar(

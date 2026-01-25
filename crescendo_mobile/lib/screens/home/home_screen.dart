@@ -165,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _debugError ?? '✅ Rendered in ${_debugRenderingTimeMs}ms (48kHz)',
+                      _debugError ?? '✅ Rendered in ${_debugRenderingTimeMs}ms (8kHz Optimized)',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           color: Colors.white,
@@ -414,7 +414,7 @@ class _DebugSectionState extends State<_DebugSection> {
       final renderedFile = await bounceService.renderReferenceWav(
         notes: notes,
         durationSec: totalDurationSec,
-        sampleRate: AudioConstants.audioSampleRate,
+        sampleRate: 8000,
         soundFontAssetPath: 'assets/soundfonts/default.sf2',
         program: 0,
       );

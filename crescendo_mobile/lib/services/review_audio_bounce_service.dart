@@ -84,6 +84,7 @@ class ReviewAudioBounceService {
     required int sampleRate,
     required String soundFontAssetPath,
     required int program,
+    String? savePath,
   }) async {
     final startTime = DateTime.now();
     
@@ -107,23 +108,29 @@ class ReviewAudioBounceService {
     }
     
     // Write WAV file
-    final cacheDir = await getCacheDirectory();
-    final tempFile = File(p.join(cacheDir.path, 'reference_${DateTime.now().millisecondsSinceEpoch}.wav'));
+    String finalPath;
+    if (savePath != null) {
+      finalPath = savePath;
+    } else {
+      final cacheDir = await getCacheDirectory();
+      finalPath = p.join(cacheDir.path, 'reference_${DateTime.now().millisecondsSinceEpoch}.wav');
+    }
+
     await WavWriter.writePcm16Mono(
       samples: pcmSamples.toList(), // Convert back to list for existing WavWriter
       sampleRate: sampleRate,
-      path: tempFile.path,
+      path: finalPath,
     );
     
     final elapsed = DateTime.now().difference(startTime);
     if (kDebugMode) {
       final firstNonZero = _findFirstNonZeroSample(pcmSamples);
       final lastNonZero = _findLastNonZeroSample(pcmSamples);
-      debugPrint('[ReviewBounce] Reference WAV rendered in ${elapsed.inMilliseconds}ms: ${tempFile.path}');
+      debugPrint('[ReviewBounce] Reference WAV rendered in ${elapsed.inMilliseconds}ms: $finalPath');
       debugPrint('[ReviewBounce] First non-zero sample: $firstNonZero, last non-zero: $lastNonZero');
     }
     
-    return tempFile;
+    return File(finalPath);
   }
   
   /// Mix two WAV files sample-by-sample
@@ -155,17 +162,19 @@ class ReviewAudioBounceService {
     }
     
     if (micWavInfo.sampleRate != refWavInfo.sampleRate) {
-      debugPrint('[ReviewBounce] ERROR: Sample rate mismatch! mic=${micWavInfo.sampleRate}, ref=${refWavInfo.sampleRate}');
-      throw Exception('Sample rate mismatch: mic=${micWavInfo.sampleRate}, ref=${refWavInfo.sampleRate}');
-    }
-    
-    if (kDebugMode) {
-      debugPrint('[ReviewBounce] Mixing: micRate=${micWavInfo.sampleRate}, refRate=${refWavInfo.sampleRate}, outputRate=${micWavInfo.sampleRate}');
+      if (kDebugMode) {
+        debugPrint('[ReviewBounce] Resampling reference from ${refWavInfo.sampleRate} to ${micWavInfo.sampleRate}');
+      }
     }
     
     final sampleRate = micWavInfo.sampleRate;
     final micSamples = _readWavSamples(micBytes, micWavInfo);
-    final refSamples = _readWavSamples(refBytes, refWavInfo);
+    var refSamples = _readWavSamples(refBytes, refWavInfo);
+    
+    // Resample reference if needed
+    if (refWavInfo.sampleRate != sampleRate) {
+      refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
+    }
     
     if (kDebugMode) {
       final micMax = micSamples.isEmpty ? 0.0 : micSamples.map((s) => s.abs()).reduce(math.max);
@@ -271,6 +280,31 @@ class ReviewAudioBounceService {
     }
     
     return samples;
+  }
+
+  /// Linear interpolation resampler
+  Float32List _resample(Float32List input, int fromRate, int toRate) {
+    if (fromRate == toRate) return input;
+    
+    final ratio = toRate / fromRate;
+    final outputLength = (input.length * ratio).round();
+    final output = Float32List(outputLength);
+    
+    for (var i = 0; i < outputLength; i++) {
+      final inputPos = i / ratio;
+      final idx = inputPos.floor();
+      final frac = inputPos - idx;
+      
+      if (idx >= input.length - 1) {
+        output[i] = idx < input.length ? input[idx] : 0.0;
+      } else {
+        final s1 = input[idx];
+        final s2 = input[idx + 1];
+        output[i] = s1 + (s2 - s1) * frac;
+      }
+    }
+    
+    return output;
   }
   
   /// Piano sample generator (same as AudioSynthService)
