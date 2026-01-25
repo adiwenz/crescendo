@@ -423,73 +423,63 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Ensure range is loaded BEFORE anything else
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
 
-    // If we already have a prepared plan (from the preview screen), use it immediately!
-    if (widget.exercisePlan != null) {
-      debugPrint('[ExercisePlayerScreen] Using injected ExercisePlan from preview screen');
-      if (mounted) {
-        setState(() {
-          _transposedNotes = widget.exercisePlan!.notes;
-          
-          // Special handling for Sirens: ensure visual path is also built
-          if (widget.exercise.id == 'sirens') {
-            final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-              exercise: widget.exercise,
-              lowestMidi: lowestMidi,
-              highestMidi: highestMidi,
-              leadInSec: _leadInSec,
-              difficulty: widget.pitchDifficulty,
-            );
-            _sirenVisualPath = sirenResult.visualPath;
-          }
-          
-          _notesLoaded = true;
-          _rangeError = null;
-          if (_transposedNotes.isNotEmpty) {
-            _liveMidi.value = _transposedNotes.first.midi.toDouble();
-          }
-        });
-      }
-      return;
-    }
-
-    // Validate range - do not proceed with defaults
-    if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
-      debugPrint(
-          '[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
-      if (mounted) {
-        setState(() {
-          _notesLoaded = false;
-          _rangeError =
-              'Please set your vocal range in your profile to personalize exercises.';
-        });
-      }
-      return;
-    }
-
-    // Validation logging
-    debugPrint(
-        '[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
-
-    // Try to load pattern JSON first (same logic as _startHeavyPrepare)
-    // This ensures consistency between initial load and playback start
-    _patternSpec =
-        await PatternSpecLoader.instance.loadPattern(widget.exercise.id);
-
     List<ReferenceNote> notes;
     SirenPath? sirenPath;
 
-    if (_patternSpec != null) {
-      debugPrint(
-          '[ExercisePlayerScreen] Found pattern JSON for ${widget.exercise.id}, using PatternVisualNoteBuilder');
-      final patternNotes = PatternVisualNoteBuilder.buildVisualNotesFromPattern(
-        pattern: _patternSpec!,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: _leadInSec,
-      );
-      notes = patternNotes;
-      sirenPath = null;
+    // If we already have a prepared plan (from the preview screen), use it immediately!
+    if (widget.exercisePlan != null) {
+      debugPrint('[ExercisePlayerScreen] Using injected ExercisePlan from preview screen');
+      notes = widget.exercisePlan!.notes;
+      
+      // Special handling for Sirens: ensure visual path is also built
+      if (widget.exercise.id == 'sirens') {
+        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+          exercise: widget.exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+          difficulty: widget.pitchDifficulty,
+        );
+        sirenPath = sirenResult.visualPath;
+      } else {
+        sirenPath = null;
+      }
     } else {
+      // Validate range - do not proceed with defaults
+      if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
+        debugPrint(
+            '[ExercisePlayerScreen] ERROR: Invalid vocal range - lowestMidi=$lowestMidi, highestMidi=$highestMidi');
+        if (mounted) {
+          setState(() {
+            _notesLoaded = false;
+            _rangeError =
+                'Please set your vocal range in your profile to personalize exercises.';
+          });
+        }
+        return;
+      }
+
+      // Validation logging
+      debugPrint(
+          '[ExercisePlayerScreen] Loaded range: lowestMidi=$lowestMidi (${PitchMath.midiToName(lowestMidi)}), highestMidi=$highestMidi (${PitchMath.midiToName(highestMidi)})');
+
+      // Try to load pattern JSON first (same logic as _startHeavyPrepare)
+      // This ensures consistency between initial load and playback start
+      _patternSpec =
+          await PatternSpecLoader.instance.loadPattern(widget.exercise.id);
+
+      if (_patternSpec != null) {
+        debugPrint(
+            '[ExercisePlayerScreen] Found pattern JSON for ${widget.exercise.id}, using PatternVisualNoteBuilder');
+        final patternNotes = PatternVisualNoteBuilder.buildVisualNotesFromPattern(
+          pattern: _patternSpec!,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: _leadInSec,
+        );
+        notes = patternNotes;
+        sirenPath = null;
+      } else {
       // Fallback: try to get cached notes
       final cacheService = ExerciseCacheService.instance;
       final cachedNotes = cacheService.getCachedNotes(
@@ -556,6 +546,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         }
       }
     }
+    } 
 
     if (mounted) {
       setState(() {
