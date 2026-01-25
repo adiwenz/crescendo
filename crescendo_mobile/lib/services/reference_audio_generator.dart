@@ -49,26 +49,19 @@ class ReferenceAudioGenerator {
     // 2. Compute metadata to check cache
     final rangeHash = '${low}-${high}';
     final patternHash = '${exercise.id}_${difficulty.name}';
-    final cacheKey = '${exercise.id}_${rangeHash}_${patternHash}';
+    // Adding version prefix to invalidate old glide-based caches
+    const version = 'v2';
+    final cacheKey = '${version}_${exercise.id}_${rangeHash}_${patternHash}';
     
     final dir = await _cacheDir;
     final wavPath = p.join(dir.path, '$cacheKey.wav');
     final wavFile = File(wavPath);
 
-    // 3. Cache HIT
-    if (await wavFile.exists()) {
-      debugPrint('[RefGen] Cache HIT for $cacheKey');
-      return ExercisePlanBuilder.buildMetadata(
-        exercise: exercise,
-        lowestMidi: low,
-        highestMidi: high,
-        difficulty: difficulty,
-        wavFilePath: wavPath,
-      );
-    }
+    // Cache HIT - REMOVED per user request to always generate on the fly
+    // if (await wavFile.exists()) { ... }
 
-    // 4. Cache MISS - Perform background synthesis
-    debugPrint('[RefGen] Cache MISS for $cacheKey. Starting synthesis...');
+    // Always Perform on-the-fly synthesis
+    debugPrint('[RefGen] Generating reference on the fly for $cacheKey...');
     
     final startTime = DateTime.now();
     

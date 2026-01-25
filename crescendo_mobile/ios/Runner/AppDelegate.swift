@@ -12,25 +12,15 @@ import AudioToolbox
     GeneratedPluginRegistrant.register(with: self)
     
     // Set up method channel for audio session control
+    print("[AppDelegate] Setting up audioSession method channel")
     let controller = window?.rootViewController as! FlutterViewController
     let audioSessionChannel = FlutterMethodChannel(
       name: "com.adriannawenz.crescendo/audioSession",
       binaryMessenger: controller.binaryMessenger
     )
     
-      } catch {
-        #if DEBUG
-        print("[AppDelegate] ERROR overriding output port: \(error)")
-        #endif
-        result(FlutterError(
-          code: "AUDIO_SESSION_ERROR",
-          message: "Failed to override output port: \(error.localizedDescription)",
-          details: nil
-        ))
-      }
-    }
-    
     audioSessionChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      print("[AppDelegate] audioSession method call: \(call.method)")
       let session = AVAudioSession.sharedInstance()
       
       switch call.method {

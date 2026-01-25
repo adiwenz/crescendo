@@ -420,12 +420,37 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       });
     }
 
-    // Ensure range is loaded BEFORE generating exercise notes
-    final rangeStartTime = DateTime.now();
+    // Ensure range is loaded BEFORE anything else
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-    final rangeEndTime = DateTime.now();
-    debugPrint(
-        '[ExercisePlayerScreen] getRange() took ${rangeEndTime.difference(rangeStartTime).inMilliseconds}ms');
+
+    // If we already have a prepared plan (from the preview screen), use it immediately!
+    if (widget.exercisePlan != null) {
+      debugPrint('[ExercisePlayerScreen] Using injected ExercisePlan from preview screen');
+      if (mounted) {
+        setState(() {
+          _transposedNotes = widget.exercisePlan!.notes;
+          
+          // Special handling for Sirens: ensure visual path is also built
+          if (widget.exercise.id == 'sirens') {
+            final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+              exercise: widget.exercise,
+              lowestMidi: lowestMidi,
+              highestMidi: highestMidi,
+              leadInSec: _leadInSec,
+              difficulty: widget.pitchDifficulty,
+            );
+            _sirenVisualPath = sirenResult.visualPath;
+          }
+          
+          _notesLoaded = true;
+          _rangeError = null;
+          if (_transposedNotes.isNotEmpty) {
+            _liveMidi.value = _transposedNotes.first.midi.toDouble();
+          }
+        });
+      }
+      return;
+    }
 
     // Validate range - do not proceed with defaults
     if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {

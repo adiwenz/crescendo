@@ -253,20 +253,18 @@ class ReviewAudioBounceService {
       if (noteFrames <= 0 || startFrame < 0 || startFrame >= totalFrames) continue;
       
       final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
-      final phaseStep = hz / sampleRate;
       
       for (var f = 0; f < noteFrames; f++) {
         final frameIndex = startFrame + f;
         if (frameIndex >= totalFrames) break;
         
         final noteTime = f / sampleRate;
-        final phase = noteTime * hz;
         
         // Sum harmonics using fast lookup
-        final fundamental = _fastSin(phase);
-        final harmonic2 = 0.6 * _fastSin(phase * 2);
-        final harmonic3 = 0.3 * _fastSin(phase * 3);
-        final harmonic4 = 0.15 * _fastSin(phase * 4);
+        final fundamental = _fastSin(noteTime * hz);
+        final harmonic2 = 0.6 * _fastSin(noteTime * hz * 2);
+        final harmonic3 = 0.3 * _fastSin(noteTime * hz * 3);
+        final harmonic4 = 0.15 * _fastSin(noteTime * hz * 4);
         
         final attack = (noteTime / 0.02);
         final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);

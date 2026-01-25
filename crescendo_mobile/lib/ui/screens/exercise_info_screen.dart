@@ -17,6 +17,9 @@ import 'exercise_player_screen.dart';
 import 'exercise_navigation.dart';
 import 'exercise_review_summary_screen.dart';
 import '../../services/attempt_repository.dart';
+import '../../services/reference_audio_generator.dart';
+import '../../models/exercise_plan.dart';
+import '../../utils/pitch_math.dart';
 
 class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
@@ -41,6 +44,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   bool _progressLoaded = false;
   double? _lastScore;
   ExerciseAttempt? _latestAttempt;
+  bool _preparing = false;
 
   @override
   void initState() {
@@ -271,23 +275,33 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           ),
           const SizedBox(height: 8),
           ElevatedButton.icon(
-            onPressed: selectionLocked
+            onPressed: selectionLocked || _preparing
                 ? null
                 : () async {
                     final tapTime = DateTime.now();
                     debugPrint('[StartExercise] tapped at ${tapTime.millisecondsSinceEpoch}');
                     await _previewAudio.stop();
-                    final afterStop = DateTime.now();
-                    debugPrint('[StartExercise] after stop: ${afterStop.difference(tapTime).inMilliseconds}ms');
-                    await _startExercise(exercise);
-                    final afterStart = DateTime.now();
-                    debugPrint('[StartExercise] after _startExercise: ${afterStart.difference(tapTime).inMilliseconds}ms');
+                    
+                    if (isPitchHighway) {
+                      setState(() => _preparing = true);
+                    }
+                    
+                    try {
+                      await _startExercise(exercise);
+                    } finally {
+                      if (mounted) {
+                        setState(() => _preparing = false);
+                      }
+                    }
+                    
                     await _loadLastScore();
                     await _loadLatestAttempt();
                     await _loadProgress(showToast: true);
                   },
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Start Exercise'),
+            icon: _preparing 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.play_arrow),
+            label: Text(_preparing ? 'Preparing...' : 'Start Exercise'),
           ),
           if (exercise.type == ExerciseType.pitchHighway) ...[
             const SizedBox(height: 8),
@@ -338,31 +352,42 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     final startTime = DateTime.now();
     debugPrint('[StartExercise] _startExercise called at ${startTime.millisecondsSinceEpoch}');
     
-    // Navigate immediately - move heavy work to the exercise screen
     final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-    final beforeNav = DateTime.now();
-    debugPrint('[StartExercise] before Navigator.push: ${beforeNav.difference(startTime).inMilliseconds}ms');
     
     if (exercise.type == ExerciseType.pitchHighway) {
-      // Save level selection (lightweight DB write, but don't block navigation)
+      // 1. Prepare ExercisePlan (Transposition + WAV Synthesis)
+      // This fulfills the request to generate transposed WAVs on the preview screen
+      ExercisePlan? plan;
+      try {
+        plan = await ReferenceAudioGenerator.instance.prepare(
+          exercise,
+          selectedDifficulty,
+        );
+      } catch (e) {
+        debugPrint('[StartExercise] Error preparing plan: $e');
+        // Fallback to navigating without plan (player will handle its own loading)
+      }
+
+      // 2. Save level selection
       unawaited(_levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
         level: _selectedLevel,
       ));
       
-      // Navigate immediately with original exercise - let the player screen handle range loading
+      // 3. Navigate with Prepared Plan
+      if (mounted) {
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ExercisePlayerScreen(
-            exercise: exercise,
+              exercise: exercise,
               pitchDifficulty: selectedDifficulty,
+              exercisePlan: plan,
             ),
           ),
         );
-      final afterNav = DateTime.now();
-      debugPrint('[StartExercise] after Navigator.push completed: ${afterNav.difference(startTime).inMilliseconds}ms');
-        return;
+      }
+      return;
     }
     
     // For non-pitchHighway exercises, navigate immediately
@@ -375,8 +400,6 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         ),
       ),
     );
-    final afterNav = DateTime.now();
-    debugPrint('[StartExercise] after Navigator.push completed: ${afterNav.difference(startTime).inMilliseconds}ms');
   }
 
 

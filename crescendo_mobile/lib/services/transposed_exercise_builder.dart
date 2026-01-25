@@ -93,9 +93,14 @@ class TransposedExerciseBuilder {
     // we'll keep the same return type and handle it in the caller
     // TODO: Refactor to return SirenExerciseResult for Sirens
     if (exercise.id == 'sirens') {
-      // This will be handled separately - return empty for now
-      // The actual Sirens building happens in _buildSirensWithVisualPath
-      return const [];
+      final sirenResult = buildSirensWithVisualPath(
+        exercise: exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: effectiveLeadInSec,
+        difficulty: difficulty,
+      );
+      return sirenResult.audioNotes;
     }
     
     // Calculate the duration of one repetition of the pattern
@@ -257,50 +262,28 @@ class TransposedExerciseBuilder {
       }
       
       if (seg.isGlide) {
-        // For NG Slides and Sirens: create full-length notes for audio, but mark for visual glide
-        if (isNgSlides || isSirens) {
-          final isFirstSegment = i == 0;
-          // For endMidi, compute its pattern offset and apply to root
-          final endPatternOffset = (seg.endMidi ?? seg.midiNote) - baseRootMidi;
-          final endMidi = rootMidi + endPatternOffset;
-          
-          // Create full-length note for audio playback
-          notes.add(ReferenceNote(
-            startSec: segStartSec,
-            endSec: segEndSec,
-            midi: targetMidi,
-            lyric: seg.label,
-            // Mark first glide segment as glide start for visual rendering
-            isGlideStart: isFirstSegment,
-            glideEndMidi: isFirstSegment ? endMidi : null,
-          ));
-        } else {
-          // For other glides: create endpoint notes (original behavior)
-          // Compute startMidi and endMidi using pattern offsets
-          final startPatternOffset = (seg.startMidi ?? seg.midiNote) - baseRootMidi;
-          final startMidi = rootMidi + startPatternOffset;
-          final endPatternOffset = (seg.endMidi ?? seg.midiNote) - baseRootMidi;
-          final endMidi = rootMidi + endPatternOffset;
-          
-          // Start endpoint note (very short duration, just to mark the position)
-          notes.add(ReferenceNote(
-            startSec: segStartSec,
-            endSec: segStartSec + 0.01, // Very short to mark position
-            midi: startMidi,
-            lyric: seg.label,
-            isGlideStart: true,
-            glideEndMidi: endMidi,
-          ));
-          
-          // End endpoint note
-          notes.add(ReferenceNote(
-            startSec: segEndSec - 0.01,
-            endSec: segEndSec,
-            midi: endMidi,
-            lyric: seg.label,
-            isGlideEnd: true,
-          ));
-        }
+        // Compute endMidi from pattern offset
+        final endPatternOffset = (seg.endMidi ?? seg.midiNote) - baseRootMidi;
+        final endMidi = rootMidi + endPatternOffset;
+        
+        // 1. Start anchor (Bottom note)
+        notes.add(ReferenceNote(
+          startSec: segStartSec,
+          endSec: segStartSec + 0.5,
+          midi: targetMidi,
+          lyric: seg.label,
+          isGlideStart: i == 0,
+          glideEndMidi: i == 0 ? endMidi : null,
+        ));
+
+        // 2. End anchor (Top note)
+        notes.add(ReferenceNote(
+          startSec: segEndSec - 0.5,
+          endSec: segEndSec,
+          midi: endMidi,
+          lyric: seg.label,
+          isGlideEnd: i == segments.length - 1,
+        ));
       } else {
         // Regular note: use targetMidi computed from pattern offset
         notes.add(ReferenceNote(
