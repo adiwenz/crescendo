@@ -86,6 +86,7 @@ class ProgressService {
     String? contourJson,
     String? targetNotesJson,
     String? segmentsJson,
+    double? recorderStartSec,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -103,6 +104,7 @@ class ProgressService {
       segmentsJson: segmentsJson,
       notes: notes,
       pitchDifficulty: pitchDifficulty,
+      recorderStartSec: recorderStartSec,
     );
   }
 }

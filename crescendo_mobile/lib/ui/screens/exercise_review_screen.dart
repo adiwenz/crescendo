@@ -12,7 +12,7 @@ import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../utils/exercise_constants.dart';
-import '../widgets/pitch_snapshot_chart.dart';
+import '../widgets/overview_graph.dart';
 import 'pitch_highway_review_screen.dart';
 import 'exercise_review_summary_screen.dart';
 
@@ -146,12 +146,10 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_samples.isNotEmpty && _targets.isNotEmpty)
-                PitchSnapshotView(
-                  targetNotes: _targets,
-                  pitchSamples: _samples,
+              if (_samples.isNotEmpty)
+                OverviewGraph(
+                  samples: _samples,
                   durationMs: _durationMs,
-                  height: 220,
                 ),
               if (_samples.isEmpty)
                 const Padding(

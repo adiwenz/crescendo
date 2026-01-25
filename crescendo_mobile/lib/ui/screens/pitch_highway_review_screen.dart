@@ -12,6 +12,7 @@ import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/siren_path.dart';
+import '../../models/pitch_frame.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/review_audio_bounce_service.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -91,6 +92,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   int _manualOffsetMs = 0; // Manual offset adjustment (can be positive or negative)
   bool _compensationEnabled = true; // Toggle to enable/disable compensation (default: enabled)
 
+  // Rebase state
+  List<PitchFrame> _rebasedFrames = const [];
+  double _sliceStartSec = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -114,7 +119,20 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     // In review mode, audio position is already accurate (from playback), so no latency compensation needed
     _clock.setLatencyCompensationMs(0);
+
+    // --- REBASE LOGIC ---
+    // Use the explicit recorder start time from the take
+    _sliceStartSec = widget.lastTake.recorderStartSec ?? 0.0;
+
+    // Pitch frames are now natively recorded relative to 0.0 in ExercisePlayerScreen
+    _rebasedFrames = widget.lastTake.frames;
+    
+    // Adjust startTimeSec (if it was absolute exercise time)
+    // widget.startTimeSec is the target seek position in the replayed file.
+    // If it's already 0-based relative to the start of the m4a, we use it as-is.
     _time.value = widget.startTimeSec;
+    // ----------------------
+
     
     // Load sync offset for compensation (debug only)
     if (kDebugMode && kEnableSyncCompensation) {
@@ -393,17 +411,34 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       );
       sirenPath = null;
     }
-    
-    if (mounted) {
+        // --- REBASE NOTES ---
+      final rebasedNotes = notes.map<ReferenceNote>((n) => ReferenceNote(
+        midi: n.midi,
+        startSec: math.max(0, n.startSec - _sliceStartSec),
+        endSec: math.max(0, n.endSec - _sliceStartSec),
+        lyric: n.lyric,
+        isGlideStart: n.isGlideStart,
+        isGlideEnd: n.isGlideEnd,
+      )).where((n) => n.endSec > 0).toList();
+
+      final rebasedSirenPath = sirenPath != null ? SirenPath(
+        points: sirenPath.points.map<SirenPoint>((p) => SirenPoint(
+          tSec: math.max(0, p.tSec - _sliceStartSec),
+          midiFloat: p.midiFloat,
+        )).where((p) => p.tSec >= 0).toList()
+      ) : null;
+      // --------------------
+
+      if (!mounted) return;
       setState(() {
-        _notes = notes;
-        _sirenVisualPath = sirenPath; // Store visual path for Sirens
-        _durationSec = _computeDuration(notes);
+        _notes = rebasedNotes;
+        _sirenVisualPath = rebasedSirenPath;
+        _durationSec = _computeDuration(rebasedNotes);
       });
       
       // Try to auto-start if preload is already complete
       // Otherwise, preload completion will trigger auto-start
-      if (notes.isNotEmpty && !_playing && _preloadComplete) {
+      if (rebasedNotes.isNotEmpty && !_playing && _preloadComplete) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !_playing && _notes.isNotEmpty && _preloadComplete) {
             if (kDebugMode) {
@@ -414,7 +449,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         });
       }
     }
-  }
+
 
   // Route change handlers removed - ReferenceMidiEngine handles route changes automatically
   // The engine will automatically resume playback using the registered playback context
@@ -456,27 +491,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     }
     
     // Visual time is driven directly by audio position (master clock)
-    final visualTimeMs = _audioPositionSec! * 1000.0;
     _time.value = _audioPositionSec!;
-    
-    // No MIDI position updates needed - we use bounced WAV, not real-time MIDI
-    
-    // Debug logging (temporary) - log every 250-500ms
-    if (kDebugMode) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastSyncLogTime >= 250) {
-        _lastSyncLogTime = now;
-        final audioTimeMs = _audioPositionSec! * 1000.0;
-        final diffMs = visualTimeMs - audioTimeMs; // Should be 0
-        debugPrint('[Review Sync] visualTimeMs=${visualTimeMs.toStringAsFixed(1)}, '
-            'audioTimeMs=${audioTimeMs.toStringAsFixed(1)}, diffMs=${diffMs.toStringAsFixed(1)}');
-        
-        // Assert sync after first second
-        if (_time.value > 1.0 && diffMs.abs() > 50) {
-          debugPrint('[Review Sync WARNING] Desync detected: ${diffMs.toStringAsFixed(1)}ms');
-        }
-      }
-    }
     
     if (_audioPositionSec! >= _durationSec) {
       _stop();
@@ -491,7 +506,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     final currentRunId = _reviewRunId;
     
     final tapTime = DateTime.now().millisecondsSinceEpoch;
-    final startOffsetSec = widget.startTimeSec;
+    // startOffsetSec is the absolute exercise time. 
+    // We must rebase it to 0-based for the TRIMMED audio file and rebased visuals.
+    final startOffsetSec = math.max(0.0, widget.startTimeSec - _sliceStartSec);
     
     DebugLog.event(
       LogCat.replay,
@@ -999,7 +1016,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                     Positioned.fill(
                       child: CustomPaint(
                         painter: PitchContourPainter(
-                          frames: widget.lastTake.frames,
+                          frames: _rebasedFrames,
                           time: _time,
                           pixelsPerSecond: _pixelsPerSecond,
                           playheadFraction: 0.45,

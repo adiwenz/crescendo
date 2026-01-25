@@ -16,6 +16,7 @@ class ExerciseAttempt {
   final String? segmentsJson;
   final String? notes;
   final String? pitchDifficulty;
+  final double? recorderStartSec;
   final int version;
 
   const ExerciseAttempt({
@@ -32,6 +33,7 @@ class ExerciseAttempt {
     this.segmentsJson,
     this.notes,
     this.pitchDifficulty,
+    this.recorderStartSec,
     this.version = 1,
   });
 
@@ -50,6 +52,7 @@ class ExerciseAttempt {
         'segmentsJson': segmentsJson,
         'notes': notes,
         'pitchDifficulty': pitchDifficulty,
+        'recorderStartSec': recorderStartSec,
         'version': version,
       };
 
@@ -69,6 +72,7 @@ class ExerciseAttempt {
       segmentsJson: map['segmentsJson'] as String?,
       notes: map['notes'] as String?,
       pitchDifficulty: map['pitchDifficulty'] as String?,
+      recorderStartSec: (map['recorderStartSec'] as num?)?.toDouble(),
       version: (map['version'] as num?)?.toInt() ?? 1,
     );
   }
@@ -144,6 +148,7 @@ class ExerciseAttempt {
       segmentsJson: m['segmentsJson']?.toString(),
       notes: parseNotes(m['notes']),
       pitchDifficulty: (m['pitchDifficulty'] ?? m['pitchDifficultyText'])?.toString(),
+      recorderStartSec: (m['recorderStartSec'] as num?)?.toDouble(),
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,
     );
 

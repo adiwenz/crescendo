@@ -212,6 +212,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  double? _recorderStartSec;
   String? _lastRecordingPath;
   String? _lastContourJson;
   late final PitchHighwaySpec? _scaledSpec;
@@ -1192,11 +1193,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           visualTimeSec > 5.0 ||
           (dx != null && dx > 0 && logCount > 10); // Stop after dx crosses 0
 
-      if (kDebugMode && !shouldStop) {
-        debugPrint(
-            '[TIMING_DEBUG] [6] PERIODIC_LOG runId=$runId nowEpochMs=$nowEpochMs visualTimeSec=${visualTimeSec.toStringAsFixed(3)} firstNoteStartSec=${firstNoteStartSec?.toStringAsFixed(3)} firstNoteLeftX=${firstNoteLeftX?.toStringAsFixed(1)} playlineX=${playlineX?.toStringAsFixed(1)} dx=${dx?.toStringAsFixed(1)} audioPosMs=${audioPosMs?.toStringAsFixed(1)} audioState=$audioState');
-        logCount++;
-      }
+
 
       if (shouldStop) {
         timer.cancel();
@@ -1256,6 +1253,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         trace.mark('before recorder.start');
         dev.Timeline.startSync('recorder.start');
         final beforeRecorder = DateTime.now();
+        _recorderStartSec = _time.value; // Use master visual exercise time as anchor
         await _recording?.start();
         final afterRecorder = DateTime.now();
         dev.Timeline.finishSync();
@@ -1293,22 +1291,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                   ? 69 + 12 * math.log(frame.hz! / 440.0) / math.ln2
                   : null);
 
-          final now = (_clock.nowSeconds() - (_pitchInputLatencyMs / 1000.0))
-              .clamp(-2.0, 3600.0);
+          // frame.time is natively relative to the start of the audio file (t=0)
+          // For LIVE synchronization with the absolute exercise time, we add the anchor.
+          final absoluteNow = (_recorderStartSec ?? 0.0) + frame.time;
+
           final voiced = midi != null &&
               (frame.voicedProb ?? 1.0) >= 0.6 &&
               (frame.rms ?? 1.0) >= 0.02;
           double? filtered;
           if (voiced) {
-            _pitchBall.addSample(timeSec: now, midi: midi);
+            _pitchBall.addSample(timeSec: absoluteNow, midi: midi);
             filtered = _pitchBall.lastSampleMidi ?? midi;
             _pitchState.updateVoiced(
-                timeSec: now, pitchHz: frame.hz, pitchMidi: filtered);
+                timeSec: absoluteNow, pitchHz: frame.hz, pitchMidi: filtered);
           } else {
-            _pitchState.updateUnvoiced(timeSec: now);
+            _pitchState.updateUnvoiced(timeSec: absoluteNow);
           }
+
+          // Use the file-relative time for storage to ensure audio sync on replay
           final pf = PitchFrame(
-            time: now,
+            time: frame.time,
             hz: frame.hz,
             midi: voiced ? filtered : null,
             voicedProb: frame.voicedProb,
@@ -1977,7 +1979,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _pitchState.updateVoiced(timeSec: t, pitchHz: hz, pitchMidi: filtered);
     _visualState.update(
         timeSec: t, pitchHz: hz, pitchMidi: filtered, voiced: true);
-    final pf = PitchFrame(time: t, hz: hz, midi: filtered);
+    
+    final relativeT = _recorderStartSec != null ? (t - _recorderStartSec!) : t;
+    final pf = PitchFrame(time: relativeT, hz: hz, midi: filtered);
     _captured.add(pf);
   }
 
@@ -2141,6 +2145,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
       subScores: subScores,
+      recorderStartSec: _recorderStartSec,
       pitchDifficulty: widget.pitchDifficulty.name,
       recordingPath: _lastRecordingPath,
       contourJson: _lastContourJson,
@@ -2670,6 +2675,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -2854,6 +2860,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -2934,6 +2941,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  double? _recorderStartSec;
+  final List<PitchFrame> _captured = [];
 
   @override
   void dispose() {
@@ -2970,6 +2979,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     if (!mounted || !_preparing || runId != _prepRunId) return;
     _endPrepCountdown();
     await _playCueTone();
+    _recorderStartSec = 0.0; // Free play mode, no master timeline
     await _recording.start();
     _lastTime = 0;
     _onPitchSec = 0;
@@ -2986,6 +2996,8 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
         return;
       }
       final cents = 1200 * (math.log(hz / _targetHz) / math.ln2);
+      
+      // Use natives service time for duration calculations to be sample-accurate
       final dt = _lastTime == 0 ? 0 : math.max(0, frame.time - _lastTime);
       _lastTime = frame.time;
       if (dt > 0) {
@@ -3002,6 +3014,11 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
         _centsError = cents;
         _confidence = frame.voicedProb ?? 0.0;
       });
+      
+      // Although we don't use high-def review for this exercise yet,
+      // we store relative frames for uniformity.
+      final pf = PitchFrame(time: frame.time, hz: hz, midi: frame.midi);
+      _captured.add(pf);
     });
     _scorePct = null;
     setState(() => _listening = true);
@@ -3064,6 +3081,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -3174,6 +3192,8 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   final List<double> _absErrors = [];
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  double? _recorderStartSec;
+  final List<PitchFrame> _captured = [];
 
   // Interval Training: list of intervals in semitones
   static const List<int> _intervals = [
@@ -3273,6 +3293,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     if (!mounted || !_preparing || runId != _prepRunId) return;
     _endPrepCountdown();
     await _playTone();
+    _recorderStartSec = 0.0; // Always start at beginning for these simpler exercises
     await _recording.start();
     _absErrors.clear();
     _attemptSaved = false;
@@ -3283,6 +3304,9 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       final cents = 1200 * (math.log(hz / _targetHz) / math.ln2);
       _absErrors.add(cents.abs());
       setState(() => _centsError = cents);
+      
+      // Store relative frames for uniformity
+      _captured.add(PitchFrame(time: frame.time, hz: hz, midi: frame.midi));
     });
     _scorePct = null;
     setState(() => _listening = true);
@@ -3343,6 +3367,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -3557,6 +3582,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -3652,6 +3678,8 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
   final List<double> _sampleRms = [];
   DateTime? _startedAt;
   bool _attemptSaved = false;
+  double? _recorderStartSec;
+  final List<PitchFrame> _captured = [];
 
   @override
   void initState() {
@@ -3712,6 +3740,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     if (!mounted || !_preparing || runId != _prepRunId) return;
     _endPrepCountdown();
     await _playCueTone();
+    _recorderStartSec = _elapsed;
     await _recording.start();
     _sampleTimes.clear();
     _sampleRms.clear();
@@ -3719,9 +3748,13 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _startedAt = DateTime.now();
     _sub = _recording.liveStream.listen((frame) {
       final rms = frame.rms ?? 0.0;
-      _sampleTimes.add(_elapsed);
+      // frame.time is natively relative to start of audio file
+      _sampleTimes.add(frame.time); 
       _sampleRms.add(rms);
       setState(() => _rms = rms);
+      
+      // Storing relative frames for consistency
+      _captured.add(PitchFrame(time: frame.time, hz: frame.hz, midi: frame.midi, rms: rms));
     });
     setState(() {
       _running = true;
@@ -3830,6 +3863,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;
@@ -4008,6 +4042,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
       startedAt: _startedAt!,
       completedAt: DateTime.now(),
       overallScore: score.clamp(0.0, 100.0),
+      recorderStartSec: 0.0,
       subScores: subScores,
     );
     _attemptSaved = true;

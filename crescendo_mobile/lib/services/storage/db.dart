@@ -11,7 +11,7 @@ class AppDatabase {
   Future<Database> get database async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 9, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    _db = await openDatabase(path, version: 10, onCreate: _onCreate, onUpgrade: _onUpgrade);
     return _db!;
   }
 
@@ -43,6 +43,7 @@ class AppDatabase {
         contourJson TEXT,
         targetNotesJson TEXT,
         segmentsJson TEXT,
+        recorderStartSec REAL,
         version INTEGER
       )
     ''');
@@ -146,6 +147,9 @@ class AppDatabase {
         CREATE INDEX IF NOT EXISTS idx_reference_audio_cache_lookup 
         ON reference_audio_cache(exerciseId, rangeHash, variantKey)
       ''');
+    }
+    if (oldVersion < 10) {
+      await _addColumnIfMissing(db, 'exercise_attempts', 'recorderStartSec', 'REAL');
     }
   }
 

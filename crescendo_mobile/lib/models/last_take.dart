@@ -7,6 +7,7 @@ class LastTake {
   final double durationSec;
   final String? audioPath;
   final String? pitchDifficulty;
+  final double? recorderStartSec;
 
   LastTake({
     required this.exerciseId,
@@ -15,6 +16,7 @@ class LastTake {
     required this.durationSec,
     this.audioPath,
     this.pitchDifficulty,
+    this.recorderStartSec,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +26,7 @@ class LastTake {
         'durationSec': durationSec,
         'audioPath': audioPath,
         'pitchDifficulty': pitchDifficulty,
+        'recorderStartSec': recorderStartSec,
       };
 
   factory LastTake.fromJson(Map<String, dynamic> json) => LastTake(
@@ -35,5 +38,6 @@ class LastTake {
         durationSec: (json['durationSec'] as num).toDouble(),
         audioPath: json['audioPath'] as String?,
         pitchDifficulty: json['pitchDifficulty'] as String?,
+        recorderStartSec: (json['recorderStartSec'] as num?)?.toDouble(),
       );
 }
