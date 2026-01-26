@@ -1,7 +1,7 @@
 #!/usr/bin/env dart
 
 /// Helper script to extract exercise definitions from exercise_seed.dart
-/// and convert them to JSON format for use by generate_exercise_m4as.dart
+/// and convert them to JSON format.
 ///
 /// This script must be run from within a Flutter environment (e.g., flutter run)
 /// because it imports Flutter-dependent code.
@@ -32,8 +32,6 @@ void main() {
   );
   
   print('✓ Extracted ${exercisesJson.length} exercises to tool/exercises.json');
-  print('');
-  print('Now you can run: dart run tool/generate_exercise_m4as.dart');
 }
 
 Map<String, dynamic> _exerciseToJson(VocalExercise exercise) {

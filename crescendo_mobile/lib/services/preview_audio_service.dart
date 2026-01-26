@@ -10,8 +10,6 @@ import 'preview_asset_service.dart';
 import 'sine_sweep_service.dart';
 import '../utils/audio_constants.dart';
 import 'midi_preview_generator.dart';
-import 'exercise_audio_asset_resolver.dart';
-import 'exercise_audio_slicer.dart';
 import '../models/vocal_exercise.dart';
 import '../audio/reference_midi_synth.dart';
 import '../audio/midi_playback_config.dart';
@@ -31,7 +29,7 @@ class PreviewAudioService {
   /// 
   /// Routing logic:
   /// - If exercise.isGlide == true: Use WAV asset (or generate sine sweep for NG slides)
-  /// - If exercise.isGlide == false: Try M4A asset with slicing, fall back to MIDI preview
+  /// - If exercise.isGlide == false: Use MIDI preview
   Future<void> playPreview(VocalExercise exercise) async {
     // Stop any existing playback
     await stop();
@@ -41,14 +39,8 @@ class PreviewAudioService {
       // Glide exercises: Use WAV assets or generate sine sweep
       await _playWavPreview(exercise);
     } else {
-      // Non-glide exercises: Try M4A asset first, fall back to MIDI
-      final hasAsset = await ExerciseAudioAssetResolver.hasAsset(exercise.id);
-      if (hasAsset) {
-        await _playM4aPreview(exercise);
-      } else {
-        // Fall back to MIDI preview for backward compatibility
-        await _playMidiPreview(exercise);
-      }
+      // Non-glide exercises: Use MIDI preview
+      await _playMidiPreview(exercise);
     }
   }
 
@@ -111,90 +103,7 @@ class PreviewAudioService {
     }
   }
 
-  /// Play M4A asset preview for non-glide exercises (sliced to C4 step)
-  Future<void> _playM4aPreview(VocalExercise exercise) async {
-    try {
-      // Get preview slice (single step at C4 / MIDI 60)
-      final slice = await ExerciseAudioSlicer.instance.getPreviewSlice(exercise.id);
-      if (slice == null) {
-        if (kDebugMode) {
-          debugPrint('[PreviewAudio] No slice found for ${exercise.id}, falling back to MIDI');
-        }
-        await _playMidiPreview(exercise);
-        return;
-      }
-
-      // Load asset to temp file
-      final assetPath = ExerciseAudioAssetResolver.getM4aAssetPath(exercise.id);
-      final audioPath = await _loadAsset(assetPath);
-      if (audioPath == null) {
-        if (kDebugMode) {
-          debugPrint('[PreviewAudio] Failed to load M4A asset for ${exercise.id}, falling back to MIDI');
-        }
-        await _playMidiPreview(exercise);
-        return;
-      }
-
-      if (kDebugMode) {
-        debugPrint('[PreviewAudio] Playing M4A preview for ${exercise.id}: ${slice.startSec.toStringAsFixed(2)}s - ${slice.endSec.toStringAsFixed(2)}s');
-      }
-
-      // Play the audio with slicing
-      _playbackCompleter = Completer<void>();
-
-      // Set up completion listener
-      _completeSub = _player.onPlayerComplete.listen((_) {
-        if (!_playbackCompleter!.isCompleted) {
-          _playbackCompleter!.complete();
-        }
-      });
-
-      // Set up position listener to stop at sliceEndSec
-      final positionSub = _player.onPositionChanged.listen((position) {
-        final positionSec = position.inMilliseconds / 1000.0;
-        if (positionSec >= slice.endSec) {
-          _player.pause();
-          if (!_playbackCompleter!.isCompleted) {
-            _playbackCompleter!.complete();
-          }
-        }
-      });
-
-      try {
-        // Seek to slice start and play
-        await _player.play(DeviceFileSource(audioPath));
-        await _player.seek(Duration(milliseconds: (slice.startSec * 1000).round()));
-        
-        await _playbackCompleter!.future.timeout(
-          Duration(milliseconds: ((slice.endSec - slice.startSec) * 1000).round() + 1000),
-          onTimeout: () {
-            if (kDebugMode) {
-              debugPrint('[PreviewAudio] Preview playback timeout');
-            }
-          },
-        );
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('[PreviewAudio] M4A preview playback error: $e');
-        }
-        if (!_playbackCompleter!.isCompleted) {
-          _playbackCompleter!.completeError(e);
-        }
-      } finally {
-        await positionSub.cancel();
-        await _completeSub?.cancel();
-        _completeSub = null;
-        _playbackCompleter = null;
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[PreviewAudio] Error in M4A preview: $e, falling back to MIDI');
-      }
-      await _playMidiPreview(exercise);
-    }
-  }
-
-  /// Play MIDI preview for non-glide exercises (fallback)
+  /// Play MIDI preview for non-glide exercises
   Future<void> _playMidiPreview(VocalExercise exercise) async {
     // Generate preview notes (single iteration at C4)
     final previewNotes = MidiPreviewGenerator.generatePreview(exercise);

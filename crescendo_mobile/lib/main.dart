@@ -8,7 +8,6 @@ import 'ui/app.dart';
 import 'state/library_store.dart';
 import 'services/exercise_cache_service.dart';
 import 'services/audio_route_service.dart';
-import 'services/reference_audio_cache_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,9 +53,6 @@ Future<void> main() async {
   // This is the single source of truth for audio route detection
   await AudioRouteService().initialize();
   
-  // Clean up old WAV files from previous cache version
-  await ReferenceAudioCacheService.instance.cleanupOldWavFiles();
-
   runApp(const CrescendoApp());
 }
 

@@ -50,6 +50,13 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     super.initState();
     debugPrint('[Preview] exerciseId=${widget.exerciseId}');
     _load();
+    
+    // Requirements: Defer heavy generation until after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _triggerPreparation();
+      }
+    });
   }
 
   @override
@@ -92,18 +99,44 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
       _loading = false;
     });
-    _triggerPreparation();
+    // Removed _triggerPreparation() from _load to follow post-frame requirement
   }
 
-  void _triggerPreparation() {
+  void _triggerPreparation() async {
     final ex = _exercise;
     if (ex == null) return;
     
     final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
     
-    setState(() {
-      _planFuture = ReferenceAudioGenerator.instance.prepare(ex, difficulty);
-    });
+    // Fast-path: Check cache first to avoid flicker/delay
+    final cached = await ReferenceAudioGenerator.instance.tryGetCached(ex, difficulty);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _planFuture = Future.value(cached);
+          _isPreparing = false;
+        });
+      }
+      return;
+    }
+
+    // Cache miss: start full preparation
+    if (mounted) {
+      setState(() {
+        _isPreparing = true;
+        _planFuture = ReferenceAudioGenerator.instance.prepare(ex, difficulty).then((plan) {
+          if (mounted) {
+            setState(() => _isPreparing = false);
+          }
+          return plan;
+        }).catchError((e) {
+          if (mounted) {
+            setState(() => _isPreparing = false);
+          }
+          throw e;
+        });
+      });
+    }
   }
 
   Future<void> _refreshLatest() async {
@@ -143,7 +176,11 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
-    _triggerPreparation(); // Refresh plan for new level
+    // Plan refresh will be triggered by WidgetsBinding or manual selection if it changes
+    // But since it's a value change, we should trigger it here too if it's already past the first frame
+    if (_progressLoaded) {
+       _triggerPreparation();
+    }
     if (levelUp && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
@@ -345,10 +382,22 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                   children: [
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: _startExercise,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          child: Text('Start Exercise'),
+                        onPressed: _isPreparing ? null : _startExercise,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Start Exercise'),
+                              if (_isPreparing) ...[
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Preparing audio...',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -386,41 +435,23 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     if (mounted) {
       setState(() {
         _previewing = false;
-        _isPreparing = true;
       });
     }
 
-    // Wait for the dynamic plan to be ready
-    ExercisePlan? plan;
-    try {
-      plan = await _planFuture;
-    } catch (e) {
-      debugPrint('[Preview] Preparation failed: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Audio preparation failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isPreparing = false);
-      }
-    }
-
-    if (plan == null) return;
-
     if (_exercise?.usesPitchHighway == true) {
-      await _levelProgress.setLastSelectedLevel(
+      unawaited(_levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
         level: _selectedLevel,
-      );
+      ));
     }
+
     final opened = ExerciseRouteRegistry.open(
       context,
       widget.exerciseId,
       difficultyLevel: _selectedLevel,
-      exercisePlan: plan,
+      exercisePlanFuture: _planFuture,
     );
+
     if (!opened) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Exercise not wired yet')),

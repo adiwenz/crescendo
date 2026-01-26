@@ -27,9 +27,7 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_cache_service.dart';
-import '../../services/reference_audio_cache_service.dart';
-import '../../services/exercise_audio_asset_resolver.dart';
-import '../../services/exercise_audio_slicer.dart';
+import '../../services/reference_audio_generator.dart';
 import '../../services/audio_clock.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
@@ -84,12 +82,14 @@ class ExercisePlayerScreen extends StatelessWidget {
   final VocalExercise exercise;
   final PitchHighwayDifficulty? pitchDifficulty;
   final ExercisePlan? exercisePlan;
+  final Future<ExercisePlan>? exercisePlanFuture;
 
   const ExercisePlayerScreen({
     super.key,
     required this.exercise,
     this.pitchDifficulty,
     this.exercisePlan,
+    this.exercisePlanFuture,
   });
 
   @override
@@ -116,6 +116,7 @@ class ExercisePlayerScreen extends StatelessWidget {
                   showBackButton: true,
                   pitchDifficulty: resolved,
                   exercisePlan: exercisePlan,
+                  exercisePlanFuture: exercisePlanFuture,
                 );
               },
             )
@@ -124,6 +125,7 @@ class ExercisePlayerScreen extends StatelessWidget {
               showBackButton: true,
               pitchDifficulty: pitchDifficulty ?? PitchHighwayDifficulty.medium,
               exercisePlan: exercisePlan,
+              exercisePlanFuture: exercisePlanFuture,
             ),
       ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
       ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
@@ -158,6 +160,7 @@ class PitchHighwayPlayer extends StatefulWidget {
   final bool showBackButton;
   final PitchHighwayDifficulty pitchDifficulty;
   final ExercisePlan? exercisePlan;
+  final Future<ExercisePlan>? exercisePlanFuture;
 
   const PitchHighwayPlayer({
     super.key,
@@ -165,6 +168,7 @@ class PitchHighwayPlayer extends StatefulWidget {
     this.showBackButton = false,
     required this.pitchDifficulty,
     this.exercisePlan,
+    this.exercisePlanFuture,
   });
 
   @override
@@ -182,6 +186,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   final LastTakeStore _lastTakeStore = LastTakeStore();
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
+  Future<ExercisePlan>? _internalPlanFuture;
   final PerformanceClock _clock = PerformanceClock();
   late final AudioClock _audioClock;
   final PitchBallController _pitchBall = PitchBallController();
@@ -193,6 +198,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   // Use shared constant for lead-in time
   static const double _leadInSec = AudioConstants.leadInSec;
   Ticker? _ticker;
+  ExercisePlan? _resolvedPlan; // To track asynchronously loaded plan
 
   /// Single source of truth for exercise state
   StartPhase _phase = StartPhase.idle;
@@ -274,7 +280,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   double? _recordingStartHostTime;
 
   double get _durationSec {
-    return widget.exercisePlan?.durationSec ?? 0.0;
+    return (widget.exercisePlan?.durationSec) ?? (_resolvedPlan?.durationSec) ?? 0.0;
   }
 
   @override
@@ -445,6 +451,44 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         sirenPath = null;
       }
     } else {
+      // Background preparation if exercisePlan is missing
+      _internalPlanFuture = widget.exercisePlanFuture ??
+          ReferenceAudioGenerator.instance.prepare(
+            widget.exercise,
+            widget.pitchDifficulty,
+          );
+
+      try {
+        final plan = await _internalPlanFuture!;
+        if (!mounted) return;
+        setState(() {
+          _resolvedPlan = plan;
+        });
+        notes = plan.notes;
+
+        if (widget.exercise.id == 'sirens') {
+          final sirenResult =
+              TransposedExerciseBuilder.buildSirensWithVisualPath(
+            exercise: widget.exercise,
+            lowestMidi: lowestMidi,
+            highestMidi: highestMidi,
+            leadInSec: _leadInSec,
+            difficulty: widget.pitchDifficulty,
+          );
+          sirenPath = sirenResult.visualPath;
+        } else {
+          sirenPath = null;
+        }
+      } catch (e) {
+        debugPrint('[ExercisePlayerScreen] Error in background preparation: $e');
+        if (mounted) {
+          setState(() {
+            _rangeError = 'Failed to prepare exercise audio: $e';
+          });
+        }
+        return;
+      }
+    }
       // Validate range - do not proceed with defaults
       if (lowestMidi <= 0 || highestMidi <= 0 || lowestMidi >= highestMidi) {
         debugPrint(
@@ -545,7 +589,6 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           });
         }
       }
-    }
     } 
 
     if (mounted) {
@@ -1012,6 +1055,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
     trace.mark('after ensureVisualsStarted');
 
+    // CRITICAL: Apply audio session configuration before starting any engines
+    // This prevents DarwinAudioError (AVAudioSessionErrorCodeCannotInterruptOthers)
+    unawaited(AudioSessionService.applyExerciseSession(tag: 'onStartPressed'));
+
     // Start fast engines immediately (recorder, mic access) - does NOT change phase
     final currentRunId = _runId;
     unawaited(_startFastEngines(runId: currentRunId, t0: t0, trace: trace));
@@ -1334,7 +1381,17 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         return;
       }
 
-      final plan = widget.exercisePlan;
+      var plan = widget.exercisePlan;
+      if (plan == null && _internalPlanFuture != null) {
+        trace.mark('awaiting background preparation');
+        plan = await _internalPlanFuture;
+        if (mounted) {
+          setState(() {
+            _resolvedPlan = plan;
+          });
+        }
+      }
+
       if (plan == null) {
         throw Exception('Dynamic Reference Pipeline requires an ExercisePlan');
       }

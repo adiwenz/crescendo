@@ -2,21 +2,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 /// Minimal WAV writer for mono 16-bit PCM files.
+/// Optimized for high-performance rendering.
 class WavWriter {
+  /// Writes mono 16-bit PCM samples to a WAV file.
+  /// [samples] should be an Int16List for maximum performance.
   static Future<void> writePcm16Mono({
-    required List<int> samples,
+    required Int16List samples,
     required int sampleRate,
     required String path,
   }) async {
-    final clamped = List<int>.generate(samples.length, (i) {
-      final v = samples[i];
-      if (v > 32767) return 32767;
-      if (v < -32768) return -32768;
-      return v;
-    });
-
-    final dataSize = clamped.length * 2;
-    final bytes = ByteData(44 + dataSize);
+    final dataSize = samples.length * 2;
+    final buffer = Uint8List(44 + dataSize);
+    final bytes = ByteData.view(buffer.buffer);
     const channels = 1;
 
     // RIFF header.
@@ -37,15 +34,14 @@ class WavWriter {
     // data chunk.
     bytes.setUint32(36, 0x64617461, Endian.big); // "data"
     bytes.setUint32(40, dataSize, Endian.little);
-    var offset = 44;
-    for (final v in clamped) {
-      bytes.setInt16(offset, v, Endian.little);
-      offset += 2;
-    }
+    
+    // Copy samples directly to buffer (very fast)
+    final sampleView = Int16List.view(buffer.buffer, 44);
+    sampleView.setAll(0, samples);
 
     final file = File(path);
     await file.parent.create(recursive: true);
-    await file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
+    await file.writeAsBytes(buffer, flush: true);
   }
 
   /// Quick readback of key WAV metadata for debugging.

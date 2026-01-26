@@ -11,8 +11,8 @@ import '../models/reference_note.dart';
 import '../audio/wav_writer.dart';
 import '../utils/audio_constants.dart';
 
-/// Service for rendering MIDI notes to WAV and mixing with recorded audio
-/// This eliminates timer-based real-time MIDI scheduling during review playback
+/// Service for rendering MIDI notes to WAV and mixing with recorded audio.
+/// Optimized for the new 48kHz hardware-synchronized standard.
 class ReviewAudioBounceService {
   static const int defaultSampleRate = AudioConstants.audioSampleRate;
   static const double fadeInOutMs = 8.0; // 8ms fade in/out per note
@@ -24,16 +24,16 @@ class ReviewAudioBounceService {
   static Float32List _generateSineTable() {
     final table = Float32List(_sineTableSize);
     for (var i = 0; i < _sineTableSize; i++) {
-      table[i] = math.sin(2 * math.pi * i / _sineTableSize);
+      table[i] = math.sin(2 * math.pi * i / _sineTableSize).toDouble();
     }
     return table;
   }
   
   /// Optimized sine function using lookup table
+  @pragma('vm:prefer-inline')
   double _fastSin(double phase) {
-    // Normalize phase to [0, 1]
-    final normalized = phase - phase.floor();
-    final index = (normalized * _sineTableSize).floor() % _sineTableSize;
+    // phase is [0, 1]
+    final index = (phase * _sineTableSize).toInt() & (_sineTableSize - 1);
     return _sineTable[index];
   }
   
@@ -50,10 +50,9 @@ class ReviewAudioBounceService {
     final keyString = '$takeFileName|$exerciseId|$transposeSemitones|$soundFontName|$program|$sampleRate|${renderStartSec.toStringAsFixed(3)}';
     final bytes = utf8.encode(keyString);
     final digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 16); // Use first 16 chars of hash
+    return digest.toString().substring(0, 16);
   }
   
-  /// Get the cache directory for bounced audio
   static Future<Directory> getCacheDirectory() async {
     final cacheDir = await getApplicationCacheDirectory();
     final bounceDir = Directory(p.join(cacheDir.path, 'review_bounces'));
@@ -63,21 +62,17 @@ class ReviewAudioBounceService {
     return bounceDir;
   }
   
-  /// Get cached mixed WAV file path if it exists
   static Future<File?> getCachedMixedWav(String cacheKey) async {
     final cacheDir = await getCacheDirectory();
     final cachedFile = File(p.join(cacheDir.path, '${cacheKey}_mixed.wav'));
     if (await cachedFile.exists()) {
-      if (kDebugMode) {
-        debugPrint('[ReviewBounce] Found cached mixed WAV: ${cachedFile.path}');
-      }
       return cachedFile;
     }
     return null;
   }
   
-  /// Render reference notes to WAV file
-  /// Uses simple piano synth (same as AudioSynthService) for consistency
+  /// Render reference notes to WAV file.
+  /// Standardized at 48kHz for perfect hardware sync.
   Future<File> renderReferenceWav({
     required List<ReferenceNote> notes,
     required double durationSec,
@@ -88,27 +83,29 @@ class ReviewAudioBounceService {
   }) async {
     final startTime = DateTime.now();
     
-    if (kDebugMode) {
-      debugPrint('[ReviewBounce] Rendering reference WAV: ${notes.length} notes, duration=${durationSec.toStringAsFixed(2)}s, sampleRate=$sampleRate');
-    }
-    
-    // Generate samples using optimized synthesis
+    // 1. Generate float samples (synthesis)
     final samples = _generateSamples(
       notes: notes,
       sampleRate: sampleRate,
       durationSec: durationSec,
     );
     
-    // Convert to 16-bit PCM using efficient loop
+    // 2. Convert to 16-bit PCM in-place
     final pcmSamples = Int16List(samples.length);
     for (var i = 0; i < samples.length; i++) {
       final s = samples[i];
-      final clamped = s < -1.0 ? -1.0 : (s > 1.0 ? 1.0 : s);
-      pcmSamples[i] = (clamped * 32767.0).round();
+      // Inline clamping and scaling
+      if (s >= 1.0) {
+        pcmSamples[i] = 32767;
+      } else if (s <= -1.0) {
+        pcmSamples[i] = -32768;
+      } else {
+        pcmSamples[i] = (s * 32767.0).toInt();
+      }
     }
     
-    // Write WAV file
-    String finalPath;
+    // 3. Write WAV file
+    final String finalPath;
     if (savePath != null) {
       finalPath = savePath;
     } else {
@@ -117,23 +114,84 @@ class ReviewAudioBounceService {
     }
 
     await WavWriter.writePcm16Mono(
-      samples: pcmSamples.toList(), // Convert back to list for existing WavWriter
+      samples: pcmSamples,
       sampleRate: sampleRate,
       path: finalPath,
     );
     
     final elapsed = DateTime.now().difference(startTime);
-    if (kDebugMode) {
-      final firstNonZero = _findFirstNonZeroSample(pcmSamples);
-      final lastNonZero = _findLastNonZeroSample(pcmSamples);
-      debugPrint('[ReviewBounce] Reference WAV rendered in ${elapsed.inMilliseconds}ms: $finalPath');
-      debugPrint('[ReviewBounce] First non-zero sample: $firstNonZero, last non-zero: $lastNonZero');
-    }
+    debugPrint('[ReviewBounce] Reference WAV rendered in ${elapsed.inMilliseconds}ms at ${sampleRate}Hz');
     
     return File(finalPath);
   }
   
-  /// Mix two WAV files sample-by-sample
+  /// Optimized samples generation
+  Float32List _generateSamples({
+    required List<ReferenceNote> notes,
+    required int sampleRate,
+    required double durationSec,
+  }) {
+    final totalFrames = (durationSec * sampleRate).ceil();
+    final samples = Float32List(totalFrames);
+    final fadeFrames = ((fadeInOutMs / 1000.0) * sampleRate).toInt();
+    final invSampleRate = 1.0 / sampleRate;
+
+    for (final note in notes) {
+      final startFrame = (note.startSec * sampleRate).toInt();
+      final endFrame = math.min((note.endSec * sampleRate).toInt(), totalFrames);
+      final noteFrames = endFrame - startFrame;
+      
+      if (noteFrames <= 0 || startFrame >= totalFrames) continue;
+      
+      final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
+      
+      // Pre-calculate phase increments (normalized to [0, 1])
+      final p1Cr = hz * invSampleRate;
+      final p2Cr = p1Cr * 2.0;
+      final p3Cr = p1Cr * 3.0;
+      final p4Cr = p1Cr * 4.0;
+      
+      double p1 = 0.0, p2 = 0.0, p3 = 0.0, p4 = 0.0;
+      
+      for (var f = 0; f < noteFrames; f++) {
+        final frameIndex = startFrame + f;
+        if (frameIndex >= totalFrames) break;
+        
+        final noteTime = f * invSampleRate;
+        
+        // Sum harmonics using fast lookup
+        final fundamental = _fastSin(p1);
+        final harmonic2 = 0.6 * _fastSin(p2);
+        final harmonic3 = 0.3 * _fastSin(p3);
+        final harmonic4 = 0.15 * _fastSin(p4);
+        
+        // Advance phases
+        p1 = (p1 + p1Cr); p1 -= p1.floor();
+        p2 = (p2 + p2Cr); p2 -= p2.floor();
+        p3 = (p3 + p3Cr); p3 -= p3.floor();
+        p4 = (p4 + p4Cr); p4 -= p4.floor();
+        
+        // Envelope: 20ms attack, exponential decay
+        final attack = (noteTime * 50.0); // 1.0 / 0.02
+        final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
+        final val = 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
+        
+        // Apply fade in/out
+        double fade = 1.0;
+        if (f < fadeFrames) {
+          fade = f / fadeFrames;
+        } else if (f >= noteFrames - fadeFrames) {
+          fade = (noteFrames - f) / fadeFrames;
+        }
+        
+        samples[frameIndex] += (val * fade);
+      }
+    }
+    
+    return samples;
+  }
+
+  /// Mix two WAV files sample-by-sample (Optimized)
   Future<File> mixWavs({
     required File micWav,
     required File referenceWav,
@@ -145,17 +203,10 @@ class ReviewAudioBounceService {
   }) async {
     final startTime = DateTime.now();
     
-    if (kDebugMode) {
-      debugPrint('[ReviewBounce] Mixing WAVs: mic=${micWav.path}, ref=${referenceWav.path}');
-      debugPrint('[ReviewBounce] Offsets: mic=${micOffsetSec.toStringAsFixed(3)}s, ref=${refOffsetSec.toStringAsFixed(3)}s');
-      debugPrint('[ReviewBounce] Gains: mic=$micGain, ref=$refGain, duckMic=$duckMicWhileRef');
-    }
-    
     // Read both WAV files
     final micBytes = await micWav.readAsBytes();
     final refBytes = await referenceWav.readAsBytes();
     
-    // Parse WAV headers manually
     final micWavInfo = _parseWavHeader(micBytes);
     final refWavInfo = _parseWavHeader(refBytes);
     
@@ -163,58 +214,43 @@ class ReviewAudioBounceService {
       throw Exception('Failed to parse WAV headers');
     }
     
-    if (micWavInfo.sampleRate != refWavInfo.sampleRate) {
-      if (kDebugMode) {
-        debugPrint('[ReviewBounce] Resampling reference from ${refWavInfo.sampleRate} to ${micWavInfo.sampleRate}');
-      }
-    }
-    
     final sampleRate = micWavInfo.sampleRate;
     final micSamples = _readWavSamples(micBytes, micWavInfo);
     var refSamples = _readWavSamples(refBytes, refWavInfo);
     
-    // Resample reference if needed
     if (refWavInfo.sampleRate != sampleRate) {
       refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
-    }
-    
-    if (kDebugMode) {
-      final micMax = micSamples.isEmpty ? 0.0 : micSamples.map((s) => s.abs()).reduce(math.max);
-      final refMax = refSamples.isEmpty ? 0.0 : refSamples.map((s) => s.abs()).reduce(math.max);
-      debugPrint('[ReviewBounce] Signal Check: micMax=${micMax.toStringAsFixed(3)}, refMax=${refMax.toStringAsFixed(3)}');
     }
     
     final micOffsetSamples = (micOffsetSec * sampleRate).round();
     final refOffsetSamples = (refOffsetSec * sampleRate).round();
     
-    // Determine output length (use the longer of the two, accounting for offsets)
     final outputLength = math.max(micSamples.length + micOffsetSamples, refSamples.length + refOffsetSamples);
-    final mixedSamples = Float32List(outputLength);
+    final pcmSamples = Int16List(outputLength);
     
-    // Mix sample-by-sample
+    // Mix and convert to Int16 in one pass
     for (var i = 0; i < outputLength; i++) {
-      final micSampleIdx = i - micOffsetSamples;
-      final refSampleIdx = i - refOffsetSamples;
+      final micIdx = i - micOffsetSamples;
+      final refIdx = i - refOffsetSamples;
       
-      var micSample = (micSampleIdx >= 0 && micSampleIdx < micSamples.length) ? micSamples[micSampleIdx] * micGain : 0.0;
-      var refSample = (refSampleIdx >= 0 && refSampleIdx < refSamples.length) ? refSamples[refSampleIdx] * refGain : 0.0;
+      var micVal = (micIdx >= 0 && micIdx < micSamples.length) ? micSamples[micIdx] * micGain : 0.0;
+      final refVal = (refIdx >= 0 && refIdx < refSamples.length) ? refSamples[refIdx] * refGain : 0.0;
       
-      // Duck mic while reference is playing (if enabled)
-      if (duckMicWhileRef && refSample.abs() > 0.001) {
-        micSample *= 0.3; // Reduce mic by 70% when reference is playing
+      if (duckMicWhileRef && refVal.abs() > 0.001) {
+        micVal *= 0.3;
       }
       
-      // Mix and clamp
-      final mixed = (micSample + refSample).clamp(-1.0, 1.0);
-      mixedSamples[i] = mixed;
+      final mixed = (micVal + refVal);
+      // Inline clamping and scaling
+      if (mixed >= 1.0) {
+        pcmSamples[i] = 32767;
+      } else if (mixed <= -1.0) {
+        pcmSamples[i] = -32768;
+      } else {
+        pcmSamples[i] = (mixed * 32767.0).toInt();
+      }
     }
     
-    // Convert to 16-bit PCM
-    final pcmSamples = mixedSamples.map((s) {
-      return (s * 32767.0).round().clamp(-32768, 32767);
-    }).toList();
-    
-    // Write mixed WAV
     final cacheDir = await getCacheDirectory();
     final mixedFile = File(p.join(cacheDir.path, 'mixed_${DateTime.now().millisecondsSinceEpoch}.wav'));
     await WavWriter.writePcm16Mono(
@@ -223,81 +259,19 @@ class ReviewAudioBounceService {
       path: mixedFile.path,
     );
     
-    final elapsed = DateTime.now().difference(startTime);
-    if (kDebugMode) {
-      final firstNonZero = _findFirstNonZeroSample(pcmSamples);
-      final lastNonZero = _findLastNonZeroSample(pcmSamples);
-      debugPrint('[ReviewBounce] Mixed WAV created in ${elapsed.inMilliseconds}ms: ${mixedFile.path}');
-      debugPrint('[ReviewBounce] Mixed WAV: first non-zero=$firstNonZero, last non-zero=$lastNonZero, length=${pcmSamples.length} samples');
-    }
-    
+    debugPrint('[ReviewBounce] Mixed WAV created in ${DateTime.now().difference(startTime).inMilliseconds}ms');
     return mixedFile;
   }
-  
-  /// Generate audio samples from reference notes
-  /// Optimized using typed data and sine lookup
-  Float32List _generateSamples({
-    required List<ReferenceNote> notes,
-    required int sampleRate,
-    required double durationSec,
-  }) {
-    final totalFrames = (durationSec * sampleRate).ceil();
-    final samples = Float32List(totalFrames);
-    final fadeFrames = ((fadeInOutMs / 1000.0) * sampleRate).round();
-    
-    for (final note in notes) {
-      final startFrame = (note.startSec * sampleRate).round();
-      final endFrame = math.min((note.endSec * sampleRate).round(), totalFrames);
-      final noteFrames = endFrame - startFrame;
-      
-      if (noteFrames <= 0 || startFrame < 0 || startFrame >= totalFrames) continue;
-      
-      final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
-      
-      for (var f = 0; f < noteFrames; f++) {
-        final frameIndex = startFrame + f;
-        if (frameIndex >= totalFrames) break;
-        
-        final noteTime = f / sampleRate;
-        
-        // Sum harmonics using fast lookup
-        final fundamental = _fastSin(noteTime * hz);
-        final harmonic2 = 0.6 * _fastSin(noteTime * hz * 2);
-        final harmonic3 = 0.3 * _fastSin(noteTime * hz * 3);
-        final harmonic4 = 0.15 * _fastSin(noteTime * hz * 4);
-        
-        final attack = (noteTime / 0.02);
-        final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
-        final sample = 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
-        
-        // Apply fade in/out
-        double fade = 1.0;
-        if (f < fadeFrames) {
-          fade = f / fadeFrames;
-        } else if (f >= noteFrames - fadeFrames) {
-          fade = (noteFrames - f) / fadeFrames;
-        }
-        
-        samples[frameIndex] += (sample * fade);
-      }
-    }
-    
-    return samples;
-  }
 
-  /// Linear interpolation resampler
   Float32List _resample(Float32List input, int fromRate, int toRate) {
     if (fromRate == toRate) return input;
-    
     final ratio = toRate / fromRate;
     final outputLength = (input.length * ratio).round();
     final output = Float32List(outputLength);
-    
     for (var i = 0; i < outputLength; i++) {
       final inputPos = i / ratio;
       final idx = inputPos.floor();
       final frac = inputPos - idx;
-      
       if (idx >= input.length - 1) {
         output[i] = idx < input.length ? input[idx] : 0.0;
       } else {
@@ -306,152 +280,57 @@ class ReviewAudioBounceService {
         output[i] = s1 + (s2 - s1) * frac;
       }
     }
-    
     return output;
   }
   
-  /// Piano sample generator (same as AudioSynthService)
-  double _pianoSample(double hz, double noteTime) {
-    final attack = (noteTime / 0.02).clamp(0.0, 1.0);
-    final decay = math.exp(-3.0 * noteTime);
-    final env = attack * decay;
-    final fundamental = math.sin(2 * math.pi * hz * noteTime);
-    final harmonic2 = 0.6 * math.sin(2 * math.pi * hz * 2 * noteTime);
-    final harmonic3 = 0.3 * math.sin(2 * math.pi * hz * 3 * noteTime);
-    final harmonic4 = 0.15 * math.sin(2 * math.pi * hz * 4 * noteTime);
-    return 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
-  }
-  
-  /// Parse WAV file header
   _WavInfo? _parseWavHeader(Uint8List bytes) {
     if (bytes.length < 44) return null;
+    if (String.fromCharCodes(bytes.sublist(0, 4)) != 'RIFF') return null;
+    if (String.fromCharCodes(bytes.sublist(8, 12)) != 'WAVE') return null;
 
-    // Check RIFF header
-    final riff = String.fromCharCodes(bytes.sublist(0, 4));
-    if (riff != 'RIFF') return null;
-
-    // Check WAVE format
-    final wave = String.fromCharCodes(bytes.sublist(8, 12));
-    if (wave != 'WAVE') return null;
-
-    // Find fmt chunk
     int offset = 12;
-    int? dataOffset;
-    int? dataSize;
-    int? sampleRate;
-    int? channels;
-    int? bitsPerSample;
+    int? dataOffset, dataSize, sampleRate, channels, bitsPerSample;
 
     while (offset < bytes.length - 8) {
       final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
       final chunkSize = _readUint32(bytes, offset + 4);
 
       if (chunkId == 'fmt ') {
-        // Parse fmt chunk
-        final audioFormat = _readUint16(bytes, offset + 8);
-        if (audioFormat != 1) {
-          if (kDebugMode) {
-            debugPrint('[ReviewBounce] Unsupported audio format: $audioFormat (expected 1 = PCM)');
-          }
-          return null;
-        }
+        if (_readUint16(bytes, offset + 8) != 1) return null;
         channels = _readUint16(bytes, offset + 10);
         sampleRate = _readUint32(bytes, offset + 12);
-        _readUint32(bytes, offset + 16); // byteRate (unused)
-        _readUint16(bytes, offset + 20); // blockAlign (unused)
         bitsPerSample = _readUint16(bytes, offset + 22);
       } else if (chunkId == 'data') {
         dataOffset = offset + 8;
         dataSize = chunkSize;
         break;
       }
-
       offset += 8 + chunkSize;
-      // Align to even boundary
       if (chunkSize % 2 == 1) offset++;
     }
 
-    if (dataOffset == null || dataSize == null || sampleRate == null || 
-        channels == null || bitsPerSample == null) {
-      return null;
-    }
-
-    return _WavInfo(
-      sampleRate: sampleRate,
-      channels: channels,
-      bitsPerSample: bitsPerSample,
-      dataOffset: dataOffset,
-      dataSize: dataSize,
-    );
+    if (dataOffset == null || dataSize == null || sampleRate == null || channels == null || bitsPerSample == null) return null;
+    return _WavInfo(sampleRate: sampleRate, channels: channels, bitsPerSample: bitsPerSample, dataOffset: dataOffset, dataSize: dataSize);
   }
   
-  static int _readUint16(Uint8List bytes, int offset) {
-    return bytes[offset] | (bytes[offset + 1] << 8);
-  }
-
-  static int _readUint32(Uint8List bytes, int offset) {
-    return bytes[offset] |
-        (bytes[offset + 1] << 8) |
-        (bytes[offset + 2] << 16) |
-        (bytes[offset + 3] << 24);
-  }
+  static int _readUint16(Uint8List bytes, int offset) => bytes[offset] | (bytes[offset + 1] << 8);
+  static int _readUint32(Uint8List bytes, int offset) => bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
   
-  /// Read WAV samples as Float32List
   Float32List _readWavSamples(Uint8List bytes, _WavInfo info) {
-    final dataStart = info.dataOffset;
-    final dataEnd = dataStart + info.dataSize;
-    final dataBytes = bytes.sublist(dataStart, math.min(dataEnd, bytes.length));
-    
+    final dataBytes = bytes.sublist(info.dataOffset, math.min(info.dataOffset + info.dataSize, bytes.length));
     if (info.bitsPerSample == 16) {
       final int16Samples = Int16List.view(dataBytes.buffer, dataBytes.offsetInBytes, dataBytes.length ~/ 2);
-      return Float32List(int16Samples.length).also((list) {
-        for (var i = 0; i < int16Samples.length; i++) {
-          list[i] = int16Samples[i] / 32768.0;
-        }
-      });
-    } else {
-      throw Exception('Unsupported bits per sample: ${info.bitsPerSample}');
+      final list = Float32List(int16Samples.length);
+      for (var i = 0; i < int16Samples.length; i++) {
+        list[i] = int16Samples[i] / 32768.0;
+      }
+      return list;
     }
-  }
-  
-  /// Find first non-zero sample index
-  int _findFirstNonZeroSample(List<int> samples) {
-    for (var i = 0; i < samples.length; i++) {
-      if (samples[i].abs() > 10) return i; // Threshold to ignore noise
-    }
-    return -1;
-  }
-  
-  /// Find last non-zero sample index
-  int _findLastNonZeroSample(List<int> samples) {
-    for (var i = samples.length - 1; i >= 0; i--) {
-      if (samples[i].abs() > 10) return i; // Threshold to ignore noise
-    }
-    return -1;
+    throw Exception('Unsupported bits: ${info.bitsPerSample}');
   }
 }
 
-/// WAV file info structure
 class _WavInfo {
-  final int sampleRate;
-  final int channels;
-  final int bitsPerSample;
-  final int dataOffset;
-  final int dataSize;
-  
-  _WavInfo({
-    required this.sampleRate,
-    required this.channels,
-    required this.bitsPerSample,
-    required this.dataOffset,
-    required this.dataSize,
-  });
-}
-
-/// Extension to add `also` method for chaining
-extension Also<T> on T {
-  T also(void Function(T) block) {
-    block(this);
-    return this;
-  }
+  final int sampleRate, channels, bitsPerSample, dataOffset, dataSize;
+  _WavInfo({required this.sampleRate, required this.channels, required this.bitsPerSample, required this.dataOffset, required this.dataSize});
 }

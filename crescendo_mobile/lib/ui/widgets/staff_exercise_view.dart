@@ -3,12 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../models/exercise_note.dart';
+import '../../models/reference_note.dart';
 
 enum NoteStatus { pending, good, near, off }
 
 class StaffExerciseView extends StatelessWidget {
-  final List<ExerciseNote> notes;
+  final List<ReferenceNote> notes;
   final ValueListenable<int> currentIndex;
   final ValueListenable<double?> pitchMidi;
   final List<NoteStatus> statuses;
@@ -44,7 +44,7 @@ class StaffExerciseView extends StatelessWidget {
 }
 
 class _StaffPainter extends CustomPainter {
-  final List<ExerciseNote> notes;
+  final List<ReferenceNote> notes;
   final ValueListenable<int> currentIndex;
   final ValueListenable<double?> pitchMidi;
   final List<NoteStatus> statuses;

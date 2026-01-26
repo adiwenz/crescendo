@@ -18,4 +18,6 @@ class ReferenceNote {
   });
 
   bool get isGlide => isGlideStart || isGlideEnd;
+  double get durationSec => endSec - startSec;
+  String? get solfege => lyric;
 }

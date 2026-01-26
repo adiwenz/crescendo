@@ -1,6 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exercise_cache_service.dart';
-import 'reference_audio_cache_service.dart';
 
 class RangeStore {
   static const _lowestKey = 'range_lowest_midi';
@@ -20,14 +19,6 @@ class RangeStore {
     await ExerciseCacheService.instance.generateCache(
       lowestMidi: lowestMidi,
       highestMidi: highestMidi,
-    );
-    
-    // Generate reference audio cache
-    await ReferenceAudioCacheService.instance.generateCacheForRange(
-      lowestMidi: lowestMidi,
-      highestMidi: highestMidi,
-      onProgress: onProgress,
-      shouldCancel: shouldCancel,
     );
   }
 

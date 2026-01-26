@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -26,6 +26,9 @@ class ReferenceAudioGenerator {
   final _bounceService = ReviewAudioBounceService();
   final _vocalRangeService = VocalRangeService();
 
+  /// De-duplication map to avoid redundant background tasks.
+  final Map<String, Future<ExercisePlan>> _activeRequests = {};
+
   /// Directory where generated reference WAVs are stored.
   Future<Directory> get _cacheDir async {
     final base = await getApplicationCacheDirectory();
@@ -50,70 +53,142 @@ class ReferenceAudioGenerator {
     final rangeHash = '${low}-${high}';
     final patternHash = '${exercise.id}_${difficulty.name}';
     // Adding version prefix to invalidate old glide-based caches
-    const version = 'v2';
+    const version = 'v3'; // Incrementing version for sidecar logic
     final cacheKey = '${version}_${exercise.id}_${rangeHash}_${patternHash}';
     
+    // Check de-duplication map first
+    if (_activeRequests.containsKey(cacheKey)) {
+      debugPrint('[RefGen] Reusing in-flight request for $cacheKey');
+      return _activeRequests[cacheKey]!;
+    }
+
+    // Fast-path: check cache
+    final cached = await tryGetCached(exercise, difficulty);
+    if (cached != null) {
+      debugPrint('[RefGen] Cache HIT for $cacheKey');
+      return cached;
+    }
+
     final dir = await _cacheDir;
     final wavPath = p.join(dir.path, '$cacheKey.wav');
-    final wavFile = File(wavPath);
+    final metaPath = p.join(dir.path, '$cacheKey.json');
 
-    // Cache HIT - REMOVED per user request to always generate on the fly
-    // if (await wavFile.exists()) { ... }
-
-    // Always Perform on-the-fly synthesis
-    debugPrint('[RefGen] Generating reference on the fly for $cacheKey...');
-    
-    final startTime = DateTime.now();
-    
-    // Build metadata
-    final plan = await ExercisePlanBuilder.buildMetadata(
+    // Trigger background generation
+    final future = _generateInternal(
+      cacheKey: cacheKey,
       exercise: exercise,
-      lowestMidi: low,
-      highestMidi: high,
       difficulty: difficulty,
-      wavFilePath: wavPath,
+      low: low,
+      high: high,
+      wavPath: wavPath,
+      metaPath: metaPath,
+      rangeHash: rangeHash,
+      patternHash: patternHash,
     );
 
-    // Synthesize WAV in background
-    // Note: ReviewAudioBounceService is already highly optimized with Sine Lookup Tables.
-    // Calling it here will generate the file at 48kHz.
-    await _bounceService.renderReferenceWav(
-      notes: plan.notes,
-      durationSec: plan.durationSec,
-      sampleRate: AudioConstants.audioSampleRate,
-      soundFontAssetPath: 'assets/soundfonts/default.sf2',
-      program: 0,
-      savePath: wavPath, // Target path
-    );
+    _activeRequests[cacheKey] = future;
+    
+    try {
+      return await future;
+    } finally {
+      _activeRequests.remove(cacheKey);
+    }
+  }
+
+  Future<ExercisePlan> _generateInternal({
+    required String cacheKey,
+    required VocalExercise exercise,
+    required PitchHighwayDifficulty difficulty,
+    required int low,
+    required int high,
+    required String wavPath,
+    required String metaPath,
+    required String rangeHash,
+    required String patternHash,
+  }) async {
+    debugPrint('[RefGen] Cache MISS - Requesting background generation for $cacheKey...');
+    final startTime = DateTime.now();
+
+    // Move heavy work to Isolate
+    final plan = await compute((_) async {
+      // 1. Build metadata (transposition logic)
+      final internalPlan = await ExercisePlanBuilder.buildMetadata(
+        exercise: exercise,
+        lowestMidi: low,
+        highestMidi: high,
+        difficulty: difficulty,
+        wavFilePath: wavPath,
+      );
+
+      // 2. Synthesis (PCM generation and WAV writing)
+      final tempWavPath = '${wavPath}.tmp';
+      final bounceService = ReviewAudioBounceService();
+      await bounceService.renderReferenceWav(
+        notes: internalPlan.notes,
+        durationSec: internalPlan.durationSec,
+        sampleRate: AudioConstants.audioSampleRate,
+        soundFontAssetPath: 'assets/soundfonts/default.sf2',
+        program: 0,
+        savePath: tempWavPath,
+      );
+
+      // Atomic rename
+      await File(tempWavPath).rename(wavPath);
+
+      // 3. Save sidecar metadata
+      final meta = {
+        'exerciseId': exercise.id,
+        'rangeHash': rangeHash,
+        'patternHash': patternHash,
+        'durationSec': internalPlan.durationSec,
+        'generatedAt': DateTime.now().toIso8601String(),
+      };
+      await File(metaPath).writeAsString(jsonEncode(meta));
+      
+      return internalPlan;
+    }, null);
 
     final elapsed = DateTime.now().difference(startTime);
-    debugPrint('[RefGen] Synthesized $cacheKey in ${elapsed.inMilliseconds}ms');
+    debugPrint('[RefGen] Background task for $cacheKey finished in ${elapsed.inMilliseconds}ms');
 
     return plan;
   }
 
-  /// Shim for legacy code (ReferenceAudioCacheService)
-  Future<ReferenceAudioResult> generateAudio({
-    required List<ReferenceNote> notes,
-    required int sampleRate,
-    required String outputPath,
-  }) async {
-    final lastNoteEnd = notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
-    final durationSec = lastNoteEnd + 1.0;
+  /// Fast-path check for cached audio. Returns null if not cached or invalid.
+  Future<ExercisePlan?> tryGetCached(
+    VocalExercise exercise,
+    PitchHighwayDifficulty difficulty,
+  ) async {
+    final (low, high) = await _vocalRangeService.getRange();
+    final rangeHash = '${low}-${high}';
+    final patternHash = '${exercise.id}_${difficulty.name}';
+    const version = 'v3';
+    final cacheKey = '${version}_${exercise.id}_${rangeHash}_${patternHash}';
 
-    final file = await _bounceService.renderReferenceWav(
-      notes: notes,
-      durationSec: durationSec,
-      sampleRate: sampleRate,
-      soundFontAssetPath: 'assets/soundfonts/default.sf2',
-      program: 0,
-      savePath: outputPath,
-    );
+    final dir = await _cacheDir;
+    final wavPath = p.join(dir.path, '$cacheKey.wav');
+    final metaPath = p.join(dir.path, '$cacheKey.json');
+    final wavFile = File(wavPath);
+    final metaFile = File(metaPath);
 
-    return ReferenceAudioResult(
-      file: file,
-      durationMs: (durationSec * 1000).round(),
-    );
+    if (await wavFile.exists() && await metaFile.exists()) {
+      try {
+        final metaJson = await metaFile.readAsString();
+        final meta = jsonDecode(metaJson);
+        if (meta['rangeHash'] == rangeHash && meta['patternHash'] == patternHash) {
+          return ExercisePlanBuilder.buildMetadata(
+            exercise: exercise,
+            lowestMidi: low,
+            highestMidi: high,
+            difficulty: difficulty,
+            wavFilePath: wavPath,
+          );
+        }
+      } catch (e) {
+        debugPrint('[RefGen] tryGetCached validation failed: $e');
+      }
+    }
+    return null;
   }
 
   /// Clears the entire reference audio cache.
@@ -123,11 +198,4 @@ class ReferenceAudioGenerator {
       await dir.delete(recursive: true);
     }
   }
-}
-
-/// Shim result for legacy code
-class ReferenceAudioResult {
-  final File file;
-  final int durationMs;
-  ReferenceAudioResult({required this.file, required this.durationMs});
 }

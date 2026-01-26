@@ -47,6 +47,7 @@ class ExerciseRouteRegistry {
     String exerciseId, {
     int? difficultyLevel,
     ExercisePlan? exercisePlan,
+    Future<ExercisePlan>? exercisePlanFuture,
   }) {
     final entry = entryFor(exerciseId);
     if (entry == null) return false;
@@ -66,6 +67,7 @@ class ExerciseRouteRegistry {
             exercise: exercise,
             pitchDifficulty: pitchDifficulty,
             exercisePlan: exercisePlan,
+            exercisePlanFuture: exercisePlanFuture,
           ),
         ),
       );

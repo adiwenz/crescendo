@@ -5,6 +5,7 @@ import '../models/vocal_exercise.dart';
 import '../models/pitch_highway_difficulty.dart';
 import 'transposed_exercise_builder.dart';
 import '../utils/audio_constants.dart';
+import '../utils/pitch_math.dart';
 
 /// Orchestrator for building a complete [ExercisePlan] for a given [VocalExercise].
 class ExercisePlanBuilder {
@@ -36,8 +37,13 @@ class ExercisePlanBuilder {
     final rangeHash = _generateRangeHash(lowestMidi, highestMidi);
     final patternHash = _generatePatternHash(exercise, difficulty);
 
+    final firstMidi = notes.isEmpty ? 60 : notes.first.midi.round();
+    final keyLabel = PitchMath.midiToName(firstMidi);
+
     return ExercisePlan(
-      exerciseId: exercise.id,
+      id: exercise.id,
+      title: exercise.name,
+      keyLabel: keyLabel,
       wavFilePath: wavFilePath,
       notes: notes,
       sampleRate: AudioConstants.audioSampleRate,

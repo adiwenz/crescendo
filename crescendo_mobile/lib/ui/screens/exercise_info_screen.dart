@@ -45,6 +45,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   double? _lastScore;
   ExerciseAttempt? _latestAttempt;
   bool _preparing = false;
+  Future<ExercisePlan>? _planFuture;
 
   @override
   void initState() {
@@ -52,6 +53,13 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     _loadLastScore();
     _loadLatestAttempt();
     _loadProgress();
+    
+    // Requirements: Defer heavy generation until after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _triggerPreparation();
+      }
+    });
   }
 
   @override
@@ -112,6 +120,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
+    // Removed duplicate _triggerPreparation() as it's handled by postFrame and manual updates
     if (levelUp && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
@@ -119,6 +128,40 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       Future.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
         setState(() => _highlightedLevel = null);
+      });
+    }
+  }
+
+  void _triggerPreparation() async {
+    final exercise = ExerciseRepository().getExercise(widget.exerciseId);
+    final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    
+    // Fast-path: Check cache first
+    final cached = await ReferenceAudioGenerator.instance.tryGetCached(exercise, difficulty);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _planFuture = Future.value(cached);
+          _preparing = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _preparing = true;
+        _planFuture = ReferenceAudioGenerator.instance.prepare(exercise, difficulty).then((plan) {
+          if (mounted) {
+            setState(() => _preparing = false);
+          }
+          return plan;
+        }).catchError((e) {
+          if (mounted) {
+            setState(() => _preparing = false);
+          }
+          throw e;
+        });
       });
     }
   }
@@ -355,26 +398,12 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
     
     if (exercise.type == ExerciseType.pitchHighway) {
-      // 1. Prepare ExercisePlan (Transposition + WAV Synthesis)
-      // This fulfills the request to generate transposed WAVs on the preview screen
-      ExercisePlan? plan;
-      try {
-        plan = await ReferenceAudioGenerator.instance.prepare(
-          exercise,
-          selectedDifficulty,
-        );
-      } catch (e) {
-        debugPrint('[StartExercise] Error preparing plan: $e');
-        // Fallback to navigating without plan (player will handle its own loading)
-      }
-
-      // 2. Save level selection
+      // Navigate immediately
       unawaited(_levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
         level: _selectedLevel,
       ));
       
-      // 3. Navigate with Prepared Plan
       if (mounted) {
         await Navigator.push(
           context,
@@ -382,7 +411,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
             builder: (_) => ExercisePlayerScreen(
               exercise: exercise,
               pitchDifficulty: selectedDifficulty,
-              exercisePlan: plan,
+              exercisePlanFuture: _planFuture,
             ),
           ),
         );

@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../models/exercise_note.dart';
 import '../../models/exercise_plan.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
@@ -58,6 +57,17 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   @override
   void initState() {
     super.initState();
+    final notes = <ReferenceNote>[];
+    double cursor = 0;
+    for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) {
+      notes.add(ReferenceNote(
+        startSec: cursor,
+        endSec: cursor + 0.5,
+        midi: midi,
+      ));
+      cursor += 0.5 + 0.1; // duration + gap
+    }
+
     plan = ExercisePlan(
       id: 'c_major_scale',
       title: 'Scale',
@@ -65,9 +75,13 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
       bpm: 120,
       gapSec: 0.1,
       scoreOffsetMs: 80,
-      notes: [
-        for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) ExerciseNote(midi: midi, durationSec: 0.5),
-      ],
+      notes: notes,
+      wavFilePath: '',
+      sampleRate: 48000,
+      durationMs: (cursor * 1000).round(),
+      rangeHash: 'mock',
+      patternHash: 'mock',
+      leadInSec: 0.0,
     );
     _offsetMs = plan.scoreOffsetMs;
     _synth = AudioSynthService();
