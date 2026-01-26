@@ -311,7 +311,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
 
   Future<void> _startExercise() async {
     await _liveSub?.cancel();
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);
       if (midi == null) return;

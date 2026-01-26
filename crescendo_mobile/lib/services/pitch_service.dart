@@ -34,10 +34,12 @@ class PitchService {
   DateTime? _watchdogDisabledUntil;
   DateTime? _lastFrameTime;
   Timer? _watchdogTimer;
+  final String _owner;
 
-  PitchService({RecordingService? recording})
-      : _recording = recording ?? RecordingService(
-          owner: 'piano',
+  PitchService({RecordingService? recording, String owner = 'piano'})
+      : _owner = owner,
+        _recording = recording ?? RecordingService(
+          owner: owner,
           sampleRate: AudioConstants.audioSampleRate,
           bufferSize: 1024, // Smaller buffer for lower latency (~21ms at 48kHz)
         );
@@ -64,45 +66,12 @@ class PitchService {
         debugPrint('[PitchService] Error stopping existing recording: $e');
       }
 
-      await _recording.start();
+      await _recording.start(owner: _owner, mode: RecordingMode.live);
       _running = true;
       _lastFrameTime = DateTime.now();
       
       _sub = _recording.liveStream.listen(
-        (frame) {
-          _lastFrameTime = DateTime.now();
-          final hz = frame.hz;
-          final hasPitch = hz != null && hz > 0 && hz.isFinite;
-          
-          // Compute confidence based on pitch validity and voiced probability
-          // Use voicedProb if available, otherwise use heuristic
-          double confidence = 0.0;
-          final hzValue = hasPitch ? hz : null;
-          if (hzValue != null) {
-            // If voicedProb is available, use it; otherwise use a heuristic
-            if (frame.voicedProb != null && frame.voicedProb! > 0) {
-              confidence = frame.voicedProb!.clamp(0.0, 1.0);
-            } else {
-              // Heuristic: assume good confidence if pitch is detected and in reasonable range
-              // Typical singing range: 80-1000 Hz
-              if (hzValue >= 80 && hzValue <= 1000) {
-                confidence = 0.85; // Good confidence for typical singing range
-              } else if (hzValue >= 50 && hzValue < 80) {
-                confidence = 0.70; // Lower confidence for very low notes
-              } else if (hzValue > 1000 && hzValue <= 2000) {
-                confidence = 0.75; // Lower confidence for very high notes
-              } else {
-                confidence = 0.50; // Low confidence for out-of-range
-              }
-            }
-          }
-          
-          _controller.add(PitchFrame(
-            frequencyHz: hzValue ?? 0,
-            confidence: confidence,
-            ts: DateTime.now(),
-          ));
-        },
+        _onRecordingFrame,
         onError: (error) {
           debugPrint('[PitchService] Stream error: $error');
           // Auto-restart on error
@@ -280,42 +249,12 @@ class PitchService {
       return;
     }
     
-    // Restart recording and subscription
     try {
-      await _recording.start();
+      await _recording.start(owner: _owner, mode: RecordingMode.live);
       _lastFrameTime = DateTime.now();
       
       _sub = _recording.liveStream.listen(
-        (frame) {
-          _lastFrameTime = DateTime.now();
-          final hz = frame.hz;
-          final hasPitch = hz != null && hz > 0 && hz.isFinite;
-          
-          // Compute confidence based on pitch validity and voiced probability
-          double confidence = 0.0;
-          final hzValue = hasPitch ? hz : null;
-          if (hzValue != null) {
-            if (frame.voicedProb != null && frame.voicedProb! > 0) {
-              confidence = frame.voicedProb!.clamp(0.0, 1.0);
-            } else {
-              if (hzValue >= 80 && hzValue <= 1000) {
-                confidence = 0.85;
-              } else if (hzValue >= 50 && hzValue < 80) {
-                confidence = 0.70;
-              } else if (hzValue > 1000 && hzValue <= 2000) {
-                confidence = 0.75;
-              } else {
-                confidence = 0.50;
-              }
-            }
-          }
-          
-          _controller.add(PitchFrame(
-            frequencyHz: hzValue ?? 0,
-            confidence: confidence,
-            ts: DateTime.now(),
-          ));
-        },
+        _onRecordingFrame,
         onError: (error) {
           debugPrint('[PitchService] Stream error: $error');
           _handleStreamError();
@@ -334,6 +273,9 @@ class PitchService {
     if (_disposed) return;
     debugPrint('[PitchService] Disposing...');
     _disposed = true;
+    if (_instance == this) {
+      _instance = null;
+    }
     await stop();
     await _controller.close();
     try {
@@ -342,5 +284,35 @@ class PitchService {
       debugPrint('[PitchService] Error disposing recording: $e');
     }
     debugPrint('[PitchService] Disposed');
+  }
+
+  void _onRecordingFrame(recording.PitchFrame frame) {
+    _lastFrameTime = DateTime.now();
+    final hz = frame.hz;
+    final hasPitch = hz != null && hz > 0 && hz.isFinite;
+
+    double confidence = 0.0;
+    final hzValue = hasPitch ? hz : null;
+    if (hzValue != null) {
+      if (frame.voicedProb != null && frame.voicedProb! > 0) {
+        confidence = frame.voicedProb!.clamp(0.0, 1.0);
+      } else {
+        if (hzValue >= 80 && hzValue <= 1000) {
+          confidence = 0.85;
+        } else if (hzValue >= 50 && hzValue < 80) {
+          confidence = 0.70;
+        } else if (hzValue > 1000 && hzValue <= 2000) {
+          confidence = 0.75;
+        } else {
+          confidence = 0.50;
+        }
+      }
+    }
+
+    _controller.add(PitchFrame(
+      frequencyHz: hzValue ?? 0,
+      confidence: confidence,
+      ts: DateTime.now(),
+    ));
   }
 }

@@ -96,19 +96,18 @@ class _RootScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
-    final tabs = [
-      const HomeScreen(),
-      const ExploreScreen(),
-      const PianoPitchScreen(),
-      const ProgressHomeScreen(),
-      const ProfileScreen(),
-    ];
     return Scaffold(
       body: AppBackground(
         child: IndexedStack(
-        index: currentIndex,
-        children: tabs,
-      ),
+          index: currentIndex,
+          children: [
+            const HomeScreen(),
+            const ExploreScreen(),
+            currentIndex == 2 ? const PianoPitchScreen() : const SizedBox.shrink(),
+            const ProgressHomeScreen(),
+            const ProfileScreen(),
+          ],
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -142,13 +141,13 @@ class _RootScaffold extends StatelessWidget {
           unselectedLabelStyle: TextStyle(
             fontFamily: manropeFontFamily,
           ),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
-          BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
-          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
+            BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
+            BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          ],
         ),
       ),
     );

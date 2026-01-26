@@ -51,6 +51,7 @@ import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/audio_session_service.dart';
 import '../../services/pattern_spec_loader.dart';
 import '../../services/pattern_visual_note_builder.dart';
+import '../../services/exercise_audio_controller.dart';
 import '../../models/pattern_spec.dart';
 
 /// Buffer size for recording service.
@@ -199,6 +200,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   static const double _leadInSec = AudioConstants.leadInSec;
   Ticker? _ticker;
   ExercisePlan? _resolvedPlan; // To track asynchronously loaded plan
+  late ExerciseAudioController _audioController;
+  bool _isExiting = false;
 
   /// Single source of truth for exercise state
   StartPhase _phase = StartPhase.idle;
@@ -352,6 +355,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? AudioConstants.iosSyncOffsetMs : AudioConstants.manualSyncOffsetMs);
     _audioClock = AudioClock(_synth.player);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
+    
+    _audioController = ExerciseAudioController(
+      synth: _synth,
+      recording: _recording,
+      clock: _clock,
+    );
 
     // Initialize MIDI synth (load SoundFont once)
     // Engine initializes automatically on first use
@@ -376,6 +385,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       // Initialize recording service (but don't start yet - will start in _start())
       if (_useMic) {
         _recording = RecordingService(owner: 'exercise', bufferSize: _kBufferSize);
+        // Refresh controller with the new recording service
+        _audioController = ExerciseAudioController(
+          synth: _synth,
+          recording: _recording,
+          clock: _clock,
+        );
         debugPrint(
             '[ExercisePlayerScreen] RecordingService created (not started yet)');
       }
@@ -686,10 +701,10 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     //   SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
     // }
 
-    // Stop ticker and clock first
+    // Stop ticker and clock via controller/ticker
     _ticker?.stop();
     _ticker?.dispose();
-    _clock.pause();
+    _audioController.dispose();
 
     // Cancel subscriptions
     _sub?.cancel();
@@ -720,8 +735,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _prepTimer?.cancel();
     _prepTimer = null;
 
-    // Stop audio
-    _synth.stop();
+    // Use controller for final audio cleanup if not already done
+    unawaited(_audioController.stopAndRelease());
 
     // Clear all state to prevent old data from persisting
     _transposedNotes = const [];
@@ -949,6 +964,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Log that scroll/time are reset (should only happen here)
     DebugLog.log(LogCat.lifecycle, 'scroll/time reset to 0 (runId=$_runId)');
+
+    // Reset audio controller
+    _audioController.reset();
 
     // Reset time tracking for backwards detection
     _lastTime = 0.0;
@@ -1288,7 +1306,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         final startMetrics = await AudioSessionService.getSyncMetrics();
         _recordingStartHostTime = startMetrics?.currentHostTime;
         
-        await _recording?.start();
+        await _recording!.start(owner: 'exercise', mode: RecordingMode.take);
         final afterRecorder = DateTime.now();
         dev.Timeline.finishSync();
         trace.mark('after recorder.start');
@@ -1488,20 +1506,19 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     DebugLog.event(LogCat.lifecycle, 'phase_stopping', runId: _runId);
     _endPrepCountdown();
     _captureEnabled = false;
-    _ticker?.stop();
-
-    // Stop engines
+    
+    // Use controller for clean shutdown and get recording result
+    final controllerResult = await _audioController.stopAndRelease();
+    
+    // Stop subscriptions
     await _sub?.cancel();
     _sub = null;
     await _audioPosSub?.cancel();
     _audioPosSub = null;
-    debugPrint('[Stop] stopping recording');
-    final recordingResult =
-        _recording == null ? null : await _recording!.stop();
-    // Note: Do NOT dispose recording here - only dispose in dispose()
-    await _synth.stop();
-    // No MIDI engine stop needed - we're using cached audio, not MIDI
-    _clock.pause();
+    
+    // Process results
+    final recordingResult = controllerResult;
+    
     _pitchState.reset();
     _visualState.reset();
     _tailBuffer.clear();
@@ -1521,12 +1538,20 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     await _completeAndPop(score, {'intonation': score});
   }
 
-  Future<bool> _handleExit() async {
+  Future<void> _handleExit({bool forcePop = false}) async {
+    if (_isExiting) return;
+    
     if (isStarting || isRunning) {
+      _isExiting = true;
+      debugPrint('[Exit] Handling exit during active run');
       await _stop();
-      return false;
+      return;
     }
-    return true;
+    
+    if (forcePop && mounted) {
+      _isExiting = true;
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _saveLastTake(String? audioPath) async {
@@ -2018,8 +2043,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // _midiMin and _midiMax remain constant throughout the exercise
     final totalDuration = _durationSec > 0 ? _durationSec : 1.0;
     final difficultyLabel = pitchHighwayDifficultyLabel(widget.pitchDifficulty);
-    return WillPopScope(
-      onWillPop: _handleExit,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        debugPrint('[PopScope] onPopInvokedWithResult didPop=$didPop');
+        await _handleExit(forcePop: true);
+      },
       child: AppBackground(
         child: SafeArea(
           bottom: false,
@@ -2167,10 +2197,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
                       child: InkWell(
                         borderRadius: BorderRadius.circular(20),
                         onTap: () async {
-                          final shouldPop = await _handleExit();
-                          if (shouldPop && mounted) {
-                            Navigator.of(context).maybePop();
-                          }
+                          debugPrint('[BackButton] tapped');
+                          await _handleExit(forcePop: true);
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(8),
@@ -2781,7 +2809,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _endPrepCountdown();
     await _playCueTone();
     _recorderStartSec = 0.0; // Free play mode, no master timeline
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _lastTime = 0;
     _onPitchSec = 0;
     _listeningSec = 0;
@@ -3095,7 +3123,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
     _endPrepCountdown();
     await _playTone();
     _recorderStartSec = 0.0; // Always start at beginning for these simpler exercises
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _absErrors.clear();
     _attemptSaved = false;
     _startedAt = DateTime.now();
@@ -3542,7 +3570,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
     _endPrepCountdown();
     await _playCueTone();
     _recorderStartSec = _elapsed;
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _sampleTimes.clear();
     _sampleRms.clear();
     _attemptSaved = false;

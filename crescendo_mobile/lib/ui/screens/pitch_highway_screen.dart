@@ -209,7 +209,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   Future<void> _startRecording() async {
     _capturedFrames.clear();
     await _liveSub?.cancel();
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _recordingActive = true;
     _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);

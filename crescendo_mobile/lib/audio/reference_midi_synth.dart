@@ -10,6 +10,7 @@ import '../services/audio_session_service.dart';
 class ReferenceMidiSynth {
   static final ReferenceMidiSynth _instance = ReferenceMidiSynth._internal();
   factory ReferenceMidiSynth() => _instance;
+  static ReferenceMidiSynth get instance => _instance;
   ReferenceMidiSynth._internal();
 
   final MidiPro _midi = MidiPro();
@@ -106,13 +107,35 @@ class ReferenceMidiSynth {
         debugPrint('[ReferenceMidiSynth] Note: program=${effectiveConfig.program} bankMSB=${effectiveConfig.bankMSB} bankLSB=${effectiveConfig.bankLSB} requested but may not be supported by flutter_midi_pro');
       }
       
-      // TODO: Set pitch bend if enabled and supported
       if (effectiveConfig.enablePitchBend && effectiveConfig.initialPitchBend != 8192) {
         debugPrint('[ReferenceMidiSynth] Note: pitchBend=${effectiveConfig.initialPitchBend} requested but may not be supported by flutter_midi_pro');
       }
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Failed to initialize: $e');
       rethrow;
+    }
+  }
+
+  /// Play a single MIDI note immediately
+  Future<void> playNote(int midi, {int velocity = 100}) async {
+    if (!_initialized || _sfId == null) {
+      await init();
+    }
+    try {
+      _midi.playMidiNote(midi: midi, velocity: velocity);
+      _activeNotes.add(midi);
+    } catch (e) {
+      debugPrint('[ReferenceMidiSynth] Error playing note $midi: $e');
+    }
+  }
+
+  /// Stop a single MIDI note immediately
+  Future<void> stopNote(int midi) async {
+    try {
+      _midi.stopMidiNote(midi: midi, velocity: 127);
+      _activeNotes.remove(midi);
+    } catch (e) {
+      debugPrint('[ReferenceMidiSynth] Error stopping note $midi: $e');
     }
   }
 
@@ -576,5 +599,16 @@ class ReferenceMidiSynth {
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Error playing click: $e');
     }
+  }
+
+  bool _isWhite(int midi) {
+    const white = {0, 2, 4, 5, 7, 9, 11};
+    return white.contains(midi % 12);
+  }
+
+  String _noteName(int midi) {
+    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    final octave = (midi / 12).floor() - 1;
+    return '${names[midi % 12]}$octave';
   }
 }

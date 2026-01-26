@@ -12,6 +12,8 @@ import '../../utils/audio_constants.dart';
 import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
+import '../../services/midi_route_manager.dart';
+import '../../audio/reference_midi_synth.dart';
 
 // Pitch detection configuration constants
 class PitchDetectionConfig {
@@ -44,7 +46,8 @@ class PianoPitchScreen extends StatefulWidget {
 }
 
 class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, WidgetsBindingObserver {
-  final MidiPro _midi = MidiPro();
+  final ReferenceMidiSynth _midi = ReferenceMidiSynth.instance;
+  final MidiRouteManager _routeManager = MidiRouteManager.instance;
   bool _midiReady = false;
   late final PitchService _service;
   late final PitchTracker _tracker;
@@ -73,23 +76,23 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     _isVisible = true;
     WidgetsBinding.instance.addObserver(this);
     
-    // Defer audio and MIDI initialization until after first frame
+    // Defer MIDI initialization until after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudioSession();
+      _initRouteManager();
       _initMidi();
       _centerKeyboardInitial();
-      // Only start recording when user actually interacts (not auto-start)
-      // _start() will be called when user taps/needs it
     });
+  }
+
+  Future<void> _initRouteManager() async {
+    await _routeManager.init();
   }
 
   Future<void> _initMidi() async {
     try {
-      debugPrint('[PianoPitchScreen] Loading SoundFont...');
-      await _midi.loadSoundfont(
-        sf2Path: 'assets/soundfonts/default.sf2',
-        name: 'default.sf2',
-      );
+      debugPrint('[PianoPitchScreen] Initializing MIDI...');
+      await _midi.init();
       _midiReady = true;
       debugPrint('[PianoPitchScreen] MIDI initialized successfully');
       if (mounted) setState(() {});
@@ -134,23 +137,32 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   }
 
   @override
-  void didPopNext() {
-    debugPrint('[PianoPitchScreen] didPopNext - returning to Piano screen');
+  @override
+  void didPush() {
+    debugPrint('[PianoPitchScreen] didPush - Piano screen appearing');
     _isVisible = true;
-    if (!_service.isRunning) {
-      _restartPitchDetection();
-    } else {
-      _ensureStreamSubscription();
-    }
+    _start();
   }
 
   @override
-  void didPush() {
-    debugPrint('[PianoPitchScreen] didPush - Piano screen pushed');
+  void didPop() {
+    debugPrint('[PianoPitchScreen] didPop - Piano screen removed');
+    _isVisible = false;
+    _stop();
+  }
+
+  @override
+  void didPopNext() {
+    debugPrint('[PianoPitchScreen] didPopNext - returning to Piano screen');
     _isVisible = true;
-    if (!_service.isRunning) {
-      _start();
-    }
+    _start();
+  }
+
+  @override
+  void didPushNext() {
+    debugPrint('[PianoPitchScreen] didPushNext - navigating away from Piano');
+    _isVisible = false;
+    _stop();
   }
 
   void _ensureStreamSubscription() {
@@ -197,26 +209,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
   }
 
   @override
-  void didPop() {
-    debugPrint('[PianoPitchScreen] didPop - leaving Piano screen');
-    _isVisible = false;
-    routeObserver.unsubscribe(this);
-  }
-
-  @override
-  void didPushNext() {
-    debugPrint('[PianoPitchScreen] didPushNext - navigating away from Piano');
-    _isVisible = false;
-    // Stop recording and pitch detection when navigating away
-    _sub?.cancel();
-    _sub = null;
-    if (_service.isRunning) {
-      _service.stop();
-      debugPrint('[PianoPitchScreen] Stopped pitch detection service');
-    }
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _isVisible) {
       debugPrint('[PianoPitchScreen] App resumed, ensuring pitch detection is running');
@@ -255,17 +247,23 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     }
   }
 
-  Future<void> _restartPitchDetection() async {
-    if (!mounted || !_isVisible) return;
-    debugPrint('[PianoPitchScreen] Restarting pitch detection...');
+  Future<void> _stop() async {
+    debugPrint('[PianoPitchScreen] Stopping pitch detection UI...');
     await _sub?.cancel();
     _sub = null;
     try {
-      await _service.stop();
+      if (_service.isRunning) {
+        await _service.stop();
+      }
     } catch (e) {
       debugPrint('[PianoPitchScreen] Error stopping service: $e');
     }
-    await Future.delayed(const Duration(milliseconds: 300));
+  }
+
+  Future<void> _restartPitchDetection() async {
+    if (!mounted || !_isVisible) return;
+    debugPrint('[PianoPitchScreen] Restarting pitch detection...');
+    await _stop();
     await AudioSessionManager.instance.forceReleaseAll();
     await Future.delayed(const Duration(milliseconds: 100));
     if (mounted && _isVisible) {
@@ -275,14 +273,24 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
 
   @override
   void dispose() {
-    debugPrint('[PianoPitchScreen] dispose');
+    debugPrint('[PianoPitchScreen] dispose START');
     _isVisible = false;
     WidgetsBinding.instance.removeObserver(this);
-    routeObserver.unsubscribe(this);
+    try {
+      routeObserver.unsubscribe(this);
+      debugPrint('[PianoPitchScreen] Unsubscribed from route observer');
+    } catch (e) {
+      debugPrint('[PianoPitchScreen] Error unsubscribing: $e');
+    }
     _sub?.cancel();
+    _sub = null;
+    
+    // Dispose services
     _service.dispose();
     _keyboardController.dispose();
     _tracker.dispose();
+    _routeManager.dispose();
+    debugPrint('[PianoPitchScreen] dispose END');
     super.dispose();
   }
 
@@ -514,11 +522,11 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     }
 
     // Play note immediately
-    _midi.playMidiNote(midi: midi, velocity: 100);
+    _midi.playNote(midi, velocity: 100);
 
     // Stop note after 600ms (matching the original duration)
     Future.delayed(const Duration(milliseconds: 600), () {
-      _midi.stopMidiNote(midi: midi, velocity: 127);
+      _midi.stopNote(midi);
     });
   }
 }

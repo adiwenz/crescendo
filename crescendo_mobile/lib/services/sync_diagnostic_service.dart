@@ -52,8 +52,8 @@ class SyncDiagnosticService {
       // Dump audio session after recorder init
       await _dumpAudioSession('after_recorder_init');
 
-      // Start recording first
-      await recorder.start();
+      // Start recording first in take mode (we need the WAV for analysis)
+      await recorder.start(owner: 'sync_diag', mode: RecordingMode.take);
       await _dumpAudioSession('after_recording_start');
 
       // Capture recording start time (this is the timeline anchor for the test)
@@ -96,7 +96,7 @@ class SyncDiagnosticService {
       final result = await recorder.stop(customPath: wavPath);
       await _dumpAudioSession('after_recording_stop');
 
-      if (result.audioPath.isEmpty) {
+      if (result == null || result.audioPath.isEmpty) {
         debugPrint('[SyncDiag] Recording failed - empty audio path');
         return null;
       }
