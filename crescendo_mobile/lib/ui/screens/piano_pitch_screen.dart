@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:audio_session/audio_session.dart';
-import 'package:flutter_midi_pro/flutter_midi_pro.dart';
+
 
 import '../../services/pitch_service.dart';
 import '../../services/audio_session_manager.dart';

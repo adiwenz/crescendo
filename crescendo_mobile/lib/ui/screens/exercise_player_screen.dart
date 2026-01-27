@@ -366,11 +366,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     // Engine initializes automatically on first use
     _clock.setLatencyCompensationMs(_audioLatencyMs);
 
-    // Add frame timing callback to detect jank (only if frame timing debug enabled)
-    // Frame timing is disabled by default to reduce log spam
-    if (kDebugMode) {
-      SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
-    }
+
 
     // Prime audio player to avoid first-play latency
     _primeAudio();
@@ -679,27 +675,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     return PitchHighwaySpec(segments: scaledSegments);
   }
 
-  /// Frame timing callback to detect jank (only logs slow frames > 50ms)
-  void _onFrameTimings(List<FrameTiming> timings) {
-    for (final t in timings) {
-      final total = t.totalSpan.inMilliseconds;
-      // Only log frames that are significantly slow (> 100ms)
-      if (total > 100) {
-        DebugLog.log(LogCat.perf,
-            'Frame total=${total}ms build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms');
-      }
-    }
-  }
+
 
   @override
   void dispose() {
     // ignore: avoid_print
     print('[ExercisePlayerScreen] dispose - cleaning up resources');
 
-    // Remove frame timing callback (only if it was added)
-    if (kDebugMode) {
-      SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
-    }
+
 
     // Stop ticker and clock via controller/ticker
     _ticker?.stop();

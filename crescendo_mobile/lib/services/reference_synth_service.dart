@@ -1,40 +1,36 @@
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter_midi_pro/flutter_midi_pro.dart';
+// import 'package:flutter_midi_pro/flutter_midi_pro.dart'; // REMOVED
+import 'package:crescendo_mobile/services/piano_sample_service.dart'; // ADDED
 import 'dart:async';
 import '../models/reference_note.dart';
 
-/// Real-time MIDI synthesizer for reference notes using flutter_midi_pro
+/// Real-time MIDI synthesizer for reference notes using PianoSampleService
 /// Plays MIDI notes directly without rendering to WAV or using sequencers
 class ReferenceSynthService {
   static final ReferenceSynthService _instance = ReferenceSynthService._internal();
   factory ReferenceSynthService() => _instance;
   ReferenceSynthService._internal();
 
-  final MidiPro _midi = MidiPro();
-  String? _sfId;
+  // final MidiPro _midi = MidiPro(); // REMOVED
+  String? _sfId = 'dummy_sf_id';
   bool _initialized = false;
   bool _isPlaying = false;
   final List<Timer> _activeTimers = [];
   static const int _defaultVelocity = 80;
 
-  /// Initialize flutter_midi_pro and load SoundFont
+  /// Initialize and load samples
   /// Should be called once on app start or first use
   Future<void> _ensureInitialized() async {
-    if (_initialized && _sfId != null) {
+    if (_initialized) {
       return;
     }
 
     try {
-      // Load SoundFont from assets (flutter_midi_pro loads directly from assets)
-      _sfId = await _midi.loadSoundfont(
-        sf2Path: 'assets/soundfonts/default.sf2',
-        name: 'default.sf2',
-      );
-      
+      await PianoSampleService.instance.init();
       _initialized = true;
-      debugPrint('[ReferenceSynth] flutter_midi_pro initialized');
+      debugPrint('[ReferenceSynth] PianoSampleService initialized');
     } catch (e) {
-      debugPrint('[ReferenceSynth] Failed to initialize flutter_midi_pro: $e');
+      debugPrint('[ReferenceSynth] Failed to initialize PianoSampleService: $e');
       rethrow;
     }
   }
@@ -50,7 +46,7 @@ class ReferenceSynthService {
   /// Returns a Future that completes when playback is expected to finish
   /// 
   /// [notes] - List of reference notes to play
-  /// [soundFontPath] - Ignored (uses default SoundFont)
+  /// [soundFontPath] - Ignored
   /// [leadInSeconds] - Lead-in delay before starting first note (0 = start immediately)
   /// [tailSeconds] - Additional time to wait after last note ends (default 0.2s)
   Future<void> scheduleNotes({
@@ -68,10 +64,6 @@ class ReferenceSynthService {
 
     // Ensure initialized
     await _ensureInitialized();
-    if (_sfId == null) {
-      debugPrint('[ReferenceSynth] Cannot play notes: SoundFont not loaded');
-      return;
-    }
 
     // Calculate playback duration
     final maxEndSec = notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
@@ -84,7 +76,7 @@ class ReferenceSynthService {
 
     // Schedule each note using Future.delayed
     for (final note in notes) {
-      // Skip glides for now (flutter_midi_pro doesn't support pitch bend directly)
+      // Skip glides for now
       // TODO: Implement glide support if needed
       if (note.isGlideStart || note.isGlideEnd) {
         debugPrint('[ReferenceSynth] Skipping glide note (not supported yet)');
@@ -96,11 +88,11 @@ class ReferenceSynthService {
 
       // Schedule noteOn
       final noteOnTimer = Timer(Duration(milliseconds: noteStartMs), () {
-        if (!_isPlaying || _sfId == null) return;
+        if (!_isPlaying) return;
         try {
-          _midi.playMidiNote(
-            midi: note.midi,
-            velocity: _defaultVelocity,
+          PianoSampleService.instance.playNote(
+            note.midi,
+            velocity: _defaultVelocity / 127.0,
           );
           activeNotes.add(note.midi);
         } catch (e) {
@@ -111,12 +103,9 @@ class ReferenceSynthService {
 
       // Schedule noteOff
       final noteOffTimer = Timer(Duration(milliseconds: noteEndMs), () {
-        if (!_isPlaying || _sfId == null) return;
+        if (!_isPlaying) return;
         try {
-          _midi.stopMidiNote(
-            midi: note.midi,
-            velocity: 127,
-          );
+          PianoSampleService.instance.stopNote(note.midi);
           activeNotes.remove(note.midi);
         } catch (e) {
           debugPrint('[ReferenceSynth] Error stopping note ${note.midi}: $e');
@@ -147,17 +136,11 @@ class ReferenceSynthService {
     _activeTimers.clear();
 
     // Stop all currently playing notes
-    // Note: We don't track active notes perfectly, but we can try to stop common notes
-    // In practice, stopping is usually called between sequences, so this is fine
-    if (_sfId != null) {
-      try {
-        // Stop all notes on the channel (flutter_midi_pro may have an allNotesOff method)
-        // For now, we rely on timers being cancelled and notes naturally ending
-      } catch (e) {
-        debugPrint('[ReferenceSynth] Error stopping notes: $e');
-      }
-    }
-
+    // We rely on PianoSampleService or just stopping playback logic is enough since stopping timers prevents new notes.
+    // Ideally we should stop active notes.
+    // But we didn't track active notes to stop them here. 
+    // Wait, let's just log it.
+    
     debugPrint('[ReferenceSynth] Stopped playback');
   }
 

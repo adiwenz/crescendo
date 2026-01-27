@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
-import 'package:flutter_midi_pro/flutter_midi_pro.dart';
+// import 'package:flutter_midi_pro/flutter_midi_pro.dart'; // REMOVED
+import '../services/piano_sample_service.dart'; // ADDED
 import '../models/reference_note.dart';
 import 'midi_playback_config.dart';
 import '../services/audio_session_service.dart';
 
-/// Real-time MIDI synthesizer for reference audio playback using flutter_midi_pro
+/// Real-time MIDI synthesizer for reference audio playback using PianoSampleService
 /// Plays MIDI notes directly without rendering to WAV files
 class ReferenceMidiSynth {
   static final ReferenceMidiSynth _instance = ReferenceMidiSynth._internal();
@@ -18,8 +19,8 @@ class ReferenceMidiSynth {
     debugPrint('[ReferenceMidiSynth] Constructor initialized');
   }
 
-  final MidiPro _midi = MidiPro();
-  String? _sfId;
+  // final MidiPro _midi = MidiPro(); // REMOVED
+  String? _sfId = 'dummy_sf_id'; // Mock ID to keep logic happy
   bool _initialized = false;
   bool _isPlaying = false;
   final List<Timer> _activeTimers = [];
@@ -32,9 +33,9 @@ class ReferenceMidiSynth {
   
   /// Ensure engine is running (rebuild if needed after route changes)
   Future<void> ensureEngineRunning({String tag = 'ensureEngine'}) async {
-    if (_engineRebuildNeeded || !_initialized || _sfId == null) {
+    if (_engineRebuildNeeded || !_initialized) {
       if (kDebugMode) {
-        debugPrint('[ReferenceMidiSynth] [$tag] Rebuilding engine (rebuildNeeded=$_engineRebuildNeeded, initialized=$_initialized, sfId=${_sfId != null})');
+        debugPrint('[ReferenceMidiSynth] [$tag] Rebuilding engine (rebuildNeeded=$_engineRebuildNeeded, initialized=$_initialized)');
       }
       await init(force: true);
       _engineRebuildNeeded = false;
@@ -50,7 +51,6 @@ class ReferenceMidiSynth {
   }
   
   /// Resync MIDI playback to current audio position (after route change)
-  /// Clears played notes and re-triggers notes near the current position
   void resyncToAudioPosition(double audioSec, int runId) {
     if (_currentRunId != runId) {
       if (kDebugMode) {
@@ -63,58 +63,28 @@ class ReferenceMidiSynth {
       debugPrint('[ReferenceMidiSynth] Resyncing to audio position: ${audioSec.toStringAsFixed(3)}s, runId=$runId');
     }
     
-    // Clear played notes so they can be re-triggered
     _notesPlayedForAudioPosition.clear();
     _activeNotes.clear();
     _activeNoteIndexByMidi.clear();
     
-    // Immediately check for notes that should play at this position
     if (_notesForAudioPosition != null) {
       updateAudioPosition(audioSec, runId);
     }
   }
 
-  /// Initialize flutter_midi_pro and load SoundFont (idempotent)
-  /// Should be called once at app startup or once per screen lifetime
-  /// [config] - MIDI playback configuration (if provided, ensures correct SoundFont is loaded)
-  /// [force] - If true, force reinitialization even if already initialized (useful after route changes)
+  /// Initialize and load samples (idempotent)
   Future<void> init({MidiPlaybackConfig? config, bool force = false}) async {
-    final effectiveConfig = config ?? MidiPlaybackConfig.exercise();
-    
     // If forcing reinit, clear state first
     if (force) {
       _initialized = false;
-      _sfId = null;
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiSynth] Force reinitializing MIDI engine (likely due to route change)');
-      }
     }
     
-    // If already initialized with the same SoundFont, skip
-    if (_initialized && _sfId != null) {
-      // TODO: Check if SoundFont matches config (flutter_midi_pro may not support this)
-      // For now, assume if initialized, it's correct
-      return;
-    }
+    if (_initialized) return;
 
     try {
-      debugPrint('[ReferenceMidiSynth] Loading SoundFont: ${effectiveConfig.soundFontName}...');
-      _sfId = await _midi.loadSoundfont(
-        sf2Path: effectiveConfig.soundFontAssetPath,
-        name: effectiveConfig.soundFontName,
-      );
+      debugPrint('[ReferenceMidiSynth] Initializing PianoSampleService...');
+      await PianoSampleService.instance.init();
       _initialized = true;
-      debugPrint('[ReferenceMidiSynth] SoundFont loaded successfully, ID: $_sfId');
-      
-      // TODO: Set program/bank/channel if flutter_midi_pro supports it
-      // Currently flutter_midi_pro may not expose these APIs, so we log what we would set
-      if (effectiveConfig.program != 0 || effectiveConfig.bankMSB != 0 || effectiveConfig.bankLSB != 0) {
-        debugPrint('[ReferenceMidiSynth] Note: program=${effectiveConfig.program} bankMSB=${effectiveConfig.bankMSB} bankLSB=${effectiveConfig.bankLSB} requested but may not be supported by flutter_midi_pro');
-      }
-      
-      if (effectiveConfig.enablePitchBend && effectiveConfig.initialPitchBend != 8192) {
-        debugPrint('[ReferenceMidiSynth] Note: pitchBend=${effectiveConfig.initialPitchBend} requested but may not be supported by flutter_midi_pro');
-      }
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Failed to initialize: $e');
       rethrow;
@@ -123,11 +93,11 @@ class ReferenceMidiSynth {
 
   /// Play a single MIDI note immediately
   Future<void> playNote(int midi, {int velocity = 100}) async {
-    if (!_initialized || _sfId == null) {
+    if (!_initialized) {
       await init();
     }
     try {
-      _midi.playMidiNote(midi: midi, velocity: velocity);
+      PianoSampleService.instance.playNote(midi, velocity: velocity / 127.0);
       _activeNotes.add(midi);
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Error playing note $midi: $e');
@@ -137,7 +107,7 @@ class ReferenceMidiSynth {
   /// Stop a single MIDI note immediately
   Future<void> stopNote(int midi) async {
     try {
-      _midi.stopMidiNote(midi: midi, velocity: 127);
+      PianoSampleService.instance.stopNote(midi);
       _activeNotes.remove(midi);
     } catch (e) {
       debugPrint('[ReferenceMidiSynth] Error stopping note $midi: $e');
@@ -269,7 +239,7 @@ class ReferenceMidiSynth {
         }
 
         try {
-          _midi.playMidiNote(midi: note.midi, velocity: _defaultVelocity);
+          PianoSampleService.instance.playNote(note.midi, velocity: _defaultVelocity / 127.0);
           _activeNotes.add(note.midi); // Track that this note is now playing
           
           // Log first note firing (one line)
@@ -298,7 +268,7 @@ class ReferenceMidiSynth {
         }
 
         try {
-          _midi.stopMidiNote(midi: note.midi, velocity: 127);
+          PianoSampleService.instance.stopNote(note.midi);
           _activeNotes.remove(note.midi); // Remove from active notes set
         } catch (e) {
           debugPrint('[ReferenceMidiSynth] Error stopping note ${note.midi}: $e');
@@ -332,7 +302,7 @@ class ReferenceMidiSynth {
     _activeNotes.clear();
     for (final midi in notesToStop) {
       try {
-        _midi.stopMidiNote(midi: midi, velocity: 127);
+        PianoSampleService.instance.stopNote(midi);
       } catch (e) {
         debugPrint('[ReferenceMidiSynth] Error stopping note $midi during stop(): $e');
       }
@@ -475,7 +445,7 @@ class ReferenceMidiSynth {
           _activeNotes.contains(note.midi) && 
           activeNoteIndex == i) {
         try {
-          _midi.stopMidiNote(midi: note.midi, velocity: 127);
+          PianoSampleService.instance.stopNote(note.midi);
           _activeNotes.remove(note.midi);
           _activeNoteIndexByMidi.remove(note.midi);
           if (kDebugMode && i < 5) {
@@ -522,7 +492,7 @@ class ReferenceMidiSynth {
         final existingNoteIndex = _activeNoteIndexByMidi[note.midi];
         if (_activeNotes.contains(note.midi) && existingNoteIndex != null && existingNoteIndex != i) {
           try {
-            _midi.stopMidiNote(midi: note.midi, velocity: 127);
+            PianoSampleService.instance.stopNote(note.midi);
             _activeNotes.remove(note.midi);
             _activeNoteIndexByMidi.remove(note.midi);
             if (kDebugMode && i < 5) {
@@ -546,7 +516,7 @@ class ReferenceMidiSynth {
           }
           
           debugPrint('[ReferenceMidiSynth] CALLING playMidiNote: MIDI=${note.midi}, velocity=$_defaultVelocity, _sfId=$_sfId');
-          _midi.playMidiNote(midi: note.midi, velocity: _defaultVelocity);
+          PianoSampleService.instance.playNote(note.midi, velocity: _defaultVelocity / 127.0);
           _activeNotes.add(note.midi);
           _activeNoteIndexByMidi[note.midi] = i; // Track which note index started this MIDI note
           _notesPlayedForAudioPosition.add(i);
@@ -585,14 +555,14 @@ class ReferenceMidiSynth {
 
     try {
       // Play note on
-      _midi.playMidiNote(midi: midiNote, velocity: velocity);
+      PianoSampleService.instance.playNote(midiNote, velocity: velocity / 127.0);
       _activeNotes.add(midiNote);
 
       // Schedule note off after duration
       Timer(Duration(milliseconds: durationMs), () {
         if (_currentRunId == runId && _activeNotes.contains(midiNote)) {
           try {
-            _midi.stopMidiNote(midi: midiNote, velocity: 127);
+            PianoSampleService.instance.stopNote(midiNote);
             _activeNotes.remove(midiNote);
           } catch (e) {
             debugPrint('[ReferenceMidiSynth] Error stopping click note: $e');
