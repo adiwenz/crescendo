@@ -3,14 +3,20 @@ import '../models/exercise_category.dart';
 import '../models/vocal_exercise.dart';
 
 class ExerciseRepository {
+  static List<VocalExercise>? _cachedExercises;
+  static List<ExerciseCategory>? _cachedCategories;
+
   List<ExerciseCategory> getCategories() {
+    if (_cachedCategories != null) return _cachedCategories!;
     final categories = List<ExerciseCategory>.from(seedExerciseCategories());
     categories.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    _cachedCategories = categories;
     return categories;
   }
 
   List<VocalExercise> getExercises() {
-    return List<VocalExercise>.from(seedVocalExercises());
+    _cachedExercises ??= List<VocalExercise>.from(seedVocalExercises());
+    return _cachedExercises!;
   }
 
   List<VocalExercise> getExercisesForCategory(String categoryId) {

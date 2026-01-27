@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../utils/navigation_trace.dart';
 
 import '../../design/app_text.dart';
 import '../../models/exercise.dart';
@@ -193,11 +193,15 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                         subtitle: '',
                         bannerStyleId: exercise.bannerStyleId,
                         onTap: () {
+                          final trace = NavigationTrace.start('Exercise Navigation: ${exercise.id}');
+                          trace.mark('HomeScreen tap - pushing Navigator');
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => ExercisePreviewScreen(
-                                  exerciseId: exercise.id),
+                                exerciseId: exercise.id,
+                                trace: trace,
+                              ),
                             ),
                           );
                         },

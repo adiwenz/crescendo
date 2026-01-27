@@ -16,11 +16,13 @@ import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/exercise_plan.dart';
 import '../../services/reference_audio_generator.dart';
+import '../../utils/navigation_trace.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
+  final NavigationTrace? trace;
 
-  const ExercisePreviewScreen({super.key, required this.exerciseId});
+  const ExercisePreviewScreen({super.key, required this.exerciseId, this.trace});
 
   @override
   State<ExercisePreviewScreen> createState() => _ExercisePreviewScreenState();
@@ -48,12 +50,14 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   @override
   void initState() {
     super.initState();
+    widget.trace?.mark('ExercisePreview initState');
     debugPrint('[Preview] exerciseId=${widget.exerciseId}');
     _load();
     
     // Requirements: Defer heavy generation until after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        widget.trace?.markFirstFrame();
         _triggerPreparation();
       }
     });

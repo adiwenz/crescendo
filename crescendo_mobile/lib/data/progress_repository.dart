@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+import 'dart:async';
 
 import '../models/exercise_attempt.dart';
 import '../services/storage/db.dart';
@@ -24,7 +25,36 @@ class ProgressRepository {
     final db = overrideDb ?? await _db.database;
     await _ensureMigrated(db);
     final rows = await db.query('exercise_attempts', orderBy: 'completedAt DESC');
-    return rows.map((row) => ExerciseAttempt.fromDbMap(row, onWarning: _logWarn)).toList();
+    return compute(_parseAttemptsIsolate, rows);
+  }
+
+  Future<List<ExerciseAttempt>> fetchAttemptSummaries() async {
+    final db = overrideDb ?? await _db.database;
+    await _ensureMigrated(db);
+    // Exclude heavy JSON columns: contourJson, targetNotesJson, segmentsJson
+    final rows = await db.query(
+      'exercise_attempts',
+      columns: [
+        'id', 'exerciseId', 'categoryId', 'startedAt', 'completedAt',
+        'overallScore', 'subScoresJson', 'notes', 'pitchDifficulty',
+        'recordingPath', 'version'
+      ],
+      orderBy: 'completedAt DESC'
+    );
+    return compute(_parseAttemptsIsolate, rows);
+  }
+
+  Future<ExerciseAttempt?> fetchAttempt(String id) async {
+    final db = overrideDb ?? await _db.database;
+    await _ensureMigrated(db);
+    final rows = await db.query(
+      'exercise_attempts',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1
+    );
+    if (rows.isEmpty) return null;
+    return ExerciseAttempt.fromDbMap(rows.first, onWarning: _logWarn);
   }
 
   Future<List<ExerciseAttempt>> fetchAttemptsForExercise(String exerciseId) async {
@@ -36,7 +66,7 @@ class ProgressRepository {
       whereArgs: [exerciseId],
       orderBy: 'completedAt DESC',
     );
-    return rows.map((row) => ExerciseAttempt.fromDbMap(row, onWarning: _logWarn)).toList();
+    return compute(_parseAttemptsIsolate, rows);
   }
 
   Future<int> countAttemptsForExercise(String exerciseId) async {
@@ -116,4 +146,9 @@ class ProgressRepository {
       }
     }
   }
+}
+
+/// Helper for isolate-based parsing
+List<ExerciseAttempt> _parseAttemptsIsolate(List<Map<String, Object?>> rows) {
+  return rows.map((row) => ExerciseAttempt.fromDbMap(row)).toList();
 }

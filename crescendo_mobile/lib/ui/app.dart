@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -24,6 +25,22 @@ class CrescendoApp extends StatefulWidget {
 
 class _CrescendoAppState extends State<CrescendoApp> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Frame jank detection
+    WidgetsBinding.instance.addTimingsCallback((List<FrameTiming> timings) {
+      for (final timing in timings) {
+        final duration = timing.totalSpan.inMilliseconds;
+        if (duration > 33) {
+          debugPrint('[JANK] SEVERE: ${duration}ms (build: ${timing.buildDuration.inMilliseconds}ms, raster: ${timing.rasterDuration.inMilliseconds}ms)');
+        } else if (duration > 16) {
+          debugPrint('[JANK] SLOW: ${duration}ms (build: ${timing.buildDuration.inMilliseconds}ms, raster: ${timing.rasterDuration.inMilliseconds}ms)');
+        }
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

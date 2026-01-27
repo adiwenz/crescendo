@@ -6,7 +6,7 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart';
 import '../../models/exercise_plan.dart';
 
 import '../../models/pitch_frame.dart';
@@ -530,12 +530,13 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       if (_patternSpec != null) {
         debugPrint(
             '[ExercisePlayerScreen] Found pattern JSON for ${widget.exercise.id}, using PatternVisualNoteBuilder');
-        final patternNotes = PatternVisualNoteBuilder.buildVisualNotesFromPattern(
+        // Offload pattern building to isolate
+        final patternNotes = await compute((_) => PatternVisualNoteBuilder.buildVisualNotesFromPattern(
           pattern: _patternSpec!,
           lowestMidi: lowestMidi,
           highestMidi: highestMidi,
           leadInSec: _leadInSec,
-        );
+        ), null);
         notes = patternNotes;
         sirenPath = null;
       } else {
@@ -550,16 +551,16 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         debugPrint(
             '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
         notes = cachedNotes;
-        // For Sirens, regenerate visual path from cached audio notes
+        // For Sirens, regenerate visual path from cached audio notes (offload if sirens)
         if (widget.exercise.id == 'sirens') {
-          final sirenResult =
+          final sirenResult = await compute((_) => 
               TransposedExerciseBuilder.buildSirensWithVisualPath(
             exercise: widget.exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
             leadInSec: _leadInSec,
             difficulty: widget.pitchDifficulty,
-          );
+          ), null);
           sirenPath = sirenResult.visualPath;
           notes = cachedNotes;
         } else {
@@ -571,32 +572,33 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             '[ExercisePlayerScreen] WARNING: No cached notes found, generating on the fly');
         final buildStartTime = DateTime.now();
 
-        // Special handling for Sirens
+        // Special handling for Sirens - offload to isolate
         if (widget.exercise.id == 'sirens') {
-          final sirenResult =
+          final sirenResult = await compute((_) => 
               TransposedExerciseBuilder.buildSirensWithVisualPath(
             exercise: widget.exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
             leadInSec: _leadInSec,
             difficulty: widget.pitchDifficulty,
-          );
+          ), null);
           notes = sirenResult.audioNotes;
           sirenPath = sirenResult.visualPath;
         } else {
-          notes = TransposedExerciseBuilder.buildTransposedSequence(
+          // Offload transposition to isolate
+          notes = await compute((_) => TransposedExerciseBuilder.buildTransposedSequence(
             exercise: widget.exercise,
             lowestMidi: lowestMidi,
             highestMidi: highestMidi,
             leadInSec: _leadInSec,
             difficulty: widget.pitchDifficulty,
-          );
+          ), null);
           sirenPath = null;
         }
 
         final buildEndTime = DateTime.now();
         debugPrint(
-            '[ExercisePlayerScreen] TransposedExerciseBuilder took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
+            '[ExercisePlayerScreen] TransposedExerciseBuilder (Isolate) took ${buildEndTime.difference(buildStartTime).inMilliseconds}ms');
 
         if (mounted) {
           setState(() {

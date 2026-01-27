@@ -176,13 +176,13 @@ class ReferenceAudioGenerator {
         final metaJson = await metaFile.readAsString();
         final meta = jsonDecode(metaJson);
         if (meta['rangeHash'] == rangeHash && meta['patternHash'] == patternHash) {
-          return ExercisePlanBuilder.buildMetadata(
+          return compute((_) => ExercisePlanBuilder.buildMetadata(
             exercise: exercise,
             lowestMidi: low,
             highestMidi: high,
             difficulty: difficulty,
             wavFilePath: wavPath,
-          );
+          ), null);
         }
       } catch (e) {
         debugPrint('[RefGen] tryGetCached validation failed: $e');

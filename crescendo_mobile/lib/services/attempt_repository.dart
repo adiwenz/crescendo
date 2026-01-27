@@ -25,9 +25,9 @@ class AttemptRepository extends ChangeNotifier {
     }
     _isRefreshing = true;
     try {
-      final attempts = await _repo.fetchAllAttempts();
+      final attempts = await _repo.fetchAttemptSummaries();
       _cache = attempts;
-      debugPrint('[AttemptRepository] refreshed: ${_cache.length} attempts (instance=${identityHashCode(this)})');
+      debugPrint('[AttemptRepository] refreshed: ${_cache.length} summaries');
       _loaded = true;
       _revision++;
       notifyListeners();
@@ -64,15 +64,20 @@ class AttemptRepository extends ChangeNotifier {
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
-    // Only refresh if not already loaded - this prevents unnecessary database queries
     try {
-      final attempts = await _repo.fetchAllAttempts();
+      // Use summary fetch to avoid loading huge JSON blobs into memory
+      final attempts = await _repo.fetchAttemptSummaries();
       _cache = attempts;
       _loaded = true;
-      // Don't increment revision or notify listeners here - this is just initial load
-      // Revision and notifications happen on actual data changes (save/refresh)
+      debugPrint('[AttemptRepository] ensureLoaded: ${_cache.length} summaries');
     } catch (e, st) {
       debugPrint('[AttemptRepository] ensureLoaded failed: $e\n$st');
     }
+  }
+
+  /// Fetches a full attempt with all heavy JSON blobs from the database.
+  /// Used for detailed review screens.
+  Future<ExerciseAttempt?> getFullAttempt(String id) async {
+    return _repo.fetchAttempt(id);
   }
 }

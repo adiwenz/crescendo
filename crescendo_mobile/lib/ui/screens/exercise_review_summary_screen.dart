@@ -16,6 +16,7 @@ import '../../utils/pitch_math.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../widgets/overview_graph.dart';
 import 'pitch_highway_review_screen.dart';
+import '../../services/attempt_repository.dart';
 import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
 
@@ -50,15 +51,28 @@ class _ExerciseReviewSummaryScreenState
   }
 
   Future<void> _loadReviewData() async {
+    var currentAttempt = widget.attempt;
+
+    // Check if we have a summary - if contour data is missing, we need to fetch the full record
+    if (currentAttempt.contourJson == null) {
+      debugPrint(
+          '[ReviewSummary] Attempt is summary-only, fetching full record for id=${currentAttempt.id}');
+      final full =
+          await AttemptRepository.instance.getFullAttempt(currentAttempt.id);
+      if (full != null) {
+        currentAttempt = full;
+      }
+    }
+
     // Parse contour data (pitch samples)
-    _samples = _parseContour(widget.attempt.contourJson);
+    _samples = _parseContour(currentAttempt.contourJson);
 
     // Parse target notes from saved data or build from exercise
-    _targets = _parseTargetNotes(widget.attempt.targetNotesJson) ??
+    _targets = _parseTargetNotes(currentAttempt.targetNotesJson) ??
         await _buildTargetNotesFromExercise();
 
     // Parse segments
-    final allSegments = _parseSegments(widget.attempt.segmentsJson);
+    final allSegments = _parseSegments(currentAttempt.segmentsJson);
 
     // Filter segments to only include those that have recorded pitch data
     // A segment is considered "recorded" if there are pitch samples within its time range
