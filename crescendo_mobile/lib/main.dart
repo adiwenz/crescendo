@@ -8,34 +8,21 @@ import 'ui/app.dart';
 import 'state/library_store.dart';
 import 'services/exercise_cache_service.dart';
 import 'services/audio_route_service.dart';
+import 'services/audio_session_service.dart';
+import 'services/storage/db.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[DB_TRACE] App Start');
 
   // Check for wireless debugging (iOS only) and log warnings
   if (Platform.isIOS && kDebugMode) {
     _checkWirelessDebugging();
   }
 
-  final session = await AudioSession.instance;
-  await session.configure(
-    AudioSessionConfiguration(
-      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-      avAudioSessionCategoryOptions:
-          AVAudioSessionCategoryOptions.mixWithOthers |
-          AVAudioSessionCategoryOptions.defaultToSpeaker,
-      avAudioSessionMode: AVAudioSessionMode.measurement, // Better for pitch detection than voiceChat
-      // Android fields ignored on iOS:
-      androidAudioAttributes: const AndroidAudioAttributes(
-        contentType: AndroidAudioContentType.music,
-        usage: AndroidAudioUsage.media,
-      ),
-      androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
-      androidWillPauseWhenDucked: false,
-      // Note: PreferredIOBufferDuration is set via AVAudioSession.setPreferredIOBufferDuration
-      // The record package should handle this, but we use smaller buffers in RecordingService
-    ),
-  );
+  // Initialize audio session with stable configuration (iOS only)
+  await AudioSessionService.init();
+  await AudioSessionService.applyExerciseSession(tag: 'boot');
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -52,6 +39,9 @@ Future<void> main() async {
   // Initialize audio route service (uses flutter_audio_output)
   // This is the single source of truth for audio route detection
   await AudioRouteService().initialize();
+
+  // Pre-warm database to avoid lazy loading jank on first navigation
+  await AppDatabase().database;
   
   runApp(const CrescendoApp());
 }

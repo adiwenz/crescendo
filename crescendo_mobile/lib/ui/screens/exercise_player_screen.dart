@@ -368,10 +368,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Add frame timing callback to detect jank (only if frame timing debug enabled)
     // Frame timing is disabled by default to reduce log spam
-    // Frame timing disabled to reduce log spam
-    // if (kDebugPitchHighway && kDebugFrameTiming) {
-    //   SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
-    // }
+    if (kDebugMode) {
+      SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+    }
 
     // Prime audio player to avoid first-play latency
     _primeAudio();
@@ -531,12 +530,12 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         debugPrint(
             '[ExercisePlayerScreen] Found pattern JSON for ${widget.exercise.id}, using PatternVisualNoteBuilder');
         // Offload pattern building to isolate
-        final patternNotes = await compute((_) => PatternVisualNoteBuilder.buildVisualNotesFromPattern(
-          pattern: _patternSpec!,
-          lowestMidi: lowestMidi,
-          highestMidi: highestMidi,
-          leadInSec: _leadInSec,
-        ), null);
+        final patternNotes = await compute(_buildNotesInBackground, {
+          'pattern': _patternSpec!,
+          'lowestMidi': lowestMidi,
+          'highestMidi': highestMidi,
+          'leadInSec': _leadInSec,
+        });
         notes = patternNotes;
         sirenPath = null;
       } else {
@@ -684,8 +683,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   void _onFrameTimings(List<FrameTiming> timings) {
     for (final t in timings) {
       final total = t.totalSpan.inMilliseconds;
-      // Only log frames that are significantly slow (> 50ms)
-      if (total > 50) {
+      // Only log frames that are significantly slow (> 100ms)
+      if (total > 100) {
         DebugLog.log(LogCat.perf,
             'Frame total=${total}ms build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms');
       }
@@ -698,10 +697,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     print('[ExercisePlayerScreen] dispose - cleaning up resources');
 
     // Remove frame timing callback (only if it was added)
-    // Frame timing disabled to reduce log spam
-    // if (kDebugPitchHighway && kDebugFrameTiming) {
-    //   SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
-    // }
+    if (kDebugMode) {
+      SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
+    }
 
     // Stop ticker and clock via controller/ticker
     _ticker?.stop();
@@ -3925,4 +3923,13 @@ class _BreathPhase {
   final double durationSec;
 
   const _BreathPhase(this.label, this.durationSec);
+}
+
+List<ReferenceNote> _buildNotesInBackground(Map<String, dynamic> params) {
+  return PatternVisualNoteBuilder.buildVisualNotesFromPattern(
+    pattern: params['pattern'],
+    lowestMidi: params['lowestMidi'],
+    highestMidi: params['highestMidi'],
+    leadInSec: params['leadInSec'],
+  );
 }

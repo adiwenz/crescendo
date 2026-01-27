@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/exercise_attempt.dart';
+import '../../models/exercise_take.dart';
 import '../../models/replay_models.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/reference_note.dart';
@@ -43,6 +45,7 @@ class _ExerciseReviewSummaryScreenState
   List<ExerciseSegment> _segments = const [];
   int _durationMs = 0;
   bool _loading = true;
+  ExerciseTake? _dbTake;
 
   @override
   void initState() {
@@ -52,20 +55,43 @@ class _ExerciseReviewSummaryScreenState
 
   Future<void> _loadReviewData() async {
     var currentAttempt = widget.attempt;
+    String? pitchJson = currentAttempt.contourJson;
 
-    // Check if we have a summary - if contour data is missing, we need to fetch the full record
-    if (currentAttempt.contourJson == null) {
-      debugPrint(
-          '[ReviewSummary] Attempt is summary-only, fetching full record for id=${currentAttempt.id}');
-      final full =
-          await AttemptRepository.instance.getFullAttempt(currentAttempt.id);
+    try {
+
+    // 1. If we have a summary (no contourJson), try to load from last_take
+    if (pitchJson == null) {
+      final lastTake = await AttemptRepository.instance.loadLastTake(widget.exercise.id);
+      
+      // Check if this latest take corresponds to the attempt we're viewing
+      if (lastTake != null && 
+          widget.attempt.completedAt != null &&
+          (lastTake.createdAt.millisecondsSinceEpoch - widget.attempt.completedAt!.millisecondsSinceEpoch).abs() < 1000) {
+        _dbTake = lastTake;
+        debugPrint('[ReviewSummary] Loading pitch from file: ${lastTake.pitchPath}');
+        try {
+          final file = File(lastTake.pitchPath);
+          if (await file.exists()) {
+            pitchJson = await file.readAsString();
+          }
+        } catch (e) {
+          debugPrint('[ReviewSummary] Error reading pitch file: $e');
+        }
+      }
+    }
+
+    // 2. If still null, try falling back to legacy DB (for transition period)
+    if (pitchJson == null) {
+      debugPrint('[ReviewSummary] Fetching legacy full record for id=${currentAttempt.id}');
+      final full = await AttemptRepository.instance.getFullAttempt(currentAttempt.id);
       if (full != null) {
+        pitchJson = full.contourJson;
         currentAttempt = full;
       }
     }
 
     // Parse contour data (pitch samples)
-    _samples = _parseContour(currentAttempt.contourJson);
+    _samples = _parseContour(pitchJson);
 
     // Parse target notes from saved data or build from exercise
     _targets = _parseTargetNotes(currentAttempt.targetNotesJson) ??
@@ -87,7 +113,18 @@ class _ExerciseReviewSummaryScreenState
       _durationMs = 6000; // Default
     }
 
-    setState(() => _loading = false);
+    } catch (e, stack) {
+      debugPrint('[ReviewSummary] Error loading data: $e\n$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading review: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   /// Filter segments to only include those that have recorded pitch data
@@ -190,21 +227,39 @@ class _ExerciseReviewSummaryScreenState
     // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
     final List<ReferenceNote> notes;
     if (widget.exercise.id == 'sirens') {
-      final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-        exercise: widget.exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: AudioConstants.leadInSec,
-        difficulty: difficulty,
+      final sirenResult = await compute(
+        (Map<String, dynamic> args) => TransposedExerciseBuilder.buildSirensWithVisualPath(
+              exercise: args['exercise'],
+              lowestMidi: args['lowestMidi'],
+              highestMidi: args['highestMidi'],
+              leadInSec: args['leadInSec'],
+              difficulty: args['difficulty'],
+            ),
+        {
+          'exercise': widget.exercise,
+          'lowestMidi': lowestMidi,
+          'highestMidi': highestMidi,
+          'leadInSec': AudioConstants.leadInSec,
+          'difficulty': difficulty,
+        },
       );
       notes = sirenResult.audioNotes; // Get the 3 notes per cycle
     } else {
-      notes = TransposedExerciseBuilder.buildTransposedSequence(
-        exercise: widget.exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: AudioConstants.leadInSec,
-        difficulty: difficulty,
+      notes = await compute(
+        (Map<String, dynamic> args) => TransposedExerciseBuilder.buildTransposedSequence(
+              exercise: args['exercise'],
+              lowestMidi: args['lowestMidi'],
+              highestMidi: args['highestMidi'],
+              leadInSec: args['leadInSec'],
+              difficulty: args['difficulty'],
+            ),
+        {
+          'exercise': widget.exercise,
+          'lowestMidi': lowestMidi,
+          'highestMidi': highestMidi,
+          'leadInSec': AudioConstants.leadInSec,
+          'difficulty': difficulty,
+        },
       );
     }
 
@@ -296,7 +351,7 @@ class _ExerciseReviewSummaryScreenState
       recordedAt: widget.attempt.completedAt ?? DateTime.now(),
       frames: frames,
       durationSec: _durationMs / 1000.0,
-      audioPath: widget.attempt.recordingPath,
+      audioPath: _dbTake?.audioPath ?? widget.attempt.recordingPath,
       pitchDifficulty: widget.attempt.pitchDifficulty,
       recorderStartSec: widget.attempt.recorderStartSec,
     );

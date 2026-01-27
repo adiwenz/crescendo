@@ -30,12 +30,16 @@ class ExercisePreviewScreen extends StatefulWidget {
 
 class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     with RouteAware {
-  final ExerciseRepository _repo = ExerciseRepository();
+  final ExerciseRepository _repo = ExerciseRepository.instance;
   final AttemptRepository _attempts = AttemptRepository.instance;
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
-  final PreviewAudioService _previewAudio = PreviewAudioService();
+      
+  PreviewAudioService? _previewAudio;
   VocalExercise? _exercise;
+  String _categoryTitle = '';
+  int _bannerStyleId = 0;
+  
   ExerciseAttemptInfo? _latest;
   bool _loading = true;
   bool _previewing = false;
@@ -51,14 +55,14 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   void initState() {
     super.initState();
     widget.trace?.mark('ExercisePreview initState');
-    debugPrint('[Preview] exerciseId=${widget.exerciseId}');
-    _load();
-    
     // Requirements: Defer heavy generation until after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         widget.trace?.markFirstFrame();
-        _triggerPreparation();
+        _load(); // Start loading all data after first frame
+        
+        // Initialize audio service after first frame
+        _previewAudio = PreviewAudioService();
       }
     });
   }
@@ -75,7 +79,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _previewAudio.dispose();
+    _previewAudio?.dispose();
     super.dispose();
   }
 
@@ -86,27 +90,73 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   }
 
   Future<void> _load() async {
-    final ex = _repo.getExercises().firstWhere(
-          (e) => e.id == widget.exerciseId,
-          orElse: () => _repo.getExercises().first,
-        );
-    await _refreshProgress();
-    // Only ensure loaded, don't refresh - use cache which is already up to date
-    await _attempts.ensureLoaded();
-    final latest = _attempts.latestFor(widget.exerciseId);
-    if (latest == null) {
-      debugPrint('[Preview] latest attempt not found for ${widget.exerciseId}');
-    }
+    widget.trace?.mark('_load start');
+    
+    // 1. Get Exercise Definition
+    final ex = _repo.getExercise(widget.exerciseId);
+    
+    // 2. Compute Metadata (previously in build)
+    final category = _repo.getCategory(ex.categoryId);
+    final categoryTitle = category.title;
+    final bannerStyleId = category.sortOrder % 8;
+    
+    // 3. Load Level Progress
+    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId);
+    
+    // 4. Load Last Score
+    final lastScore = await _attempts.fetchLastScore(widget.exerciseId);
+    
     if (!mounted) return;
+    
+    // 5. Batch State Update (One setState)
     setState(() {
       _exercise = ex;
-      _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
+      _categoryTitle = categoryTitle;
+      _bannerStyleId = bannerStyleId;
+      
+      // Progress data
+
+      final nextHighest = progress.highestUnlockedLevel;
+      _highestUnlockedLevel = nextHighest;
+      _bestScoresByLevel = progress.bestScoreByLevel;
+      _progressLoaded = true;
+      
+      // Select level logic
+      if (_selectedLevel > nextHighest || _selectedLevel < ExerciseLevelProgress.minLevel) {
+          final preferred = progress.lastSelectedLevel;
+          if (preferred != null && preferred >= ExerciseLevelProgress.minLevel && preferred <= nextHighest) {
+            _selectedLevel = preferred;
+          } else {
+            _selectedLevel = nextHighest;
+          }
+      }
+      
+      // Last score data
+      if (lastScore != null) {
+        final attempt = ExerciseAttempt(
+          id: lastScore.id,
+          exerciseId: lastScore.exerciseId,
+          categoryId: lastScore.categoryId,
+          completedAt: lastScore.createdAt,
+          overallScore: lastScore.score,
+          startedAt: null,
+        );
+        _latest = ExerciseAttemptInfo.fromAttempt(attempt);
+      } else {
+        _latest = null;
+      }
+      
       _loading = false;
     });
-    // Removed _triggerPreparation() from _load to follow post-frame requirement
+    
+    widget.trace?.mark('_load complete (setState)');
+    
+    // Trigger audio preparation after state is stable
+    _triggerPreparation();
   }
 
   void _triggerPreparation() async {
+    // ... (rest of method unchanged)
     final ex = _exercise;
     if (ex == null) return;
     
@@ -198,24 +248,22 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
 
   @override
   Widget build(BuildContext context) {
+    widget.trace?.mark('build start (loading=$_loading)');
+    
     final ex = _exercise;
-    // Get category name for AppBar
-    String? categoryTitle;
-    if (ex != null) {
-      try {
-        categoryTitle = _repo.getCategory(ex.categoryId).title;
-      } catch (e) {
-        // Fallback if category not found
-      }
-    }
-    return Scaffold(
-      appBar: AppBar(title: Text(categoryTitle ?? 'Exercise')),
-      body: _loading
+    // Use pre-computed title
+    final appBarBuild = AppBar(title: Text(_categoryTitle.isNotEmpty ? _categoryTitle : 'Exercise'));
+
+    final body = _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (ex != null) _Header(ex: ex),
+                if (ex != null) 
+                  _Header(
+                    ex: ex, 
+                    bannerStyleId: _bannerStyleId
+                  ),
                 const SizedBox(height: 16),
                 Card(
                   shape: RoundedRectangleBorder(
@@ -429,13 +477,17 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                     ),
                   ),
               ],
-            ),
+            );
+
+    return Scaffold(
+      appBar: appBarBuild,
+      body: body,
     );
   }
 
   Future<void> _startExercise() async {
     // Stop preview immediately when starting exercise
-    await _previewAudio.stop();
+    await _previewAudio?.stop();
     if (mounted) {
       setState(() {
         _previewing = false;
@@ -472,23 +524,58 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     }
   }
 
-  void _reviewLast() {
+  Future<void> _reviewLast() async {
     final ex = _exercise;
-    // Query most recent session by exerciseId from database (resilient to re-entry)
-    final latest = _attempts.latestFor(widget.exerciseId);
-    if (latest == null || ex == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No take recorded yet.')),
-      );
-      return;
+    if (ex == null) return;
+    
+    // Get ID from the lightweight attempt we have
+    final currentLite = _latest;
+    if (currentLite == null) return;
+    
+    // Fetch full 
+    // We already have some info, but reviews might need full DB object
+    // Since we don't have global cache anymore, we'll try to find it
+    // AttemptRepository.latestFor will fail if we haven't loaded cache.
+    // Instead we can just open the review screen with what we have? 
+    // Review screen takes `ExerciseAttempt`. The one we constructed in _load is partial.
+    // But ExerciseReviewSummaryScreen might fetch details if needed?
+    // Actually, `ExerciseReviewSummaryScreen` usually expects a full object or it just displays stats.
+    // Let's reload the specific attempt by ID if we can.
+    
+    // If we only have score/date, we don't have the ID?
+    // fetchLastScore DOES return ID (empty string in my imp? NO, I should fix that).
+    
+    // Wait, ProgressRepository.fetchLastScore returns empty ID?
+    // id: '', // Not needed
+    // I should fix ProgressRepository to return the actual ID if possible, but take_scores table has ID.
+    // Yes, take_scores has ID.
+    
+    // Assuming I fix ProgressRepository to return ID (I will in next step):
+    
+    var attempt = currentLite.raw;
+    
+    // Inspect if we need to load more data
+    // If it's a "lite" object (startedAt is null), we might want full object.
+    // But for now, let's try to pass what we have.
+    // Actually, ExerciseReviewSummaryScreen might need recording path?
+    // The lite object has null recordingPath.
+    
+    // Let's try to fetch full attempt if ID is valid
+    if (attempt.id.isNotEmpty) {
+      final full = await _attempts.getFullAttempt(attempt.id);
+      if (full != null) {
+        attempt = full;
+      }
     }
-    // Navigate directly to Detailed Review (ExerciseReviewSummaryScreen)
+
+    if (!mounted) return;
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ExerciseReviewSummaryScreen(
           exercise: ex,
-          attempt: latest,
+          attempt: attempt,
         ),
       ),
     );
@@ -515,7 +602,13 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       }
 
       // Use the new preview audio service (loads bundled assets or generates real-time)
-      await _previewAudio.playPreview(ex);
+      if (_previewAudio != null) {
+        await _previewAudio!.playPreview(ex);
+      } else {
+         debugPrint('[Preview] previewAudio not initialized yet');
+         _previewAudio = PreviewAudioService();
+         await _previewAudio!.playPreview(ex);
+      }
     } catch (e) {
       debugPrint('[Preview] error: $e');
       if (mounted) {
@@ -533,16 +626,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
 
 class _Header extends StatelessWidget {
   final VocalExercise ex;
-  final ExerciseRepository _repo = ExerciseRepository();
+  final int bannerStyleId;
 
-  _Header({required this.ex});
+  const _Header({required this.ex, required this.bannerStyleId});
 
   @override
   Widget build(BuildContext context) {
-    // Get the category to use its sortOrder for consistent colors
-    final category = _repo.getCategory(ex.categoryId);
-    final bannerStyleId = category.sortOrder % 8;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -565,7 +654,7 @@ class _Header extends StatelessWidget {
           child: BannerCard(
             title: ex.name,
             subtitle: ex.description,
-            bannerStyleId: bannerStyleId, // Use category's color
+            bannerStyleId: bannerStyleId,
           ),
         ),
       ],

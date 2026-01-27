@@ -13,7 +13,9 @@ import '../utils/audio_constants.dart';
 class SineSweepService {
   final int sampleRate;
  
-  SineSweepService({this.sampleRate = AudioConstants.audioSampleRate});
+  SineSweepService({this.sampleRate = AudioConstants.audioSampleRate}) {
+    // debugPrint('[SineSweep] Constructor');
+  }
 
   /// Convert MIDI note number to frequency in Hz
   double _midiToHz(double midi) => 440.0 * pow(2.0, (midi - 69.0) / 12.0);

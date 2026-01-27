@@ -63,9 +63,10 @@ class ReferenceAudioGenerator {
     }
 
     // Fast-path: check cache
+    final sw = Stopwatch()..start();
     final cached = await tryGetCached(exercise, difficulty);
     if (cached != null) {
-      debugPrint('[RefGen] Cache HIT for $cacheKey');
+      debugPrint('[RefGen] Cache HIT for $cacheKey (${sw.elapsedMilliseconds}ms)');
       return cached;
     }
 

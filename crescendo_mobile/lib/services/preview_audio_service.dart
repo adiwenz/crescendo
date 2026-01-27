@@ -24,6 +24,18 @@ class PreviewAudioService {
   Completer<void>? _playbackCompleter;
   int _previewRunId = 0;
 
+  PreviewAudioService() {
+    debugPrint('[PreviewAudio] Constructor start');
+    final sw = Stopwatch()..start();
+    _player;
+    debugPrint('[PreviewAudio] AudioPlayer created ${sw.elapsedMilliseconds}ms');
+    _sweepService;
+    debugPrint('[PreviewAudio] SineSweepService created ${sw.elapsedMilliseconds}ms');
+    _midiSynth;
+    debugPrint('[PreviewAudio] ReferenceMidiSynth created ${sw.elapsedMilliseconds}ms');
+    sw.stop();
+  }
+
   /// Play preview for an exercise.
   /// Returns a Future that completes when playback finishes or is stopped.
   /// 

@@ -31,8 +31,16 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
   void initState() {
     super.initState();
     _lastRevision = _attempts.revision;
+    // Build initial summary synchronously from what's already in memory
     _initial = _repo.buildSummaryFromCache();
-    _future = _loadSummary();
+    
+    // Only trigger a full refresh if not already loaded
+    if (!_attempts.cache.isNotEmpty) {
+      _future = _loadSummary();
+    } else {
+      _future = Future.value(_initial);
+    }
+    
     _attempts.addListener(_onAttemptsChanged);
   }
 
@@ -55,11 +63,16 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
   @override
   void didPopNext() {
     // When returning to this screen, refresh data from database
-    _attempts.refresh().then((_) {
+    // BUT do it after the current frame to avoid blocking navigation animation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        setState(() {
-          _lastRevision = _attempts.revision;
-          _future = _loadSummary();
+        _attempts.refresh().then((_) {
+          if (mounted) {
+            setState(() {
+              _lastRevision = _attempts.revision;
+              _future = _loadSummary();
+            });
+          }
         });
       }
     });
@@ -67,12 +80,12 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
 
   void _onAttemptsChanged() {
     if (!mounted) return;
+    debugPrint('[ProgressHomeScreen] attempts changed, revision=${_attempts.revision}');
     // Only rebuild if the revision actually changed (prevents unnecessary rebuilds)
     if (_attempts.revision == _lastRevision) return;
     _lastRevision = _attempts.revision;
     
-    // The cache is already updated by AttemptRepository.save() in memory
-    // No need to refresh from database - just rebuild with current cache
+    // Debounce summary build if multiple attempts hit at once
     setState(() {
       _future = _loadSummary();
     });
@@ -207,7 +220,7 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
                                       ),
                                 ),
                               )
-                            : ProgressLineChart(values: dailyStats.avgScores),
+                            : ProgressBarChart(values: dailyStats.avgScores),
                       ),
                     ],
                   ),

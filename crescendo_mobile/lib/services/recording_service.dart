@@ -45,7 +45,7 @@ class RecordingService {
   StreamSubscription<Uint8List>? _sub;
   bool _isRecording = false;
   RecordingMode _currentMode = RecordingMode.take;
-  double _timeCursor = 0;
+
 
   // Isolate-based worker
   Isolate? _workerIsolate;
@@ -104,7 +104,7 @@ class RecordingService {
     debugPrint('[RecordingService] Mic started - reason: normal start');
     _currentMode = mode;
     _frames.clear();
-    _timeCursor = 0;
+
     
     // Prepare temp PCM path if in take mode
     if (_currentMode == RecordingMode.take) {
@@ -335,6 +335,7 @@ class _RecordingWorker {
     int sampleRate = 48000;
     int bufferSize = 1024;
     double timeCursor = 0;
+    int chunkCount = 0;
     final pitchBuffer = <double>[];
 
     await for (final message in receivePort) {
@@ -367,6 +368,7 @@ class _RecordingWorker {
         // 2. Decode and Pitch Detect
         final samples = RecordingService._pcm16BytesToDoublesStatic(message);
         pitchBuffer.addAll(samples);
+        chunkCount++;
         
         // Keep pitch buffer bounded (last 2-4 windows)
         if (pitchBuffer.length > bufferSize * 4) {
@@ -396,8 +398,14 @@ class _RecordingWorker {
         
         final endTime = DateTime.now();
         final elapsed = endTime.difference(startTime).inMilliseconds;
-        if (elapsed > 40) {
-          debugPrint('[RecordingWorker] ($owner) SLOW PROCESSING: ${elapsed}ms for ${message.length} bytes');
+        
+        // 1) Lightweight instrumentation for every chunk
+        if (chunkCount % 20 == 0) {
+          debugPrint('[RecordingWorker] ($owner) Chunk #$chunkCount: ${message.length} bytes, process=${elapsed}ms');
+        }
+
+        if (elapsed > 20) {
+          debugPrint('[RecordingWorker] ($owner) SLOW PROCESSING SPIKE: ${elapsed}ms for ${message.length} bytes');
         }
       } else if (message == 'stop') {
         debugPrint('[RecordingWorker] ($owner) Processing stop request...');

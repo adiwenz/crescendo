@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
@@ -8,7 +9,27 @@ import 'package:flutter/services.dart';
 class AudioSessionService {
   static AudioSession? _session;
   static const MethodChannel _channel = MethodChannel('com.adriannawenz.crescendo/audioSession');
-  
+  static StreamSubscription? _interruptionSub;
+  static StreamSubscription? _routeChangeSub;
+
+  /// Initialize and start monitoring interruptions/route changes
+  static Future<void> init() async {
+    final session = await _getSession();
+    
+    _interruptionSub?.cancel();
+    _interruptionSub = session.interruptionEventStream.listen((event) {
+      debugPrint('[AudioSessionService] INTERRUPTION: type=${event.type}, begin=${event.begin}');
+      // If a begin event happens, we might want to pause everything
+    });
+
+    _routeChangeSub?.cancel();
+    _routeChangeSub = session.becomingNoisyEventStream.listen((_) {
+      debugPrint('[AudioSessionService] BECOMING NOISY (Route change usually)');
+    });
+    
+    // session.devicesChangedEventStream is also useful
+  }
+
   /// Get or create audio session instance
   static Future<AudioSession> _getSession() async {
     _session ??= await AudioSession.instance;
@@ -77,7 +98,7 @@ class AudioSessionService {
               AVAudioSessionCategoryOptions.mixWithOthers |
               AVAudioSessionCategoryOptions.allowBluetooth |
               AVAudioSessionCategoryOptions.defaultToSpeaker,
-          avAudioSessionMode: AVAudioSessionMode.defaultMode,
+          avAudioSessionMode: AVAudioSessionMode.measurement,
         ),
       );
       

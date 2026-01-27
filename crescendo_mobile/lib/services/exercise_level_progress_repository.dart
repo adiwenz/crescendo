@@ -11,7 +11,6 @@ class ExerciseLevelProgressRepository {
 
   Future<ExerciseLevelProgress> getExerciseProgress(String exerciseId) async {
     final db = overrideDb ?? await _db.database;
-    await _ensureTable(db);
     final rows = await db.query(
       'exercise_progress',
       where: 'exerciseId = ?',
@@ -30,7 +29,6 @@ class ExerciseLevelProgressRepository {
     required int score,
   }) async {
     final db = overrideDb ?? await _db.database;
-    await _ensureTable(db);
     final current = await getExerciseProgress(exerciseId);
     final clampedLevel = level.clamp(
       ExerciseLevelProgress.minLevel,
@@ -65,7 +63,6 @@ class ExerciseLevelProgressRepository {
     required int newLevel,
   }) async {
     final db = overrideDb ?? await _db.database;
-    await _ensureTable(db);
     final current = await getExerciseProgress(exerciseId);
     final clamped = newLevel.clamp(
       ExerciseLevelProgress.minLevel,
@@ -86,26 +83,11 @@ class ExerciseLevelProgressRepository {
     return updated;
   }
 
-  Future<void> _ensureTable(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS exercise_progress(
-        exerciseId TEXT PRIMARY KEY,
-        highestUnlockedLevel INTEGER,
-        lastSelectedLevel INTEGER,
-        bestScoresJson TEXT,
-        lastScoresJson TEXT,
-        attemptsJson TEXT,
-        updatedAt INTEGER
-      )
-    ''');
-  }
-
   Future<ExerciseLevelProgress> setLastSelectedLevel({
     required String exerciseId,
     required int level,
   }) async {
     final db = overrideDb ?? await _db.database;
-    await _ensureTable(db);
     final current = await getExerciseProgress(exerciseId);
     final clamped = level.clamp(
       ExerciseLevelProgress.minLevel,

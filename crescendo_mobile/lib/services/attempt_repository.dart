@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import '../data/progress_repository.dart';
 import '../models/exercise_attempt.dart';
+import '../models/exercise_take.dart';
+import '../models/exercise_score.dart';
 
 /// Thin wrapper over ProgressRepository to expose latest attempts.
 class AttemptRepository extends ChangeNotifier {
@@ -64,6 +66,12 @@ class AttemptRepository extends ChangeNotifier {
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
+    if (_isRefreshing) {
+      // If a refresh is already in progress, wait for it to finish or just return
+      // Since it's a future, we can just return and the caller can await if needed,
+      // but simpler to just skip if already loading.
+      return;
+    }
     try {
       // Use summary fetch to avoid loading huge JSON blobs into memory
       final attempts = await _repo.fetchAttemptSummaries();
@@ -79,5 +87,14 @@ class AttemptRepository extends ChangeNotifier {
   /// Used for detailed review screens.
   Future<ExerciseAttempt?> getFullAttempt(String id) async {
     return _repo.fetchAttempt(id);
+  }
+
+  Future<ExerciseTake?> loadLastTake(String exerciseId) async {
+    return _repo.fetchLastTake(exerciseId);
+  }
+  
+  /// Fetches the most recent score for an exercise without loading global history.
+  Future<ExerciseScore?> fetchLastScore(String exerciseId) async {
+    return _repo.fetchLastScore(exerciseId);
   }
 }

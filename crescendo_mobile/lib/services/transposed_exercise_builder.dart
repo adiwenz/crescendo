@@ -439,41 +439,7 @@ class TransposedExerciseBuilder {
       currentTimeSec = bottom2EndSec + gapBetweenCyclesSec;
     }
     
-    // Debug logging
-    if (audioNotes.isNotEmpty) {
-      final cyclesGenerated = audioNotes.length ~/ 3;
-      debugPrint(
-          '[SirensBuilder] Generated visualPath: ${visualPoints.length} points, '
-          'audioNotes: ${audioNotes.length} notes ($cyclesGenerated cycles), '
-          'range=${sirenRangeSemitones} semitones');
-      if (audioNotes.length >= 3) {
-        final firstCycleNotes = audioNotes.take(3).toList();
-        final firstStartMidi = firstCycleNotes[0].midi;
-        final firstEndMidi = firstCycleNotes[2].midi;
-        final firstTopMidi = firstCycleNotes[1].midi;
-        final bottom1ToTopGap = firstCycleNotes[1].startSec - firstCycleNotes[0].endSec;
-        final topToBottom2Gap = firstCycleNotes[2].startSec - firstCycleNotes[1].endSec;
-        debugPrint(
-            '[SirensAudio] Cycle 1: startMidi=$firstStartMidi topMidi=$firstTopMidi endMidi=$firstEndMidi '
-            '(${firstStartMidi == firstEndMidi ? "start=end ✓" : "MISMATCH"}) '
-            'bottom1@${firstCycleNotes[0].startSec.toStringAsFixed(2)}s, '
-            'top@${firstCycleNotes[1].startSec.toStringAsFixed(2)}s (gap=${bottom1ToTopGap.toStringAsFixed(2)}s), '
-            'bottom2@${firstCycleNotes[2].startSec.toStringAsFixed(2)}s (gap=${topToBottom2Gap.toStringAsFixed(2)}s)');
-        
-        // Validate: start and end notes should be the same, gaps should be ~1.5s
-        if (firstStartMidi != firstEndMidi) {
-          debugPrint(
-              '[SirensBuilder] ERROR: Start and end notes don\'t match: '
-              'start=$firstStartMidi, end=$firstEndMidi');
-        }
-        if ((bottom1ToTopGap - noteSpacingSec).abs() > 0.1 || (topToBottom2Gap - noteSpacingSec).abs() > 0.1) {
-          debugPrint(
-              '[SirensBuilder] WARNING: Note spacing not ~1.5s: '
-              'bottom1->top=${bottom1ToTopGap.toStringAsFixed(2)}s, '
-              'top->bottom2=${topToBottom2Gap.toStringAsFixed(2)}s');
-        }
-      }
-    }
+    // Debug logging removed
     
     return SirenExerciseResult(
       visualPath: SirenPath(points: visualPoints),

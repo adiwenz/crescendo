@@ -367,6 +367,7 @@ class AudioSynthService {
           options: {
             AVAudioSessionOptions.mixWithOthers,
             AVAudioSessionOptions.defaultToSpeaker,
+            AVAudioSessionOptions.allowBluetooth,
           },
         ),
         android: AudioContextAndroid(

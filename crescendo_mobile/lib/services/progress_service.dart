@@ -31,7 +31,7 @@ class ProgressService {
 
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
     debugPrint('[Complete] saving attempt exerciseId=${attempt.exerciseId}');
-    await _repo.saveAttempt(attempt);
+    // await _repo.saveAttempt(attempt); // Redundant: AttemptRepository.save() does this
     final count = await _repo.countAttemptsForExercise(attempt.exerciseId);
     debugPrint('[Progress] attempts for ${attempt.exerciseId}: $count');
     // AttemptRepository.save() already updates the cache and notifies listeners

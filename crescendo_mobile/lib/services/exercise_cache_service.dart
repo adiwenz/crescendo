@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show compute, debugPrint;
 
 import '../models/pitch_highway_difficulty.dart';
 import '../models/reference_note.dart';
@@ -49,7 +49,7 @@ class ExerciseCacheService {
   }
 
   /// Generate and cache all exercises for the given range.
-  /// This should be called when the range is set or changes.
+  /// This runs in a background isolate to avoid blocking the main UI thread.
   Future<void> generateCache({
     required int lowestMidi,
     required int highestMidi,
@@ -66,78 +66,20 @@ class ExerciseCacheService {
     }
 
     _isGenerating = true;
-    debugPrint('[ExerciseCacheService] Generating cache for range: $lowestMidi-$highestMidi');
+    debugPrint('[ExerciseCacheService] Generating cache (background) for range: $lowestMidi-$highestMidi');
 
     try {
-      final exercises = _exerciseRepo.getExercises();
+      // Use compute to run the heavy generation in a background isolate
+      final result = await compute(
+        _generateCacheWorker,
+        _CacheGenParams(lowestMidi, highestMidi),
+      );
+      
       _cache.clear();
-
-      // Generate for each exercise
-      for (final exercise in exercises) {
-        // Only cache exercises with highwaySpec (pitch highway exercises)
-        if (exercise.highwaySpec == null || exercise.highwaySpec!.segments.isEmpty) {
-          continue;
-        }
-
-        // Generate for each difficulty level
-        for (final difficulty in PitchHighwayDifficulty.values) {
-          // Special handling for Sirens: cache audio notes only (visual path generated separately)
-          final List<ReferenceNote> notes;
-          if (exercise.id == 'sirens') {
-            final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-              exercise: exercise,
-              lowestMidi: lowestMidi,
-              highestMidi: highestMidi,
-              leadInSec: AudioConstants.leadInSec,
-              difficulty: difficulty,
-            );
-            notes = sirenResult.audioNotes; // Cache only audio notes (3 notes)
-          } else {
-            notes = TransposedExerciseBuilder.buildTransposedSequence(
-              exercise: exercise,
-              lowestMidi: lowestMidi,
-              highestMidi: highestMidi,
-              leadInSec: AudioConstants.leadInSec,
-              difficulty: difficulty,
-            );
-          }
-
-          final difficultyKey = difficulty.name;
-          if (!_cache.containsKey(exercise.id)) {
-            _cache[exercise.id] = {};
-          }
-          _cache[exercise.id]![difficultyKey] = notes;
-        }
-
-        // Also generate without difficulty (default)
-        final List<ReferenceNote> notesDefault;
-        if (exercise.id == 'sirens') {
-          final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-            exercise: exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: AudioConstants.leadInSec,
-            difficulty: null, // Default difficulty for cache
-          );
-          notesDefault = sirenResult.audioNotes;
-        } else {
-          notesDefault = TransposedExerciseBuilder.buildTransposedSequence(
-            exercise: exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: AudioConstants.leadInSec,
-            difficulty: null,
-          );
-        }
-
-        if (!_cache.containsKey(exercise.id)) {
-          _cache[exercise.id] = {};
-        }
-        _cache[exercise.id]![null] = notesDefault;
-      }
-
+      _cache.addAll(result);
       _cachedLowestMidi = lowestMidi;
       _cachedHighestMidi = highestMidi;
+      
       debugPrint('[ExerciseCacheService] Cache generation complete: ${_cache.length} exercises cached');
     } catch (e, stackTrace) {
       debugPrint('[ExerciseCacheService] Error generating cache: $e');
@@ -172,4 +114,87 @@ class ExerciseCacheService {
     await generateCache(lowestMidi: lowestMidi, highestMidi: highestMidi);
     debugPrint('[ExerciseCacheService] Cache force-regenerated for range: $lowestMidi-$highestMidi');
   }
+}
+
+/// Parameters passed to the background worker
+class _CacheGenParams {
+  final int lowestMidi;
+  final int highestMidi;
+  _CacheGenParams(this.lowestMidi, this.highestMidi);
+}
+
+/// Static worker function that runs in a separate isolate.
+/// It must be a top-level function or a static method.
+Map<String, Map<String?, List<ReferenceNote>>> _generateCacheWorker(_CacheGenParams params) {
+  final lowestMidi = params.lowestMidi;
+  final highestMidi = params.highestMidi;
+  // Note: We cannot use the singleton ExerciseRepository here because singletons aren't shared across isolates.
+  // We must re-instantiate it (it's lightweight) or fetch data directly.
+  final exercises = ExerciseRepository().getExercises();
+  final cache = <String, Map<String?, List<ReferenceNote>>>{};
+
+  for (final exercise in exercises) {
+    // Only cache exercises with highwaySpec (pitch highway exercises)
+    if (exercise.highwaySpec == null || exercise.highwaySpec!.segments.isEmpty) {
+      continue;
+    }
+
+    // Generate for each difficulty level
+    for (final difficulty in PitchHighwayDifficulty.values) {
+      // Special handling for Sirens: cache audio notes only (visual path generated separately)
+      final List<ReferenceNote> notes;
+      if (exercise.id == 'sirens') {
+        final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+          exercise: exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: AudioConstants.leadInSec,
+          difficulty: difficulty,
+        );
+        notes = sirenResult.audioNotes; // Cache only audio notes (3 notes)
+      } else {
+        notes = TransposedExerciseBuilder.buildTransposedSequence(
+          exercise: exercise,
+          lowestMidi: lowestMidi,
+          highestMidi: highestMidi,
+          leadInSec: AudioConstants.leadInSec,
+          difficulty: difficulty,
+        );
+      }
+
+      final difficultyKey = difficulty.name;
+      if (!cache.containsKey(exercise.id)) {
+        cache[exercise.id] = {};
+      }
+      cache[exercise.id]![difficultyKey] = notes;
+    }
+
+    // Also generate without difficulty (default)
+    final List<ReferenceNote> notesDefault;
+    if (exercise.id == 'sirens') {
+      final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
+        exercise: exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: AudioConstants.leadInSec,
+        difficulty: null, // Default difficulty for cache
+      );
+      notesDefault = sirenResult.audioNotes;
+    } else {
+      notesDefault = TransposedExerciseBuilder.buildTransposedSequence(
+        exercise: exercise,
+        lowestMidi: lowestMidi,
+        highestMidi: highestMidi,
+        leadInSec: AudioConstants.leadInSec,
+        difficulty: null,
+      );
+    }
+
+    if (!cache.containsKey(exercise.id)) {
+      cache[exercise.id] = {};
+    }
+    cache[exercise.id]![null] = notesDefault;
+  }
+  
+  return cache;
 }

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'logging_database.dart';
 
 class AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
@@ -10,12 +12,44 @@ class AppDatabase {
 
   Future<Database> get database async {
     if (_db != null) return _db!;
+    
+    debugPrint('[DB_TRACE] AppDatabase opening...');
+    final start = DateTime.now();
+    
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 10, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    final realDb = await openDatabase(path, version: 11, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    
+    debugPrint('[DB_TRACE] AppDatabase opened in ${DateTime.now().difference(start).inMilliseconds}ms');
+
+    if (kDebugMode) {
+       _db = LoggingDatabase(realDb);
+    } else {
+       _db = realDb;
+    }
     return _db!;
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE take_scores(
+        id TEXT PRIMARY KEY,
+        exerciseId TEXT,
+        categoryId TEXT,
+        createdAt INTEGER,
+        score REAL,
+        durationMs INTEGER
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE last_take(
+        exerciseId TEXT PRIMARY KEY,
+        createdAt INTEGER,
+        score REAL,
+        audioPath TEXT,
+        pitchPath TEXT,
+        offsetMs REAL
+      )
+    ''');
     await db.execute('''
       CREATE TABLE takes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +184,49 @@ class AppDatabase {
     }
     if (oldVersion < 10) {
       await _addColumnIfMissing(db, 'exercise_attempts', 'recorderStartSec', 'REAL');
+    }
+    if (oldVersion < 11) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS take_scores(
+          id TEXT PRIMARY KEY,
+          exerciseId TEXT,
+          categoryId TEXT,
+          createdAt INTEGER,
+          score REAL,
+          durationMs INTEGER
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS last_take(
+          exerciseId TEXT PRIMARY KEY,
+          createdAt INTEGER,
+          score REAL,
+          audioPath TEXT,
+          pitchPath TEXT,
+          offsetMs REAL
+        )
+      ''');
+
+      // Migrate scores
+      await db.execute('''
+        INSERT INTO take_scores (id, exerciseId, categoryId, createdAt, score, durationMs)
+        SELECT id, exerciseId, categoryId, completedAt, overallScore, (completedAt - startedAt)
+        FROM exercise_attempts
+        WHERE completedAt IS NOT NULL AND startedAt IS NOT NULL
+      ''');
+
+      // Migrate last takes
+      // We'll pick the latest completion for each exercise
+      await db.execute('''
+        INSERT OR REPLACE INTO last_take (exerciseId, createdAt, score, audioPath, pitchPath, offsetMs)
+        SELECT ea.exerciseId, ea.completedAt, ea.overallScore, ea.recordingPath, '', ea.recorderStartSec
+        FROM exercise_attempts ea
+        INNER JOIN (
+          SELECT exerciseId, MAX(completedAt) as lastComp
+          FROM exercise_attempts
+          GROUP BY exerciseId
+        ) latest ON ea.exerciseId = latest.exerciseId AND ea.completedAt = latest.lastComp
+      ''');
     }
   }
 

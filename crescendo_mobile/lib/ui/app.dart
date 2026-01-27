@@ -15,6 +15,7 @@ import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'route_observer.dart';
 import 'widgets/app_background.dart';
+import 'widgets/lazy_indexed_stack.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -115,7 +116,7 @@ class _RootScaffold extends StatelessWidget {
     final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
     return Scaffold(
       body: AppBackground(
-        child: IndexedStack(
+        child: LazyIndexedStack(
           index: currentIndex,
           children: [
             const HomeScreen(),

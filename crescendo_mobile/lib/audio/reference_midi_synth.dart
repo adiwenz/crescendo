@@ -9,9 +9,14 @@ import '../services/audio_session_service.dart';
 /// Plays MIDI notes directly without rendering to WAV files
 class ReferenceMidiSynth {
   static final ReferenceMidiSynth _instance = ReferenceMidiSynth._internal();
-  factory ReferenceMidiSynth() => _instance;
+  factory ReferenceMidiSynth() {
+    debugPrint('[ReferenceMidiSynth] Factory access');
+    return _instance;
+  }
   static ReferenceMidiSynth get instance => _instance;
-  ReferenceMidiSynth._internal();
+  ReferenceMidiSynth._internal() {
+    debugPrint('[ReferenceMidiSynth] Constructor initialized');
+  }
 
   final MidiPro _midi = MidiPro();
   String? _sfId;
