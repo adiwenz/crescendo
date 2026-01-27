@@ -43,7 +43,7 @@ class ProgressService {
       attempt.exerciseId,
       score: attempt.overallScore.round(),
     );
-    await refresh();
+    // await refresh(); // DISABLED: Do not trigger full table scan. UI should update from AttemptRepository/LibraryStore.
   }
 
   ProgressSnapshot<ExerciseAttempt> snapshot() => _buildSnapshot(_cache);

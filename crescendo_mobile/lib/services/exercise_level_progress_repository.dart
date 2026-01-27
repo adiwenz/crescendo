@@ -9,7 +9,14 @@ class ExerciseLevelProgressRepository {
 
   ExerciseLevelProgressRepository({this.overrideDb});
 
+  // In-memory cache to avoid redundant SELECTs during session
+  // Key: exerciseId
+  final Map<String, ExerciseLevelProgress> _cache = {};
+
   Future<ExerciseLevelProgress> getExerciseProgress(String exerciseId) async {
+    if (_cache.containsKey(exerciseId)) {
+      return _cache[exerciseId]!;
+    }
     final db = overrideDb ?? await _db.database;
     final rows = await db.query(
       'exercise_progress',
@@ -17,10 +24,12 @@ class ExerciseLevelProgressRepository {
       whereArgs: [exerciseId],
       limit: 1,
     );
-    if (rows.isEmpty) {
-      return ExerciseLevelProgress.empty(exerciseId);
-    }
-    return ExerciseLevelProgress.fromDbMap(rows.first);
+    final progress = rows.isEmpty
+        ? ExerciseLevelProgress.empty(exerciseId)
+        : ExerciseLevelProgress.fromDbMap(rows.first);
+    
+    _cache[exerciseId] = progress;
+    return progress;
   }
 
   Future<ExerciseLevelProgress> saveAttempt({
@@ -50,6 +59,9 @@ class ExerciseLevelProgressRepository {
       attemptsByLevel: nextAttempts,
       updatedAt: DateTime.now(),
     );
+    // Update cache immediately
+    _cache[exerciseId] = updated;
+
     await db.insert(
       'exercise_progress',
       updated.toDbMap(),
@@ -75,6 +87,9 @@ class ExerciseLevelProgressRepository {
       highestUnlockedLevel: clamped,
       updatedAt: DateTime.now(),
     );
+    // Update cache immediately
+    _cache[exerciseId] = updated;
+
     await db.insert(
       'exercise_progress',
       updated.toDbMap(),
@@ -97,6 +112,9 @@ class ExerciseLevelProgressRepository {
       lastSelectedLevel: clamped,
       updatedAt: DateTime.now(),
     );
+    // Update cache immediately
+    _cache[exerciseId] = updated;
+
     await db.insert(
       'exercise_progress',
       updated.toDbMap(),

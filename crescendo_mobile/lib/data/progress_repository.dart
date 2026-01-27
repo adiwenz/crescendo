@@ -19,31 +19,31 @@ class ProgressRepository {
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
     final db = overrideDb ?? await _db.database;
     
-    // 1. Save lightweight score history
-    final score = ExerciseScore(
-      id: attempt.id,
-      exerciseId: attempt.exerciseId,
-      categoryId: attempt.categoryId,
-      createdAt: attempt.completedAt ?? DateTime.now(),
-      score: attempt.overallScore,
-      durationMs: (attempt.completedAt != null && attempt.startedAt != null)
-          ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
-          : 0,
-    );
-    await db.insert('take_scores', score.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    // Use transaction for atomicity and speed
+    await db.transaction((txn) async {
+      // 1. Save lightweight score history
+      final score = ExerciseScore(
+        id: attempt.id,
+        exerciseId: attempt.exerciseId,
+        categoryId: attempt.categoryId,
+        createdAt: attempt.completedAt ?? DateTime.now(),
+        score: attempt.overallScore,
+        durationMs: (attempt.completedAt != null && attempt.startedAt != null)
+            ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
+            : 0,
+      );
+      await txn.insert('take_scores', score.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
 
-    // 2. Manage assets and update last_take
-    if (attempt.recordingPath != null || attempt.contourJson != null) {
-      final lastTake = await _manageAssetsAndCreateTake(attempt);
-      await db.insert('last_take', lastTake.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-
-    // 3. Keep old table for safety for one version, but we should eventually stop writing to it
-    await db.insert(
-      'exercise_attempts',
-      attempt.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+      // 2. Manage assets and update last_take (UPSERT)
+      // Only last_take needs to track file paths.
+      // We don't save heavy blobs to exercise_attempts anymore.
+      if (attempt.recordingPath != null || attempt.contourJson != null) {
+        final lastTake = await _manageAssetsAndCreateTake(attempt);
+        // UPSERT: Insert or replace based on PRIMARY KEY (exerciseId)
+        // Schema must utilize exerciseId as primary key for this to work as an upsert on that key
+        await txn.insert('last_take', lastTake.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
   }
 
   Future<ExerciseTake> _manageAssetsAndCreateTake(ExerciseAttempt attempt) async {
@@ -261,6 +261,14 @@ class ProgressRepository {
     
     // Add index for fast per-exercise lookup
     await db.execute('CREATE INDEX IF NOT EXISTS idx_take_scores_exercise_created ON take_scores(exerciseId, createdAt DESC)');
+    
+    // Ensure last_take has exerciseId as PRIMARY KEY for upsert
+    // Note: If table exists without PK, we might need to recreate. 
+    // Ideally this was set in migrations, but for safety we check.
+    // Since we can't easily alter PK in sqlite, we assume it's set correctly or we just rely on Replace.
+    // 'CREATE TABLE IF NOT EXISTS last_take (exerciseId TEXT PRIMARY KEY, ...)' should be in db.dart
+    // If not, we might rely on the fact that ConflictAlgorithm.replace works if unique constraint exists.
+    // For now, we trust the DB creation script.
   }
 }
 

@@ -60,7 +60,7 @@ class _ExerciseReviewSummaryScreenState
     try {
 
     // 1. If we have a summary (no contourJson), try to load from last_take
-    if (pitchJson == null) {
+    if (pitchJson == null || widget.attempt.recordingPath == null || !File(widget.attempt.recordingPath!).existsSync()) {
       final lastTake = await AttemptRepository.instance.loadLastTake(widget.exercise.id);
       
       // Check if this latest take corresponds to the attempt we're viewing
@@ -68,14 +68,18 @@ class _ExerciseReviewSummaryScreenState
           widget.attempt.completedAt != null &&
           (lastTake.createdAt.millisecondsSinceEpoch - widget.attempt.completedAt!.millisecondsSinceEpoch).abs() < 1000) {
         _dbTake = lastTake;
-        debugPrint('[ReviewSummary] Loading pitch from file: ${lastTake.pitchPath}');
-        try {
-          final file = File(lastTake.pitchPath);
-          if (await file.exists()) {
-            pitchJson = await file.readAsString();
+        debugPrint('[ReviewSummary] Loading data from file: pitch=${lastTake.pitchPath}, audio=${lastTake.audioPath}');
+        
+        // Load pitch if needed
+        if (pitchJson == null) {
+          try {
+            final file = File(lastTake.pitchPath);
+            if (await file.exists()) {
+              pitchJson = await file.readAsString();
+            }
+          } catch (e) {
+            debugPrint('[ReviewSummary] Error reading pitch file: $e');
           }
-        } catch (e) {
-          debugPrint('[ReviewSummary] Error reading pitch file: $e');
         }
       }
     }
