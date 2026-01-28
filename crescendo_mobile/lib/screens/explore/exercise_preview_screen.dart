@@ -194,13 +194,27 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   }
 
   Future<void> _refreshLatest() async {
-    // Use cache - it's already updated by AttemptRepository.save()
-    // No need to refresh from database
-    final latest = _attempts.latestFor(widget.exerciseId);
+    widget.trace?.mark('_refreshLatest start');
+    // Force re-fetch from repository/DB to ensure we get the latest write
+    final lastScore = await _attempts.fetchLastScore(widget.exerciseId);
+    
     if (!mounted) return;
     setState(() {
-      _latest = latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest);
+      if (lastScore != null) {
+        final attempt = ExerciseAttempt(
+          id: lastScore.id,
+          exerciseId: lastScore.exerciseId,
+          categoryId: lastScore.categoryId,
+          completedAt: lastScore.createdAt,
+          overallScore: lastScore.score,
+          startedAt: null,
+        );
+        _latest = ExerciseAttemptInfo.fromAttempt(attempt);
+      } else {
+        _latest = null;
+      }
     });
+    widget.trace?.mark('_refreshLatest complete');
   }
 
   Future<void> _refreshProgress({bool showToast = false}) async {

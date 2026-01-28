@@ -54,8 +54,8 @@ class DailyExerciseService {
   static const String _dailyExercisesDateKey = 'daily_exercises_date';
   static const int _numDailyExercises = 4;
 
-  // Warmup category mapping: 'warmup' category maps to 'recovery_therapy' in VocalExercise
-  static const String _warmupCategoryId = 'recovery_therapy';
+  // Warmup category mapping: 'sovt' category (Lip Trills, Humming) makes excellent warmups
+  static const String _warmupCategoryId = 'sovt';
 
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
 

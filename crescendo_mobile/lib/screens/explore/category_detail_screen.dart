@@ -7,6 +7,7 @@ import '../../services/attempt_repository.dart';
 import '../../state/library_store.dart';
 import '../../widgets/exercise_row_banner.dart';
 import 'exercise_preview_screen.dart';
+import '../../ui/route_observer.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final ExerciseCategory category;
@@ -138,7 +139,9 @@ class _ExerciseListForCategory extends StatefulWidget {
       _ExerciseListForCategoryState();
 }
 
-class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
+
+
+class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> with RouteAware {
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
   List<VocalExercise> _exercises = [];
@@ -150,9 +153,31 @@ class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> {
     _loadExercises();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // Refresh when returning to this screen
+    _loadExercises();
+    libraryStore.load();
+  }
+
   Future<void> _loadExercises() async {
     final exercises = _exerciseRepo.getExercisesForCategory(widget.category.id);
-    // Only ensure loaded, don't refresh - use cache which is already up to date
+    // Force refresh attempts to ensure UI is up to date
     await _attempts.ensureLoaded();
     if (mounted) {
       setState(() {
