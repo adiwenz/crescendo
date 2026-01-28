@@ -547,7 +547,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     _time.value = _audioPositionSec!;
     
     if (_audioPositionSec! >= _durationSec) {
-      _stop();
+      _onPlaybackComplete();
     }
   }
 
