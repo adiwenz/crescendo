@@ -65,7 +65,8 @@ class FakeClock implements IClock {
 
   @override
   Timer periodic(Duration duration, void Function(Timer) callback) {
-    final timer = _ScheduledTimer(
+    late final _ScheduledTimer timer;
+    timer = _ScheduledTimer(
       duration: duration,
       callback: () => callback(timer),
       fireTime: _now.add(duration),

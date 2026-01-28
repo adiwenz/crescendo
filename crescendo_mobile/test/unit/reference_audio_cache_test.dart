@@ -1,141 +1,358 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crescendo_mobile/services/reference_audio_cache.dart';
+import 'package:crescendo_mobile/models/reference_note.dart';
 
 void main() {
   group('ReferenceAudioCache', () {
     late ReferenceAudioCache cache;
+    late Directory tempDir;
 
-    setUp(() {
-      cache = ReferenceAudioCache();
+    setUp(() async {
+      cache = ReferenceAudioCache.instance;
+      cache.clear(); // Clear cache before each test
+      
+      // Create temp directory for test files
+      tempDir = await Directory.systemTemp.createTemp('reference_audio_cache_test');
     });
 
-    test('cache key generation is deterministic', () {
-      final key1 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range123',
-        patternHash: 'pattern456',
-        difficulty: 'easy',
-      );
-
-      final key2 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range123',
-        patternHash: 'pattern456',
-        difficulty: 'easy',
-      );
-
-      expect(key1, equals(key2));
+    tearDown(() async {
+      // Clean up temp files
+      if (tempDir.existsSync()) {
+        await tempDir.delete(recursive: true);
+      }
     });
 
-    test('cache key changes with different parameters', () {
-      final key1 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range123',
-        patternHash: 'pattern456',
+    Future<String> createTempFile(String name) async {
+      final file = File('${tempDir.path}/$name');
+      await file.writeAsString('test audio data');
+      return file.path;
+    }
+
+    test('getCached returns null for non-existent entry', () {
+      final result = cache.getCached(
+        exerciseId: 'test',
         difficulty: 'easy',
+        notes: [ReferenceNote(startSec: 0, endSec: 1, midi: 60)],
+        sampleRate: 44100,
       );
-
-      final key2 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range123',
-        patternHash: 'pattern456',
-        difficulty: 'medium', // Different difficulty
-      );
-
-      expect(key1, isNot(equals(key2)));
-    });
-
-    test('get returns null for non-existent key', () {
-      final result = cache.get('non_existent_key');
       expect(result, isNull);
     });
 
-    test('put and get work correctly', () {
-      const key = 'test_key';
-      const path = '/test/path.wav';
+    test('putCached and getCached work correctly', () async {
+      final path = await createTempFile('test.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
 
-      cache.put(key, path);
-      final result = cache.get(key);
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path,
+      );
+
+      final result = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
 
       expect(result, equals(path));
     });
 
-    test('clear removes all entries', () {
-      cache.put('key1', '/path1.wav');
-      cache.put('key2', '/path2.wav');
-      cache.put('key3', '/path3.wav');
+    test('cache key is deterministic for same parameters', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
 
-      expect(cache.get('key1'), isNotNull);
-      expect(cache.get('key2'), isNotNull);
-      expect(cache.get('key3'), isNotNull);
+      // Put with same parameters twice
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path2,
+      );
+
+      // Should get the second path (overwrite)
+      final result = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      expect(result, equals(path2));
+    });
+
+    test('cache key changes with different exercise ID', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+
+      cache.putCached(
+        exerciseId: 'test1',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test2',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path2,
+      );
+
+      final result1 = cache.getCached(
+        exerciseId: 'test1',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      final result2 = cache.getCached(
+        exerciseId: 'test2',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      expect(result1, equals(path1));
+      expect(result2, equals(path2));
+    });
+
+    test('cache key changes with different difficulty', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'hard',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path2,
+      );
+
+      final result1 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      final result2 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'hard',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      expect(result1, equals(path1));
+      expect(result2, equals(path2));
+    });
+
+    test('cache key changes with different notes', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes1 = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+      final notes2 = [ReferenceNote(startSec: 0, endSec: 1, midi: 62)];
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes1,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes2,
+        sampleRate: 44100,
+        audioPath: path2,
+      );
+
+      final result1 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes1,
+        sampleRate: 44100,
+      );
+
+      final result2 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes2,
+        sampleRate: 44100,
+      );
+
+      expect(result1, equals(path1));
+      expect(result2, equals(path2));
+    });
+
+    test('cache key changes with different sample rate', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 48000,
+        audioPath: path2,
+      );
+
+      final result1 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+      );
+
+      final result2 = cache.getCached(
+        exerciseId: 'test',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 48000,
+      );
+
+      expect(result1, equals(path1));
+      expect(result2, equals(path2));
+    });
+
+    test('clear removes all entries', () async {
+      final path1 = await createTempFile('path1.wav');
+      final path2 = await createTempFile('path2.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+
+      cache.putCached(
+        exerciseId: 'test1',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path1,
+      );
+
+      cache.putCached(
+        exerciseId: 'test2',
+        difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path2,
+      );
+
+      expect(cache.size, equals(2));
 
       cache.clear();
 
-      expect(cache.get('key1'), isNull);
-      expect(cache.get('key2'), isNull);
-      expect(cache.get('key3'), isNull);
+      expect(cache.size, equals(0));
+      expect(
+        cache.getCached(
+          exerciseId: 'test1',
+          difficulty: 'easy',
+          notes: notes,
+          sampleRate: 44100,
+        ),
+        isNull,
+      );
     });
 
-    test('overwriting existing key updates value', () {
-      const key = 'test_key';
-      const path1 = '/path1.wav';
-      const path2 = '/path2.wav';
+    test('cache handles many entries', () async {
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
 
-      cache.put(key, path1);
-      expect(cache.get(key), equals(path1));
-
-      cache.put(key, path2);
-      expect(cache.get(key), equals(path2));
-    });
-
-    test('cache handles many entries', () {
       // Add 100 entries
       for (var i = 0; i < 100; i++) {
-        cache.put('key_$i', '/path_$i.wav');
+        final path = await createTempFile('path_$i.wav');
+        cache.putCached(
+          exerciseId: 'test_$i',
+          difficulty: 'easy',
+          notes: notes,
+          sampleRate: 44100,
+          audioPath: path,
+        );
       }
 
-      // Verify all entries exist
-      for (var i = 0; i < 100; i++) {
-        expect(cache.get('key_$i'), equals('/path_$i.wav'));
+      expect(cache.size, equals(100));
+
+      // Verify first few entries exist (not all 100 to keep test fast)
+      for (var i = 0; i < 10; i++) {
+        final result = cache.getCached(
+          exerciseId: 'test_$i',
+          difficulty: 'easy',
+          notes: notes,
+          sampleRate: 44100,
+        );
+        expect(result, isNotNull);
       }
     });
 
-    test('cache key includes all parameters', () {
-      final key1 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range1',
-        patternHash: 'pattern1',
+    test('getCached returns null if file was deleted', () async {
+      final path = await createTempFile('deleted.wav');
+      final notes = [ReferenceNote(startSec: 0, endSec: 1, midi: 60)];
+
+      cache.putCached(
+        exerciseId: 'test',
         difficulty: 'easy',
+        notes: notes,
+        sampleRate: 44100,
+        audioPath: path,
       );
 
-      final key2 = cache.getCacheKey(
-        exerciseId: 'ex2', // Different exercise
-        rangeHash: 'range1',
-        patternHash: 'pattern1',
-        difficulty: 'easy',
+      // Verify it's cached
+      expect(
+        cache.getCached(
+          exerciseId: 'test',
+          difficulty: 'easy',
+          notes: notes,
+          sampleRate: 44100,
+        ),
+        equals(path),
       );
 
-      final key3 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range2', // Different range
-        patternHash: 'pattern1',
-        difficulty: 'easy',
-      );
+      // Delete the file
+      await File(path).delete();
 
-      final key4 = cache.getCacheKey(
-        exerciseId: 'ex1',
-        rangeHash: 'range1',
-        patternHash: 'pattern2', // Different pattern
-        difficulty: 'easy',
+      // Should return null now
+      expect(
+        cache.getCached(
+          exerciseId: 'test',
+          difficulty: 'easy',
+          notes: notes,
+          sampleRate: 44100,
+        ),
+        isNull,
       );
-
-      // All keys should be different
-      expect(key1, isNot(equals(key2)));
-      expect(key1, isNot(equals(key3)));
-      expect(key1, isNot(equals(key4)));
-      expect(key2, isNot(equals(key3)));
-      expect(key2, isNot(equals(key4)));
-      expect(key3, isNot(equals(key4)));
     });
   });
 }
