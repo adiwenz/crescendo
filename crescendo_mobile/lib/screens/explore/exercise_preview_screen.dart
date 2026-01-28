@@ -85,8 +85,8 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
 
   @override
   void didPopNext() {
-    _refreshLatest();
-    _refreshProgress(showToast: true);
+    debugPrint('[Preview] didPopNext triggered, reloading...');
+    _load();
   }
 
   Future<void> _load() async {
@@ -101,7 +101,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     final bannerStyleId = category.sortOrder % 8;
     
     // 3. Load Level Progress
-    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId);
+    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId, forceRefresh: true);
     
     // 4. Load Last Score
     final lastScore = await _attempts.fetchLastScore(widget.exerciseId);
@@ -218,11 +218,18 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   }
 
   Future<void> _refreshProgress({bool showToast = false}) async {
-    final progress =
-        await _levelProgress.getExerciseProgress(widget.exerciseId);
+    // Force refresh from DB to get latest updates
+    final progress = await _levelProgress.getExerciseProgress(widget.exerciseId, forceRefresh: true);
+    
     if (!mounted) return;
+    
     final previousHighest = _highestUnlockedLevel;
     final nextHighest = progress.highestUnlockedLevel;
+    
+    // Debug logging as requested
+    debugPrint('[PreviewRefresh] exerciseId=${widget.exerciseId} progressHighest=$nextHighest selected=$_selectedLevel');
+    debugPrint('[PreviewRefresh] bestScores=${progress.bestScoreByLevel}');
+    
     var nextSelected = _selectedLevel;
     if (!_progressLoaded ||
         nextSelected > nextHighest ||
@@ -236,7 +243,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
         nextSelected = nextHighest;
       }
     }
+    
     final levelUp = showToast && nextHighest > previousHighest;
+    
     setState(() {
       _highestUnlockedLevel = nextHighest;
       _bestScoresByLevel = progress.bestScoreByLevel;
@@ -244,6 +253,11 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
+    
+    // Log computed best for current level
+    final currentBest = _bestScoresByLevel[_selectedLevel];
+    debugPrint('[PreviewRefresh] Updated UI for level $_selectedLevel. Best: $currentBest%');
+
     // Plan refresh will be triggered by WidgetsBinding or manual selection if it changes
     // But since it's a value change, we should trigger it here too if it's already past the first frame
     if (_progressLoaded) {
@@ -528,14 +542,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
       );
       return;
     }
+    // Wait for the route to pop, then refresh data
     await Future.delayed(const Duration(milliseconds: 300));
-    // Cache is already updated by AttemptRepository.save()
-    // No need to refresh from database
-    final latest = _attempts.latestFor(widget.exerciseId);
-    if (mounted) {
-      setState(() => _latest =
-          latest == null ? null : ExerciseAttemptInfo.fromAttempt(latest));
-    }
+    
+    debugPrint('[Preview] Returned from exercise, refreshing data...');
+    // Explicitly reload all data (progress + attempts)
+    await _load();
   }
 
   Future<void> _reviewLast() async {

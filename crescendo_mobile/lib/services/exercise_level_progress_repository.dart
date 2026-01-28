@@ -13,8 +13,8 @@ class ExerciseLevelProgressRepository {
   // Key: exerciseId
   final Map<String, ExerciseLevelProgress> _cache = {};
 
-  Future<ExerciseLevelProgress> getExerciseProgress(String exerciseId) async {
-    if (_cache.containsKey(exerciseId)) {
+  Future<ExerciseLevelProgress> getExerciseProgress(String exerciseId, {bool forceRefresh = false}) async {
+    if (!forceRefresh && _cache.containsKey(exerciseId)) {
       return _cache[exerciseId]!;
     }
     final db = overrideDb ?? await _db.database;
