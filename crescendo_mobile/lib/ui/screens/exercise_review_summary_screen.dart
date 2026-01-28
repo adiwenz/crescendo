@@ -88,6 +88,44 @@ class _ExerciseReviewSummaryScreenState
     String? pitchJson = currentAttempt.contourJson;
 
     try {
+      // If using a draft, we must resolve the WAV path future
+      if (widget.draft != null) {
+        final d = widget.draft!;
+        debugPrint('[ReviewSummary] Resolving WAV path from draft future...');
+        try {
+          // Await the encoding future
+          final wavPath = await d.wavPathFuture;
+          debugPrint('[ReviewSummary] Draft WAV resolved: $wavPath');
+          
+          // Recreate _displayAttempt with the resolved path since it's immutable
+          _displayAttempt = ExerciseAttempt(
+            id: _displayAttempt.id,
+            exerciseId: _displayAttempt.exerciseId,
+            categoryId: _displayAttempt.categoryId,
+            startedAt: _displayAttempt.startedAt,
+            completedAt: _displayAttempt.completedAt,
+            overallScore: _displayAttempt.overallScore,
+            subScores: _displayAttempt.subScores,
+            recordingPath: wavPath, // <--- THE FIX
+            contourJson: _displayAttempt.contourJson,
+            targetNotesJson: _displayAttempt.targetNotesJson,
+            segmentsJson: _displayAttempt.segmentsJson,
+            notes: _displayAttempt.notes,
+            pitchDifficulty: _displayAttempt.pitchDifficulty,
+            recorderStartSec: _displayAttempt.recorderStartSec,
+            minMidi: _displayAttempt.minMidi,
+            maxMidi: _displayAttempt.maxMidi,
+            referenceWavPath: _displayAttempt.referenceWavPath,
+            referenceSampleRate: _displayAttempt.referenceSampleRate,
+            referenceWavSha1: _displayAttempt.referenceWavSha1,
+            version: _displayAttempt.version,
+          );
+          currentAttempt = _displayAttempt;
+        } catch (e) {
+           debugPrint('[ReviewSummary] Error resolving draft WAV path: $e');
+        }
+      }
+
       // If NOT using a draft, try to recover/load missing data from storage
       if (widget.draft == null) {
         // 1. If we have a summary (no contourJson) or missing audio, try to load from last_take
