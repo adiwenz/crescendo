@@ -148,7 +148,7 @@ class _ExerciseProgressDetailScreenState extends State<ExerciseProgressDetailScr
                           ),
                         )
                       : _LevelColoredBarChart(
-                          attempts: _exerciseAttempts,
+                          attempts: _exerciseAttempts.reversed.toList(),
                         ),
                 ),
                 // Legend

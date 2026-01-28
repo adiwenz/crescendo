@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
-// import 'package:flutter_midi_pro/flutter_midi_pro.dart'; // REMOVED
+
 import '../services/piano_sample_service.dart'; // ADDED
 import '../models/reference_note.dart';
 import 'midi_playback_config.dart';
@@ -19,8 +19,8 @@ class ReferenceMidiSynth {
     debugPrint('[ReferenceMidiSynth] Constructor initialized');
   }
 
-  // final MidiPro _midi = MidiPro(); // REMOVED
-  String? _sfId = 'dummy_sf_id'; // Mock ID to keep logic happy
+
+
   bool _initialized = false;
   bool _isPlaying = false;
   final List<Timer> _activeTimers = [];
@@ -145,10 +145,7 @@ class ReferenceMidiSynth {
 
     // Ensure initialized with the correct SoundFont
     await init(config: effectiveConfig);
-    if (_sfId == null) {
-      debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
-      return;
-    }
+
 
     // Log audio configuration (one line per playback call)
     if (notes.isNotEmpty) {
@@ -157,9 +154,6 @@ class ReferenceMidiSynth {
       final firstNoteStartSec = firstNote.startSec;
       debugPrint(
           '[AudioConfig] mode=${effectiveConfig.debugTag} '
-          'soundFont=${effectiveConfig.soundFontName} '
-          'program=${effectiveConfig.program} bankMSB=${effectiveConfig.bankMSB} bankLSB=${effectiveConfig.bankLSB} '
-          'channel=${effectiveConfig.channel} transpose=${effectiveConfig.transposeSemitones} '
           'volume=${effectiveConfig.volume.toStringAsFixed(2)} '
           'pitchBend=${effectiveConfig.enablePitchBend ? effectiveConfig.initialPitchBend : "center"} '
           'firstNoteMidi=$firstNoteMidi firstNoteStartSec=${firstNoteStartSec.toStringAsFixed(2)} noteCount=${notes.length}');
@@ -231,7 +225,7 @@ class ReferenceMidiSynth {
       // Schedule noteOn
       final noteOnTimer = Timer(Duration(milliseconds: noteStartMs), () {
         // Guard against stale callbacks
-        if (_currentRunId != runId || !_isPlaying || _sfId == null) {
+        if (_currentRunId != runId || !_isPlaying) {
           if (_currentRunId != runId) {
             debugPrint('[ReferenceMidiSynth] Ignored stale noteOn: runId=$runId, current=$_currentRunId');
           }
@@ -263,7 +257,7 @@ class ReferenceMidiSynth {
       // Schedule noteOff
       final noteOffTimer = Timer(Duration(milliseconds: noteEndMs), () {
         // Guard against stale callbacks
-        if (_currentRunId != runId || !_isPlaying || _sfId == null) {
+        if (_currentRunId != runId || !_isPlaying) {
           return;
         }
 
@@ -353,10 +347,6 @@ class ReferenceMidiSynth {
     // Force reinitialize the MIDI engine to ensure it picks up the new audio session configuration
     // This is especially important after route changes (headphones connect/disconnect)
     await init(config: effectiveConfig, force: true);
-    if (_sfId == null) {
-      debugPrint('[ReferenceMidiSynth] Cannot play notes: SoundFont not loaded');
-      return;
-    }
 
     // Set current run ID and reset state
     _currentRunId = runId;
@@ -399,10 +389,10 @@ class ReferenceMidiSynth {
     // Log first few calls to verify this method is being invoked
     _updateAudioPositionCallCount++;
     if (_updateAudioPositionCallCount <= 5) {
-      debugPrint('[ReferenceMidiSynth] updateAudioPosition CALLED #$_updateAudioPositionCallCount: audioTimeSec=${audioTimeSec.toStringAsFixed(3)}, runId=$runId, _isPlaying=$_isPlaying, _currentRunId=$_currentRunId, _sfId=${_sfId != null ? "loaded" : "null"}, notesCount=${_notesForAudioPosition?.length ?? 0}');
+      debugPrint('[ReferenceMidiSynth] updateAudioPosition CALLED #$_updateAudioPositionCallCount: audioTimeSec=${audioTimeSec.toStringAsFixed(3)}, runId=$runId, _isPlaying=$_isPlaying, _currentRunId=$_currentRunId, notesCount=${_notesForAudioPosition?.length ?? 0}');
     }
     
-    if (!_isPlaying || _currentRunId != runId || _notesForAudioPosition == null || _sfId == null) {
+    if (!_isPlaying || _currentRunId != runId || _notesForAudioPosition == null) {
       if (kDebugMode && _notesForAudioPosition != null && _notesForAudioPosition!.isNotEmpty) {
         // Log why MIDI isn't playing (throttled to avoid spam)
         final now = DateTime.now().millisecondsSinceEpoch;
@@ -411,10 +401,6 @@ class ReferenceMidiSynth {
           _lastMidNotReadyLog[key] = now;
           if (!_isPlaying) {
             debugPrint('[ReferenceMidiSynth] updateAudioPosition: _isPlaying=false, skipping');
-          } else if (_currentRunId != runId) {
-            debugPrint('[ReferenceMidiSynth] updateAudioPosition: runId mismatch (current=$_currentRunId, requested=$runId), skipping');
-          } else if (_sfId == null) {
-            debugPrint('[ReferenceMidiSynth] updateAudioPosition: SoundFont not loaded (_sfId=null), skipping');
           } else if (_notesForAudioPosition == null) {
             debugPrint('[ReferenceMidiSynth] updateAudioPosition: _notesForAudioPosition is null, skipping');
           }
@@ -505,17 +491,14 @@ class ReferenceMidiSynth {
         
         // Play noteOn
         try {
-          if (_sfId == null) {
-            debugPrint('[ReferenceMidiSynth] ERROR: Cannot play note ${note.midi} - SoundFont not loaded (_sfId=null)');
-            continue;
-          }
+
           
           // Tripwire log: first 5 notes to confirm MIDI is actually playing
           if (i < 5) {
             debugPrint('[ReferenceMidiSynth] TRIPWIRE: Playing noteOn: index=$i MIDI=${note.midi} at audioTime=${audioTimeSec.toStringAsFixed(3)}s (scheduled=${note.startSec.toStringAsFixed(3)}s, duration=${noteDuration.toStringAsFixed(3)}s)');
           }
           
-          debugPrint('[ReferenceMidiSynth] CALLING playMidiNote: MIDI=${note.midi}, velocity=$_defaultVelocity, _sfId=$_sfId');
+          debugPrint('[ReferenceMidiSynth] CALLING playMidiNote: MIDI=${note.midi}, velocity=$_defaultVelocity');
           PianoSampleService.instance.playNote(note.midi, velocity: _defaultVelocity / 127.0);
           _activeNotes.add(note.midi);
           _activeNoteIndexByMidi[note.midi] = i; // Track which note index started this MIDI note
@@ -548,7 +531,7 @@ class ReferenceMidiSynth {
     int durationMs = 20,
     required int runId,
   }) async {
-    if (_sfId == null || !_initialized) {
+    if (!_initialized) {
       debugPrint('[ReferenceMidiSynth] Cannot play click: not initialized');
       return;
     }

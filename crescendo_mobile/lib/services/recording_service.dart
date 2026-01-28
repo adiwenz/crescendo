@@ -146,9 +146,9 @@ class RecordingService {
       
       // Periodically log for instrumentation (UI isolate side)
       chunkCount++;
-      if (chunkCount % 100 == 0) {
-        debugPrint('[RecordingService] ($_owner) Streamed chunk #$chunkCount: ${data.length} bytes');
-      }
+      // if (chunkCount % 100 == 0) {
+      //   debugPrint('[RecordingService] ($_owner) Streamed chunk #$chunkCount: ${data.length} bytes');
+      // }
     });
   }
 
@@ -400,9 +400,9 @@ class _RecordingWorker {
         final elapsed = endTime.difference(startTime).inMilliseconds;
         
         // 1) Lightweight instrumentation for every chunk
-        if (chunkCount % 20 == 0) {
-          debugPrint('[RecordingWorker] ($owner) Chunk #$chunkCount: ${message.length} bytes, process=${elapsed}ms');
-        }
+        // if (chunkCount % 20 == 0) {
+        //   debugPrint('[RecordingWorker] ($owner) Chunk #$chunkCount: ${message.length} bytes, process=${elapsed}ms');
+        // }
 
         if (elapsed > 20) {
           debugPrint('[RecordingWorker] ($owner) SLOW PROCESSING SPIKE: ${elapsed}ms for ${message.length} bytes');

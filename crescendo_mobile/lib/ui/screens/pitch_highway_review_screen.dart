@@ -251,8 +251,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         takeFileName: takeFileName,
         exerciseId: widget.exercise.id,
         transposeSemitones: 0, // Review doesn't transpose
-        soundFontName: reviewConfig.soundFontName,
-        program: reviewConfig.program,
         sampleRate: ReviewAudioBounceService.defaultSampleRate,
         renderStartSec: _renderStartSec,
       );
@@ -276,8 +274,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         notes: _notes,
         durationSec: _durationSec,
         sampleRate: ReviewAudioBounceService.defaultSampleRate,
-        soundFontAssetPath: reviewConfig.soundFontAssetPath,
-        program: reviewConfig.program,
       );
       
       // Mix with recorded audio
@@ -320,8 +316,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         notes: _notes,
         durationSec: _durationSec,
         sampleRate: ReviewAudioBounceService.defaultSampleRate,
-        soundFontAssetPath: reviewConfig.soundFontAssetPath,
-        program: reviewConfig.program,
       );
       
       _referenceAudioPath = referenceWav.path;
@@ -857,8 +851,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
                   takeFileName: takeFileName,
                   exerciseId: widget.exercise.id,
                   transposeSemitones: 0,
-                  soundFontName: reviewConfig.soundFontName,
-                  program: reviewConfig.program,
                   sampleRate: ReviewAudioBounceService.defaultSampleRate,
                 );
                 final cacheDir = await ReviewAudioBounceService.getCacheDirectory();

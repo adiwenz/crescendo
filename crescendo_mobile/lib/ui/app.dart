@@ -31,16 +31,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
   void initState() {
     super.initState();
     // Frame jank detection
-    WidgetsBinding.instance.addTimingsCallback((List<FrameTiming> timings) {
-      for (final timing in timings) {
-        final duration = timing.totalSpan.inMilliseconds;
-        if (duration > 33) {
-          debugPrint('[JANK] SEVERE: ${duration}ms (build: ${timing.buildDuration.inMilliseconds}ms, raster: ${timing.rasterDuration.inMilliseconds}ms)');
-        } else if (duration > 16) {
-          debugPrint('[JANK] SLOW: ${duration}ms (build: ${timing.buildDuration.inMilliseconds}ms, raster: ${timing.rasterDuration.inMilliseconds}ms)');
-        }
-      }
-    });
+
   }
 
   @override

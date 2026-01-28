@@ -101,22 +101,56 @@ class PreviewSpecRegistry {
       case 'ng_slides':
         return null; // Signal to use real-time generation
 
-      // NON-GLIDE EXERCISES (use MIDI previews - return null here):
-      // These exercises now use MidiPreviewGenerator to generate previews at C4:
-      // - five_tone_scales, vv_zz_scales, humming_scales
-      // - chest_voice_scales, head_voice_scales, scale_degrees
-      // - forward_placement, mask_resonance
-      // - arpeggios, mix_bridging
-      // - sustained_s_z, lip_trills, sustained_pitch_holds
-      // - fast_three_note_patterns, staccato_bursts, descending_runs
-      // - interval_training
-      // - descending_head_to_chest
-      // All return null - they use MIDI previews instead
+      // NON-GLIDE EXERCISES (Converted to WAV previews):
+      
+      // Five-tone scale variations
+      case 'five_tone_scales':
+      case 'vv_zz_scales':
+      case 'humming_scales':
+      case 'chest_voice_scales':
+      case 'head_voice_scales':
+      case 'scale_degrees':
+      case 'forward_placement':
+      case 'mask_resonance':
+        return fiveToneScalePreview;
+
+      // Arpeggios
+      case 'arpeggios':
+      case 'mix_bridging':
+        return arpeggioPreview;
+
+      // Sustained tones
+      case 'sustained_s_z':
+      case 'lip_trills':
+      case 'sustained_pitch_holds':
+        return warmupPreview;
+
+      // Agility / Fast patterns
+      case 'fast_three_note_patterns':
+      case 'staccato_bursts':
+        return agilityPreview;
+
+      // Descending runs / Octaves
+      case 'descending_runs':
+      case 'descending_head_to_chest':
+        return descendingOctavePreview;
+
+      // Intervals
+      case 'interval_training':
+        return intervalPreview;
 
       default:
-        return null; // No preview available or uses MIDI preview
+        // Fallback for any others to generic scales preview if available, or null
+        return scalesPreview; 
     }
   }
+
+  static const PreviewSpec scalesPreview = PreviewSpec(
+    assetPath: '${_basePath}scales_preview.wav',
+    durationSeconds: 3.5,
+    description: 'Generic major scale pattern',
+  );
+
 
   /// Get asset path for an exercise (convenience method)
   static String? getPreviewAssetPath(String exerciseId) {

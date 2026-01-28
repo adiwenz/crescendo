@@ -1,25 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-/// Configuration for MIDI playback to ensure consistent audio across exercise and review modes
+/// Configuration for playback to ensure consistent audio across exercise and review modes
 class MidiPlaybackConfig {
-  /// SoundFont asset path (e.g., 'assets/soundfonts/default.sf2')
-  final String soundFontAssetPath;
-  
-  /// SoundFont name/bundle identifier
-  final String soundFontName;
-  
-  /// MIDI program (preset) number (0-127)
-  final int program;
-  
-  /// MIDI bank MSB (Most Significant Byte) (0-127)
-  final int bankMSB;
-  
-  /// MIDI bank LSB (Least Significant Byte) (0-127)
-  final int bankLSB;
-  
-  /// MIDI channel (0-15, typically 0-15 for 16 channels)
-  final int channel;
-  
   /// Volume (0.0 to 1.0)
   final double volume;
   
@@ -36,12 +18,6 @@ class MidiPlaybackConfig {
   final String debugTag;
 
   const MidiPlaybackConfig({
-    this.soundFontAssetPath = 'assets/soundfonts/default.sf2',
-    this.soundFontName = 'default.sf2',
-    this.program = 0, // Default piano program
-    this.bankMSB = 0,
-    this.bankLSB = 0,
-    this.channel = 0,
     this.volume = 1.0,
     this.enablePitchBend = false,
     this.initialPitchBend = 8192, // Center (no bend)
@@ -65,13 +41,7 @@ class MidiPlaybackConfig {
 
   /// Check if this config matches another config (for validation)
   bool matches(MidiPlaybackConfig other) {
-    return soundFontAssetPath == other.soundFontAssetPath &&
-        soundFontName == other.soundFontName &&
-        program == other.program &&
-        bankMSB == other.bankMSB &&
-        bankLSB == other.bankLSB &&
-        channel == other.channel &&
-        (volume - other.volume).abs() < 0.01 &&
+    return (volume - other.volume).abs() < 0.01 &&
         enablePitchBend == other.enablePitchBend &&
         initialPitchBend == other.initialPitchBend &&
         transposeSemitones == other.transposeSemitones;
@@ -80,24 +50,6 @@ class MidiPlaybackConfig {
   /// Get differences between this config and another
   List<String> getDifferences(MidiPlaybackConfig other) {
     final differences = <String>[];
-    if (soundFontAssetPath != other.soundFontAssetPath) {
-      differences.add('soundFontAssetPath: $soundFontAssetPath vs ${other.soundFontAssetPath}');
-    }
-    if (soundFontName != other.soundFontName) {
-      differences.add('soundFontName: $soundFontName vs ${other.soundFontName}');
-    }
-    if (program != other.program) {
-      differences.add('program: $program vs ${other.program}');
-    }
-    if (bankMSB != other.bankMSB) {
-      differences.add('bankMSB: $bankMSB vs ${other.bankMSB}');
-    }
-    if (bankLSB != other.bankLSB) {
-      differences.add('bankLSB: $bankLSB vs ${other.bankLSB}');
-    }
-    if (channel != other.channel) {
-      differences.add('channel: $channel vs ${other.channel}');
-    }
     if ((volume - other.volume).abs() >= 0.01) {
       differences.add('volume: $volume vs ${other.volume}');
     }
@@ -116,9 +68,7 @@ class MidiPlaybackConfig {
   @override
   String toString() {
     return 'MidiPlaybackConfig('
-        'soundFont=$soundFontName, '
-        'program=$program, bankMSB=$bankMSB bankLSB=$bankLSB, '
-        'channel=$channel, volume=$volume, '
+        'volume=$volume, '
         'pitchBend=${enablePitchBend ? initialPitchBend : "disabled"}, '
         'transpose=$transposeSemitones, tag=$debugTag)';
   }

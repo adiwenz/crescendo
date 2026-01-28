@@ -9,20 +9,18 @@ import 'dart:io';
 import 'preview_asset_service.dart';
 import 'sine_sweep_service.dart';
 import '../utils/audio_constants.dart';
-import 'midi_preview_generator.dart';
 import '../models/vocal_exercise.dart';
-import '../audio/reference_midi_synth.dart';
-import '../audio/midi_playback_config.dart';
+
 
 /// Service for playing exercise preview audio.
 /// Uses MIDI for non-glide exercises, WAV assets for glide exercises.
 class PreviewAudioService {
   final AudioPlayer _player = AudioPlayer();
   final SineSweepService _sweepService = SineSweepService(sampleRate: AudioConstants.audioSampleRate);
-  final ReferenceMidiSynth _midiSynth = ReferenceMidiSynth();
+  
   StreamSubscription<void>? _completeSub;
   Completer<void>? _playbackCompleter;
-  int _previewRunId = 0;
+
 
   PreviewAudioService() {
     debugPrint('[PreviewAudio] Constructor start');
@@ -31,8 +29,7 @@ class PreviewAudioService {
     debugPrint('[PreviewAudio] AudioPlayer created ${sw.elapsedMilliseconds}ms');
     _sweepService;
     debugPrint('[PreviewAudio] SineSweepService created ${sw.elapsedMilliseconds}ms');
-    _midiSynth;
-    debugPrint('[PreviewAudio] ReferenceMidiSynth created ${sw.elapsedMilliseconds}ms');
+
     sw.stop();
   }
 
@@ -46,14 +43,8 @@ class PreviewAudioService {
     // Stop any existing playback
     await stop();
     
-    // Route based on exercise type
-    if (exercise.isGlide) {
-      // Glide exercises: Use WAV assets or generate sine sweep
-      await _playWavPreview(exercise);
-    } else {
-      // Non-glide exercises: Use MIDI preview
-      await _playMidiPreview(exercise);
-    }
+    // Always use WAV preview (or generated sine sweep for ng_slides)
+    await _playWavPreview(exercise);
   }
 
   /// Play WAV preview for glide exercises
@@ -115,43 +106,7 @@ class PreviewAudioService {
     }
   }
 
-  /// Play MIDI preview for non-glide exercises
-  Future<void> _playMidiPreview(VocalExercise exercise) async {
-    // Generate preview notes (single iteration at C4)
-    final previewNotes = MidiPreviewGenerator.generatePreview(exercise);
-    
-    if (previewNotes.isEmpty) {
-      if (kDebugMode) {
-        debugPrint('[PreviewAudio] No MIDI preview notes generated for exercise: ${exercise.id}');
-      }
-      return;
-    }
 
-    // Calculate preview duration
-    final maxEndSec = previewNotes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
-    final previewDurationSec = maxEndSec;
-
-    // Play MIDI sequence
-    _previewRunId++;
-    final startEpochMs = DateTime.now().millisecondsSinceEpoch;
-    
-    try {
-      await _midiSynth.playSequence(
-        notes: previewNotes,
-        leadInSec: 0.0, // No lead-in for previews
-        runId: _previewRunId,
-        startEpochMs: startEpochMs,
-        config: MidiPlaybackConfig.exercise(), // Use same config as exercise playback
-      );
-
-      // Wait for playback to complete
-      await Future.delayed(Duration(milliseconds: (previewDurationSec * 1000).round()));
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[PreviewAudio] MIDI preview playback error: $e');
-      }
-    }
-  }
 
   /// Stop current playback.
   Future<void> stop() async {
@@ -162,7 +117,7 @@ class PreviewAudioService {
     }
     _playbackCompleter = null;
     await _player.stop();
-    await _midiSynth.stop(); // Stop MIDI playback if active
+
   }
 
   /// Dispose resources.

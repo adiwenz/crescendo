@@ -42,12 +42,10 @@ class ReviewAudioBounceService {
     required String takeFileName,
     required String exerciseId,
     required int transposeSemitones,
-    required String soundFontName,
-    required int program,
     required int sampleRate,
     double renderStartSec = 0.0,
   }) {
-    final keyString = '$takeFileName|$exerciseId|$transposeSemitones|$soundFontName|$program|$sampleRate|${renderStartSec.toStringAsFixed(3)}';
+    final keyString = '$takeFileName|$exerciseId|$transposeSemitones|$sampleRate|${renderStartSec.toStringAsFixed(3)}';
     final bytes = utf8.encode(keyString);
     final digest = sha256.convert(bytes);
     return digest.toString().substring(0, 16);
@@ -77,8 +75,6 @@ class ReviewAudioBounceService {
     required List<ReferenceNote> notes,
     required double durationSec,
     required int sampleRate,
-    required String soundFontAssetPath,
-    required int program,
     String? savePath,
   }) async {
     final startTime = DateTime.now();

@@ -128,8 +128,6 @@ class ReferenceAudioGenerator {
         notes: internalPlan.notes,
         durationSec: internalPlan.durationSec,
         sampleRate: AudioConstants.audioSampleRate,
-        soundFontAssetPath: 'assets/soundfonts/default.sf2',
-        program: 0,
         savePath: tempWavPath,
       );
 
