@@ -711,21 +711,50 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         debugPrint('[Review] SUCCESS: Playing MIXED WAV (piano + voice): ${audioToPlay}');
       }
     } else if (_showReference && _referenceAudioPath != null) {
-      // Play reference-only WAV (no recorded audio)
-      audioToPlay = _referenceAudioPath;
-      if (kDebugMode) {
-        debugPrint('[Review] INFO: Playing REFERENCE-ONLY WAV: ${audioToPlay}');
+      if (_recordedAudioPath != null) {
+        // FALLBACK: Mixing failed or not ready, but we have both files.
+        // Play them in parallel using dual players.
+        // This ensures the user hears their recording even if the bounce service failed.
+        if (kDebugMode) {
+          debugPrint('[Review] WARNING: Mixed file missing. Fallback to DUAL PLAYBACK (Ref + Mic).');
+        }
+        
+        // 1. Play Reference (Primary)
+        await _synth.playFile(_referenceAudioPath!);
+        
+        // 2. Play Mic (Secondary)
+        // Ensure secondary player is prepared if possible (though playSecondaryFile handles it)
+        await _synth.ensureSecondaryPrepared(_recordedAudioPath!, runId: currentRunId);
+        await _synth.playSecondaryFile(_recordedAudioPath!);
+        
+        audioToPlay = _referenceAudioPath; // Primary governs the clock
+      } else {
+        // Play reference-only WAV (no recorded audio)
+        audioToPlay = _referenceAudioPath;
+        if (kDebugMode) {
+           debugPrint('[Review] INFO: Playing REFERENCE-ONLY WAV: ${audioToPlay}');
+        }
       }
     } else {
       // Play recorded audio only (reference toggle off or mixing failed)
       audioToPlay = _recordedAudioPath;
       if (kDebugMode) {
         if (_showReference) {
-          debugPrint('[Review] WARNING: Mixing failed or mixed file missing. Falling back to MIC-ONLY: ${audioToPlay}');
+           debugPrint('[Review] WARNING: Mixing failed/Reference missing. Falling back to MIC-ONLY: ${audioToPlay}');
         } else {
-          debugPrint('[Review] INFO: Playing MIC-ONLY (reference toggled off): ${audioToPlay}');
+           debugPrint('[Review] INFO: Playing MIC-ONLY (reference toggled off): ${audioToPlay}');
         }
       }
+    }
+    
+    // If we did dual playback, audioToPlay is already set to reference for tracking,
+    // and playFile was already called. Avoid double-calling.
+    // However, the original logic calls _synth.playFile(audioToPlay) below.
+    // We need to restructure.
+    
+    if (audioToPlay != null && !(_showReference && _referenceAudioPath != null && _recordedAudioPath != null && _mixedAudioPath == null)) {
+       // Standard single-file playback logic
+       await _synth.playFile(audioToPlay);
     }
     
     if (audioToPlay != null) {

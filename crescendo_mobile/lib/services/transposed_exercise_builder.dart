@@ -450,7 +450,9 @@ class TransposedExerciseBuilder {
       final cycleEndMidi = cycleStartMidi + sirenRangeSemitones;
       
       // Stop if transposed highest note exceeds highestMidi
-      if (cycleEndMidi > effectiveHighest) break;
+      // Stop if transposed highest note exceeds highestMidi
+      // EXCEPTION: Allow at least one cycle (index 0) even if range is too small
+      if (cycleIndex > 0 && cycleEndMidi > effectiveHighest) break;
       
       // Each cycle: cycleStartMidi -> cycleEndMidi -> cycleStartMidi (bell curve)
       const cycleRange = sirenRangeSemitones;

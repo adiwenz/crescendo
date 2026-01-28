@@ -22,6 +22,7 @@ class ReferenceAudioGenerator {
   factory ReferenceAudioGenerator() => instance;
 
   static const int defaultSampleRate = AudioConstants.audioSampleRate;
+  static const String cacheVersion = 'v4';
 
   final _bounceService = ReviewAudioBounceService();
   final _vocalRangeService = VocalRangeService();
@@ -52,9 +53,9 @@ class ReferenceAudioGenerator {
     // 2. Compute metadata to check cache
     final rangeHash = '${low}-${high}';
     final patternHash = '${exercise.id}_${difficulty.name}';
-    // Adding version prefix to invalidate old glide-based caches
-    const version = 'v3'; // Incrementing version for sidecar logic
-    final cacheKey = '${version}_${exercise.id}_${rangeHash}_${patternHash}';
+
+    // Use centralized version constant
+    final cacheKey = '${cacheVersion}_${exercise.id}_${rangeHash}_${patternHash}';
     
     // Check de-duplication map first
     if (_activeRequests.containsKey(cacheKey)) {
@@ -161,8 +162,7 @@ class ReferenceAudioGenerator {
     final (low, high) = await _vocalRangeService.getRange();
     final rangeHash = '${low}-${high}';
     final patternHash = '${exercise.id}_${difficulty.name}';
-    const version = 'v3';
-    final cacheKey = '${version}_${exercise.id}_${rangeHash}_${patternHash}';
+    final cacheKey = '${cacheVersion}_${exercise.id}_${rangeHash}_${patternHash}';
 
     final dir = await _cacheDir;
     final wavPath = p.join(dir.path, '$cacheKey.wav');

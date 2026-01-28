@@ -15,6 +15,7 @@ import '../../models/pitch_highway_spec.dart';
 import '../../models/pitch_segment.dart';
 import '../../models/reference_note.dart';
 import '../../models/siren_path.dart';
+import '../../models/siren_exercise_result.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
@@ -557,15 +558,15 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
             '[ExercisePlayerScreen] Using cached notes (${cachedNotes.length} notes)');
         notes = cachedNotes;
         // For Sirens, regenerate visual path from cached audio notes (offload if sirens)
+        // For Sirens, regenerate visual path from cached audio notes (offload if sirens)
         if (widget.exercise.id == 'sirens') {
-          final sirenResult = await compute((_) => 
-              TransposedExerciseBuilder.buildSirensWithVisualPath(
-            exercise: widget.exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: _leadInSec,
-            difficulty: widget.pitchDifficulty,
-          ), null);
+          final sirenResult = await compute(_buildSirensInBackground, {
+            'exercise': widget.exercise,
+            'lowestMidi': lowestMidi,
+            'highestMidi': highestMidi,
+            'leadInSec': _leadInSec,
+            'difficulty': widget.pitchDifficulty,
+          });
           sirenPath = sirenResult.visualPath;
           notes = cachedNotes;
         } else {
@@ -578,26 +579,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         final buildStartTime = DateTime.now();
 
         // Special handling for Sirens - offload to isolate
+        // Special handling for Sirens - offload to isolate
         if (widget.exercise.id == 'sirens') {
-          final sirenResult = await compute((_) => 
-              TransposedExerciseBuilder.buildSirensWithVisualPath(
-            exercise: widget.exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: _leadInSec,
-            difficulty: widget.pitchDifficulty,
-          ), null);
+          final sirenResult = await compute(_buildSirensInBackground, {
+            'exercise': widget.exercise,
+            'lowestMidi': lowestMidi,
+            'highestMidi': highestMidi,
+            'leadInSec': _leadInSec,
+            'difficulty': widget.pitchDifficulty,
+          });
           notes = sirenResult.audioNotes;
           sirenPath = sirenResult.visualPath;
         } else {
           // Offload transposition to isolate
-          notes = await compute((_) => TransposedExerciseBuilder.buildTransposedSequence(
-            exercise: widget.exercise,
-            lowestMidi: lowestMidi,
-            highestMidi: highestMidi,
-            leadInSec: _leadInSec,
-            difficulty: widget.pitchDifficulty,
-          ), null);
+          notes = await compute(_buildTransposedSequenceInBackground, {
+            'exercise': widget.exercise,
+            'lowestMidi': lowestMidi,
+            'highestMidi': highestMidi,
+            'leadInSec': _leadInSec,
+            'difficulty': widget.pitchDifficulty,
+          });
           sirenPath = null;
         }
 
@@ -3964,5 +3965,25 @@ List<ReferenceNote> _buildNotesInBackground(Map<String, dynamic> params) {
     lowestMidi: params['lowestMidi'],
     highestMidi: params['highestMidi'],
     leadInSec: params['leadInSec'],
+  );
+}
+
+SirenExerciseResult _buildSirensInBackground(Map<String, dynamic> params) {
+  return TransposedExerciseBuilder.buildSirensWithVisualPath(
+    exercise: params['exercise'] as VocalExercise,
+    lowestMidi: params['lowestMidi'] as int,
+    highestMidi: params['highestMidi'] as int,
+    leadInSec: (params['leadInSec'] as double?) ?? 0.0,
+    difficulty: params['difficulty'] as PitchHighwayDifficulty?,
+  );
+}
+
+List<ReferenceNote> _buildTransposedSequenceInBackground(Map<String, dynamic> params) {
+  return TransposedExerciseBuilder.buildTransposedSequence(
+    exercise: params['exercise'] as VocalExercise,
+    lowestMidi: params['lowestMidi'] as int,
+    highestMidi: params['highestMidi'] as int,
+    leadInSec: params['leadInSec'] as double?,
+    difficulty: params['difficulty'] as PitchHighwayDifficulty?,
   );
 }
