@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import '../models/pitch_highway_difficulty.dart';
 import '../models/pitch_segment.dart';
@@ -27,10 +27,45 @@ class TransposedExerciseBuilder {
     double? leadInSec,
     PitchHighwayDifficulty? difficulty,
   }) {
+    // 1. Constrain range based on register (Chest/Head)
+    final (effectiveLowest, effectiveHighest, registerType) = _constrainRange(
+      exercise: exercise,
+      userLowest: lowestMidi,
+      userHighest: highestMidi,
+    );
+
+    // 2. Validate range
+    if (effectiveLowest > effectiveHighest) {
+       debugPrint('[TransposedExerciseBuilder] INVALID RANGE: effectiveLowest($effectiveLowest) > effectiveHighest($effectiveHighest). Register=$registerType');
+       return const [];
+    }
+
     // Use shared constant if leadInSec not provided
     final effectiveLeadInSec = leadInSec ?? AudioConstants.leadInSec;
     final spec = exercise.highwaySpec;
     if (spec == null || spec.segments.isEmpty) return const [];
+
+    // Special handling for Sirens
+    if (exercise.id == 'sirens') {
+      final sirenResult = buildSirensWithVisualPath(
+        exercise: exercise,
+        lowestMidi: effectiveLowest,  // Pass constrained range
+        highestMidi: effectiveHighest, 
+        leadInSec: effectiveLeadInSec,
+        difficulty: difficulty,
+        skipConstraintHelper: true, // Avoid double constraining
+      );
+      _validateGeneratedNotes(
+         notes: sirenResult.audioNotes,
+         exerciseId: exercise.id,
+         registerType: registerType,
+         allowedMin: effectiveLowest,
+         allowedMax: effectiveHighest,
+         userMin: lowestMidi,
+         userMax: highestMidi,
+      );
+      return sirenResult.audioNotes;
+    }
 
     // Apply tempo scaling if difficulty is provided
     final multiplier = difficulty != null
@@ -65,8 +100,8 @@ class TransposedExerciseBuilder {
     // Calculate a safe start target MIDI near the bottom of the user range
     // This is the LOWEST note we want in the pattern
     const startPaddingSemitones = 0;
-    final startTargetMidi = (lowestMidi + startPaddingSemitones)
-        .clamp(lowestMidi, highestMidi - patternSpan);
+    final startTargetMidi = (effectiveLowest + startPaddingSemitones)
+        .clamp(effectiveLowest, effectiveHighest - patternSpan);
 
     // ENFORCE INVARIANT: rootMidi anchors the LOWEST note (patternMin) to startTargetMidi
     // Formula: lowestNote = rootMidi + patternMin = startTargetMidi
@@ -86,37 +121,18 @@ class TransposedExerciseBuilder {
       );
     }
     
-    // Debug logs removed to reduce noise on app restart
-    
-    // Special handling for Sirens: generate visual path + minimal audio notes
-    // Note: For Sirens, we need to return a different structure, but for now
-    // we'll keep the same return type and handle it in the caller
-    // TODO: Refactor to return SirenExerciseResult for Sirens
-    if (exercise.id == 'sirens') {
-      final sirenResult = buildSirensWithVisualPath(
-        exercise: exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: effectiveLeadInSec,
-        difficulty: difficulty,
-      );
-      return sirenResult.audioNotes;
-    }
-    
     // Calculate the duration of one repetition of the pattern
     final patternDurationMs = scaledSegments.isEmpty
         ? 0
         : scaledSegments.map((s) => s.endMs).reduce(math.max);
     final patternDurationSec = patternDurationMs / 1000.0;
     // Gap between repetitions
-    final gapBetweenRepetitionsSec = 0.75;
+    const gapBetweenRepetitionsSec = 0.75;
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
     var transpositionSemitones = 0;
     var currentTimeSec = effectiveLeadInSec;
-
-    // Debug logs removed to reduce noise on app restart
 
     while (true) {
       final rootMidi = firstRootMidi + transpositionSemitones;
@@ -124,10 +140,10 @@ class TransposedExerciseBuilder {
       final segmentHigh = rootMidi + patternMax;
 
       // Stop if we would exceed the highest note
-      if (segmentHigh > highestMidi) break;
+      if (segmentHigh > effectiveHighest) break;
       
       // Skip if we would go below the lowest note (shouldn't happen, but safety check)
-      if (segmentLow < lowestMidi) {
+      if (segmentLow < effectiveLowest) {
         transpositionSemitones++;
         continue;
       }
@@ -143,8 +159,6 @@ class TransposedExerciseBuilder {
       );
       
       allNotes.addAll(repetitionNotes);
-      
-      // Debug logs removed to reduce noise on app restart
       
       // Update time for next repetition - add pattern duration plus gap
       currentTimeSec += patternDurationSec + gapBetweenRepetitionsSec;
@@ -164,8 +178,6 @@ class TransposedExerciseBuilder {
       final allMidis = allNotes.map((n) => n.midi.round()).toList();
       final actualLowestMidi = allMidis.reduce((a, b) => a < b ? a : b);
       
-      // Debug logs removed to reduce noise on app restart
-      
       // ENFORCE INVARIANT: The LOWEST note in the pattern MUST equal startTargetMidi
       // This works for both ascending (first chronological = lowest) and descending (first chronological = highest) patterns
       // Expected lowest note = rootMidi + patternMin = startTargetMidi - patternMin + patternMin = startTargetMidi
@@ -177,7 +189,7 @@ class TransposedExerciseBuilder {
         actualLowestMidi == expectedLowestMidi,
         'Pattern root misaligned: expected lowest note = $expectedLowestMidi ($expectedLowestName), '
         'but got $actualLowestMidi (${PitchMath.midiToName(actualLowestMidi)}). '
-        'Difference: ${lowestDiff} semitones. '
+        'Difference: $lowestDiff semitones. '
         'Expected: rootMidi = startTargetMidi - patternMin = $startTargetMidi - $patternMin = $firstRootMidi. '
         'Lowest note = rootMidi + patternMin = $firstRootMidi + $patternMin = $expectedLowestMidi. '
         'First chronological note = $firstTargetMidi (may be lowest or highest depending on pattern direction).',
@@ -185,12 +197,22 @@ class TransposedExerciseBuilder {
     } else {
       // If no notes were generated, check if it's due to range constraints
       final patternSpan = patternMax - patternMin;
-      if (highestMidi - lowestMidi < patternSpan) {
+      if (effectiveHighest - effectiveLowest < patternSpan) {
         debugPrint(
-            '[TransposedExerciseBuilder] WARNING: User range ($lowestMidi-$highestMidi, span=${highestMidi - lowestMidi}) '
+            '[TransposedExerciseBuilder] WARNING: Range ($effectiveLowest-$effectiveHighest, span=${effectiveHighest - effectiveLowest}) '
             'is too narrow for pattern span ($patternSpan). No notes generated.');
       }
     }
+
+    _validateGeneratedNotes(
+         notes: allNotes,
+         exerciseId: exercise.id,
+         registerType: registerType,
+         allowedMin: effectiveLowest,
+         allowedMax: effectiveHighest,
+         userMin: lowestMidi,
+         userMax: highestMidi,
+      );
 
     return allNotes;
   }
@@ -231,7 +253,6 @@ class TransposedExerciseBuilder {
     String? exerciseId, // Add exercise ID to detect NG Slides and Sirens
   }) {
     final notes = <ReferenceNote>[];
-    final isNgSlides = exerciseId == 'ng_slides';
     final isSirens = exerciseId == 'sirens';
 
     // Process segments in chronological order (they should already be sorted by startMs)
@@ -332,7 +353,28 @@ class TransposedExerciseBuilder {
     required int highestMidi,
     required double leadInSec,
     PitchHighwayDifficulty? difficulty,
+    bool skipConstraintHelper = false,
   }) {
+    // 1. Constrain range if not already done
+    final int effectiveLowest;
+    final int effectiveHighest;
+    final String registerType;
+    
+    if (!skipConstraintHelper) {
+      final constrained = _constrainRange(
+        exercise: exercise,
+        userLowest: lowestMidi,
+        userHighest: highestMidi,
+      );
+      effectiveLowest = constrained.$1;
+      effectiveHighest = constrained.$2;
+      registerType = constrained.$3;
+    } else {
+      effectiveLowest = lowestMidi;
+      effectiveHighest = highestMidi;
+      registerType = 'Pre-Constrained';
+    }
+
     final spec = exercise.highwaySpec;
     if (spec == null || spec.segments.isEmpty) {
       return const SirenExerciseResult(
@@ -360,7 +402,7 @@ class TransposedExerciseBuilder {
     // Calculate how many cycles fit: start at lowestMidi, transpose up by 1 semitone each cycle
     // Continue until (cycleStartMidi + sirenRangeSemitones) > highestMidi
     // This ensures the transposed highest note doesn't exceed the saved range
-    final cyclesNeeded = (highestMidi - lowestMidi - sirenRangeSemitones + 1).clamp(1, 100);
+    final cyclesNeeded = (effectiveHighest - effectiveLowest - sirenRangeSemitones + 1).clamp(1, 100);
     
     // Timing constants
     const noteSpacingSec = 1.5; // 1.5 seconds between each note (bottom -> top -> bottom)
@@ -382,14 +424,14 @@ class TransposedExerciseBuilder {
     
     // Build cycles, each starting one semitone higher
     for (var cycleIndex = 0; cycleIndex < cyclesNeeded; cycleIndex++) {
-      final cycleStartMidi = lowestMidi + cycleIndex;
+      final cycleStartMidi = effectiveLowest + cycleIndex;
       final cycleEndMidi = cycleStartMidi + sirenRangeSemitones;
       
       // Stop if transposed highest note exceeds highestMidi
-      if (cycleEndMidi > highestMidi) break;
+      if (cycleEndMidi > effectiveHighest) break;
       
       // Each cycle: cycleStartMidi -> cycleEndMidi -> cycleStartMidi (bell curve)
-      final cycleRange = sirenRangeSemitones;
+      const cycleRange = sirenRangeSemitones;
       
       // Generate bell curve for visual path: smooth up and down, symmetric
       // Use sine wave from 0 to π for smooth bell curve shape
@@ -439,12 +481,81 @@ class TransposedExerciseBuilder {
       currentTimeSec = bottom2EndSec + gapBetweenCyclesSec;
     }
     
-    // Debug logging removed
-    
+    _validateGeneratedNotes(
+         notes: audioNotes,
+         exerciseId: exercise.id,
+         registerType: registerType,
+         allowedMin: effectiveLowest,
+         allowedMax: effectiveHighest,
+         userMin: lowestMidi,
+         userMax: highestMidi,
+      );
+
     return SirenExerciseResult(
       visualPath: SirenPath(points: visualPoints),
       audioNotes: audioNotes,
     );
   }
 
+  // --- Helpers ---
+
+  static (int, int, String) _constrainRange({
+    required VocalExercise exercise,
+    required int userLowest,
+    required int userHighest,
+  }) {
+    final rangeSpan = userHighest - userLowest;
+    final midpointMidi = userLowest + (rangeSpan / 2).floor();
+    
+    if (exercise.tags.contains('chest')) {
+      // Chest: [lowest, midpoint]
+      return (userLowest, midpointMidi, 'Chest');
+    } else if (exercise.tags.contains('head')) {
+      // Head: [midpoint + 1, highest]
+      return (midpointMidi + 1, userHighest, 'Head');
+    } else {
+      // Full range (mix/default)
+      return (userLowest, userHighest, 'Full');
+    }
+  }
+
+  static void _validateGeneratedNotes({
+    required List<ReferenceNote> notes,
+    required String exerciseId,
+    required String registerType,
+    required int allowedMin,
+    required int allowedMax,
+    required int userMin,
+    required int userMax,
+  }) {
+    if (!kDebugMode) return;
+    
+    if (notes.isEmpty) {
+      debugPrint('[TransposedExerciseBuilder] VALIDATION: No notes generated for $exerciseId ($registerType). Range too small?');
+      return;
+    }
+
+    final minNote = notes.map((n) => n.midi.round()).reduce(math.min);
+    final maxNote = notes.map((n) => n.midi.round()).reduce(math.max);
+    
+    // midpoint for logging context
+    final rangeSpan = userMax - userMin;
+    final midpoint = userMin + (rangeSpan / 2).floor();
+
+    debugPrint(
+      '[TransposedExerciseBuilder] VALIDATION for $exerciseId:\n'
+      '  Register: $registerType\n'
+      '  User Range: $userMin - $userMax (mid=$midpoint)\n'
+      '  Allowed Range: $allowedMin - $allowedMax\n'
+      '  Generated Range: $minNote - $maxNote\n'
+      '  Notes Count: ${notes.length}'
+    );
+
+    if (minNote < allowedMin) {
+      debugPrint('[TransposedExerciseBuilder] WARNING: Min note ($minNote) < Allowed Min ($allowedMin)');
+    }
+    if (maxNote > allowedMax) {
+      debugPrint('[TransposedExerciseBuilder] WARNING: Max note ($maxNote) > Allowed Max ($allowedMax)');
+    }
+  }
 }
