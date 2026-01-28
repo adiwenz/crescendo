@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/pitch_frame.dart';
+import '../models/pitch_highway_difficulty.dart';
 import '../models/reference_note.dart';
 
 class RobustScoringConfig {
@@ -9,10 +10,9 @@ class RobustScoringConfig {
   final double attackTrimMs;
   final double releaseTrimMs;
   final double timingToleranceMs;
-  final double perfectCents;
-  final double goodCents;
-  final double okCents;
-  final double badCents;
+  
+  // Scoring parameters are now derived dynamically from difficulty,
+  // but we keep these as defaults or for "hard" reference
   final double stabilityMadLimit;
   final double stabilityPenaltyMultiplier;
   final bool enableOctaveRescue;
@@ -22,13 +22,9 @@ class RobustScoringConfig {
   const RobustScoringConfig({
     this.voicedThreshold = 0.6,
     this.rmsThreshold = 0.02,
-    this.attackTrimMs = 80,
+    this.attackTrimMs = 150, // Increased from 80ms to ignore onset instability
     this.releaseTrimMs = 80,
     this.timingToleranceMs = 120,
-    this.perfectCents = 25,
-    this.goodCents = 50,
-    this.okCents = 80,
-    this.badCents = 120,
     this.stabilityMadLimit = 35,
     this.stabilityPenaltyMultiplier = 0.85,
     this.enableOctaveRescue = true,
@@ -123,6 +119,7 @@ class RobustNoteScoringService {
     required List<ReferenceNote> notes,
     required List<PitchFrame> frames,
     RobustScoringConfig config = const RobustScoringConfig(),
+    PitchHighwayDifficulty difficulty = PitchHighwayDifficulty.medium,
     double offsetSec = 0.0,
   }) {
     final samples = frames
@@ -222,7 +219,8 @@ class RobustNoteScoringService {
         }
       }
 
-      var noteScore = _tieredScore(scoringError.abs(), config);
+      var noteScore = _sigmoidScore(scoringError.abs(), difficulty);
+
       if (mad > config.stabilityMadLimit) {
         noteScore *= config.stabilityPenaltyMultiplier;
       }
@@ -267,12 +265,77 @@ class RobustNoteScoringService {
     return 1200.0 * (math.log(f0Hz / targetHz) / math.ln2);
   }
 
-  double _tieredScore(double absCents, RobustScoringConfig config) {
-    if (absCents <= config.perfectCents) return 1.0;
-    if (absCents <= config.goodCents) return 0.75;
-    if (absCents <= config.okCents) return 0.5;
-    if (absCents <= config.badCents) return 0.25;
-    return 0.0;
+  /// Sigmoid scoring function that provides a smooth falloff instead of hard steps.
+  /// 
+  /// Curves are tuned per difficulty:
+  /// - Easy: Wide green zone (tolerant), slow falloff.
+  /// - Medium: Moderate green zone, medium falloff.
+  /// - Hard: Narrow green zone (strict), sharp falloff.
+  double _sigmoidScore(double absCents, PitchHighwayDifficulty difficulty) {
+    // Parameters for Generalized Logistic Function:
+    // f(x) = 1 / (1 + exp(k * (x - x0)))
+    // k = steepness
+    // x0 = midpoint (where score is 0.5)
+    
+    double k;
+    double x0;
+    // Floor score: even a poor attempt (within ~semitone) gets this minimum
+    // if it's not completely off the charts.
+    double floor = 0.2; 
+    
+    switch (difficulty) {
+      case PitchHighwayDifficulty.easy:
+        // Very forgiving. 
+        // ~50 cents error still gives ~0.9
+        // Midpoint at 100 cents (1 semitone)
+        k = 0.08; 
+        x0 = 90.0;
+        floor = 0.4; // High floor for encouragement
+        break;
+      case PitchHighwayDifficulty.medium:
+        // Balanced.
+        // ~30 cents error gives ~0.9
+        // Midpoint at 60 cents
+        k = 0.12;
+        x0 = 60.0;
+        floor = 0.3;
+        break;
+      case PitchHighwayDifficulty.hard:
+        // Strict.
+        // ~15 cents error gives ~0.9
+        // Midpoint at 35 cents
+        k = 0.2;
+        x0 = 35.0;
+        floor = 0.1;
+        break;
+    }
+
+    // Apply sigmoid
+    final rawScore = 1.0 / (1.0 + math.exp(k * (absCents - x0)));
+    
+    // Apply floor logic:
+    // If error is huge (> 300 cents/3 semitones), we drop to 0.
+    // Otherwise, we blend the raw score with the floor.
+    if (absCents > 300) {
+      return 0.0;
+    }
+    
+    // Blend: max(raw, floor) but smoothly? 
+    // Actually, simple max is fine for the floor behavior requested.
+    // "Even a weak attempt should land around 60-70%" -> implies floor might need to be higher?
+    // Let's adjust floors to align with "weak attempt" (e.g. 80-100 cents error).
+    
+    // Re-eval floors based on request "weak attempt should land around 60-70%"
+    // At Easy, 100 cents error (x0=90) gives 0.3 raw. 
+    // We want that to be closer to 0.6.
+    
+    // Let's use a linear mapping for the "tail" or just ensure the sigmoid is wider.
+    // Let's stick to the sigmoid but mapped to range [floor, 1.0].
+    
+    // Normalized score = floor + (1 - floor) * sigmoid
+    final finalScore = floor + (1.0 - floor) * rawScore;
+    
+    return finalScore.clamp(0.0, 1.0);
   }
 
   double _median(List<double> values) {

@@ -2043,8 +2043,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         .where((f) => AudioConstants.shouldScoreAtTime(f.time))
         .toList();
     if (scoredFrames.isEmpty) return 0.0;
-    final result =
-        RobustNoteScoringService().score(notes: notes, frames: scoredFrames);
+    final result = RobustNoteScoringService().score(
+      notes: notes,
+      frames: scoredFrames,
+      difficulty: widget.pitchDifficulty,
+    );
     return result.overallScorePct;
   }
 

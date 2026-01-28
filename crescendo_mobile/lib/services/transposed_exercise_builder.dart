@@ -28,11 +28,15 @@ class TransposedExerciseBuilder {
     PitchHighwayDifficulty? difficulty,
   }) {
     // 1. Constrain range based on register (Chest/Head)
-    final (effectiveLowest, effectiveHighest, registerType) = _constrainRange(
+    // 1. Constrain range based on register (Chest/Head)
+    final constrained = _constrainRange(
       exercise: exercise,
       userLowest: lowestMidi,
       userHighest: highestMidi,
     );
+    final effectiveLowest = constrained.$1;
+    var effectiveHighest = constrained.$2;
+    final registerType = constrained.$3;
 
     // 2. Validate range
     if (effectiveLowest > effectiveHighest) {
@@ -100,8 +104,26 @@ class TransposedExerciseBuilder {
     // Calculate a safe start target MIDI near the bottom of the user range
     // This is the LOWEST note we want in the pattern
     const startPaddingSemitones = 0;
+    // Fix for crash: ensure upper bound is at least lower bound
+    // If range is too small (effectiveHighest - patternSpan < effectiveLowest),
+    // we clamp the upper bound to be >= effectiveLowest.
+    // This effectively forces the exercise to run at effectiveLowest even if it slightly exceeds the top.
+    var upperBound = effectiveHighest - patternSpan;
+    if (upperBound < effectiveLowest) {
+      if (kDebugMode) {
+        print('[TransposedExerciseBuilder] Warning: Range too small for pattern. '
+            'Span: $patternSpan, Range: $effectiveLowest-$effectiveHighest. '
+            'Clamping upper bound to $effectiveLowest and expanding effectiveHighest to fit one pattern.');
+      }
+      upperBound = effectiveLowest;
+      // CRITICAL: Expand the effective constraint just enough to allow ONE pattern to generate.
+      // Otherwise only startTargetMidi is clamped, but the loop break condition (segmentHigh > effectiveHighest)
+      // will trigger immediately, resulting in 0 notes.
+      effectiveHighest = math.max(effectiveHighest, effectiveLowest + patternSpan);
+    }
+
     final startTargetMidi = (effectiveLowest + startPaddingSemitones)
-        .clamp(effectiveLowest, effectiveHighest - patternSpan);
+        .clamp(effectiveLowest, upperBound);
 
     // ENFORCE INVARIANT: rootMidi anchors the LOWEST note (patternMin) to startTargetMidi
     // Formula: lowestNote = rootMidi + patternMin = startTargetMidi
