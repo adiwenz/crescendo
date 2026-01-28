@@ -6,10 +6,9 @@ import '../audio/midi_playback_config.dart';
 import '../audio/reference_midi_synth.dart';
 import '../services/audio_session_service.dart';
 import '../services/playback_state_service.dart';
-import '../services/audio_route_service.dart';
 
-/// Global MIDI engine wrapper that handles route changes and automatic resumption
-/// This is a singleton that wraps ReferenceMidiSynth and adds route change resilience
+/// Global MIDI engine wrapper for reference audio playback
+/// This is a singleton that wraps ReferenceMidiSynth
 class ReferenceMidiEngine {
   static final ReferenceMidiEngine _instance = ReferenceMidiEngine._internal();
   factory ReferenceMidiEngine() => _instance;
@@ -17,30 +16,13 @@ class ReferenceMidiEngine {
 
   final ReferenceMidiSynth _synth = ReferenceMidiSynth();
   final PlaybackStateService _playbackState = PlaybackStateService();
-  final AudioRouteService _audioRoute = AudioRouteService();
   
   bool _ready = false;
   bool _loading = false;
-  StreamSubscription<AudioOutputType>? _routeSubscription;
   
-  // Route change handling
-  Timer? _routeChangeDebounceTimer;
-  bool _isHandlingRouteChange = false;
-  
-  /// Initialize the engine and set up route change listener
+  /// Initialize the engine
   Future<void> initialize() async {
     if (_ready) return;
-    
-            // Initialize audio route service (uses flutter_headset_detector)
-            await _audioRoute.initialize();
-
-            // Subscribe to route changes from flutter_headset_detector
-            _routeSubscription?.cancel();
-            _routeSubscription = _audioRoute.outputStream.listen(_handleRouteChanged);
-
-            if (kDebugMode) {
-              debugPrint('[ReferenceMidiEngine] Initialized with flutter_headset_detector route detection');
-            }
     
     // Ensure ready (load SoundFont)
     await ensureReady(tag: 'initialize');
@@ -321,127 +303,11 @@ class ReferenceMidiEngine {
       }
     }
   }
-  
-          /// Handle route change event from flutter_headset_detector (debounced)
-  void _handleRouteChanged(AudioOutputType newOutput) {
-    if (kDebugMode) {
-      debugPrint('[ReferenceMidiEngine] Route changed → $newOutput (hasHeadphones=${_audioRoute.hasHeadphones})');
-    }
-    
-    // Cancel existing debounce timer
-    _routeChangeDebounceTimer?.cancel();
-    
-    // Debounce route changes (wait 150ms for stabilization)
-    _routeChangeDebounceTimer = Timer(const Duration(milliseconds: 150), () async {
-      await _processRouteChange();
-    });
-  }
-  
-  /// Process route change (called after debounce)
-  Future<void> _processRouteChange() async {
-    if (_isHandlingRouteChange) {
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Route change already being handled, skipping');
-      }
-      return;
-    }
-    
-    _isHandlingRouteChange = true;
-    final routeChangeStartTime = DateTime.now();
-    
-    try {
-      final oldOutput = _audioRoute.currentOutput;
-      final hasHeadphones = _audioRoute.hasHeadphones;
-      
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] ========================================');
-        debugPrint('[ReferenceMidiEngine] ROUTE CHANGE DETECTED');
-        debugPrint('[ReferenceMidiEngine] Old output: $oldOutput');
-        debugPrint('[ReferenceMidiEngine] Has headphones: $hasHeadphones');
-        debugPrint('[ReferenceMidiEngine] ========================================');
-      }
-      
-      // Get current playback context (with latest position)
-      final context = _playbackState.currentContext;
-      if (context == null) {
-        if (kDebugMode) {
-          debugPrint('[ReferenceMidiEngine] No active playback, skipping recovery');
-        }
-        return;
-      }
-      
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Active playback context: mode=${context.mode}, runId=${context.runId}, currentTime=${context.currentTimeSec.toStringAsFixed(3)}s, notes=${context.notes.length}');
-      }
-      
-      // Step 1: Stop all MIDI immediately
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Step 1: Stopping all MIDI playback...');
-      }
-      await stopAll(tag: 'routeChange-stop');
-      
-      // Step 2: Re-apply audio session with output port override
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Step 2: Re-applying audio session (mode=${context.mode}, overrideToSpeaker=${!hasHeadphones})...');
-      }
-      try {
-        if (context.mode == 'exercise') {
-          await AudioSessionService.applyExerciseSession(
-            tag: 'routeChange_recover',
-            overrideToSpeaker: !hasHeadphones,
-          );
-        } else {
-          await AudioSessionService.applyReviewSession(
-            tag: 'routeChange_recover',
-            overrideToSpeaker: !hasHeadphones,
-          );
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('[ReferenceMidiEngine] ERROR applying audio session: $e');
-        }
-      }
-      
-      // Step 3: Wait for route stabilization
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Step 3: Waiting for route stabilization (150ms)...');
-      }
-      await Future.delayed(const Duration(milliseconds: 150));
-      
-      // Step 4: Recover MIDI engine
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] Step 4: Recovering MIDI engine...');
-      }
-      await recoverAfterRouteChange(context: context);
-      
-      // Update context with new runId (recoverAfterRouteChange bumps it)
-      final updatedContext = _playbackState.currentContext;
-      if (updatedContext != null && updatedContext.runId > context.runId) {
-        if (kDebugMode) {
-          debugPrint('[ReferenceMidiEngine] Context updated with new runId: ${updatedContext.runId}');
-        }
-      }
-      
-      final routeChangeElapsed = DateTime.now().difference(routeChangeStartTime).inMilliseconds;
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] ========================================');
-        debugPrint('[ReferenceMidiEngine] ROUTE CHANGE RECOVERY COMPLETE (${routeChangeElapsed}ms)');
-        debugPrint('[ReferenceMidiEngine] ========================================');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[ReferenceMidiEngine] ERROR during route change recovery: $e');
-      }
-    } finally {
-      _isHandlingRouteChange = false;
-    }
-  }
+
   
   /// Dispose the engine
   void dispose() {
-    _routeSubscription?.cancel();
-    _routeSubscription = null;
-    _routeChangeDebounceTimer?.cancel();
+    // Cleanup if needed
   }
   
   /// Update playback position (for tracking current time)

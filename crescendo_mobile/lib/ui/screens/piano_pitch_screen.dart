@@ -12,7 +12,6 @@ import '../../utils/audio_constants.dart';
 import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
-import '../../services/midi_route_manager.dart';
 import '../../audio/reference_midi_synth.dart';
 
 // Pitch detection configuration constants
@@ -47,7 +46,6 @@ class PianoPitchScreen extends StatefulWidget {
 
 class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, WidgetsBindingObserver {
   final ReferenceMidiSynth _midi = ReferenceMidiSynth.instance;
-  final MidiRouteManager _routeManager = MidiRouteManager.instance;
   bool _midiReady = false;
   late final PitchService _service;
   late final PitchTracker _tracker;
@@ -79,14 +77,9 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     // Defer MIDI initialization until after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initAudioSession();
-      _initRouteManager();
       _initMidi();
       _centerKeyboardInitial();
     });
-  }
-
-  Future<void> _initRouteManager() async {
-    await _routeManager.init();
   }
 
   Future<void> _initMidi() async {
@@ -289,7 +282,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
     _service.dispose();
     _keyboardController.dispose();
     _tracker.dispose();
-    _routeManager.dispose();
     debugPrint('[PianoPitchScreen] dispose END');
     super.dispose();
   }

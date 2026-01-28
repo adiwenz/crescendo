@@ -3,36 +3,26 @@ import 'dart:io' show Platform;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/services.dart';
+import '../../core/locator.dart';
+import '../../core/interfaces/i_audio_session.dart';
 
 /// Audio session configuration service
 /// Uses audio_session package for iOS audio session management
 class AudioSessionService {
-  static AudioSession? _session;
+  static IAudioSession? _session; // Change type to Interface
   static const MethodChannel _channel = MethodChannel('com.adriannawenz.crescendo/audioSession');
   static StreamSubscription? _interruptionSub;
   static StreamSubscription? _routeChangeSub;
 
-  /// Initialize and start monitoring interruptions/route changes
+  /// Initialize audio session
   static Future<void> init() async {
-    final session = await _getSession();
-    
-    _interruptionSub?.cancel();
-    _interruptionSub = session.interruptionEventStream.listen((event) {
-      debugPrint('[AudioSessionService] INTERRUPTION: type=${event.type}, begin=${event.begin}');
-      // If a begin event happens, we might want to pause everything
-    });
-
-    _routeChangeSub?.cancel();
-    _routeChangeSub = session.becomingNoisyEventStream.listen((_) {
-      debugPrint('[AudioSessionService] BECOMING NOISY (Route change usually)');
-    });
-    
-    // session.devicesChangedEventStream is also useful
+    // Just get the session to initialize it
+    await _getSession();
   }
 
   /// Get or create audio session instance
-  static Future<AudioSession> _getSession() async {
-    _session ??= await AudioSession.instance;
+  static Future<IAudioSession> _getSession() async {
+    _session ??= locator<IAudioSession>(); // Use locator
     return _session!;
   }
   

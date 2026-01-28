@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'logging_database.dart';
+import 'package:meta/meta.dart';
 
 class AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
@@ -27,6 +28,19 @@ class AppDatabase {
        _db = realDb;
     }
     return _db!;
+  }
+
+  /// Reset the database singleton for tests
+  /// 
+  /// WARNING: This should ONLY be called from tests!
+  /// It closes the database connection and resets the singleton.
+  @visibleForTesting
+  static Future<void> resetForTests() async {
+    final instance = AppDatabase._instance;
+    if (instance._db != null) {
+      await instance._db!.close();
+      instance._db = null;
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {

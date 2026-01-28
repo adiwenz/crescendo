@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:crescendo_mobile/ui/screens/exercise_categories_screen.dart';
+import 'test_bootstrap.dart';
 
 void main() {
+  // Initialize test environment once before all tests
+  setUpAll(() async {
+    await bootstrapTests();
+  });
+
+  // Reset database before each test
+  setUp(() async {
+    await resetTestDatabase();
+  });
+
   testWidgets('Exercise categories flow to info screen', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: ExerciseCategoriesScreen()));
 

@@ -7,13 +7,17 @@ import 'dart:io' show Platform;
 import 'ui/app.dart';
 import 'state/library_store.dart';
 import 'services/exercise_cache_service.dart';
-import 'services/audio_route_service.dart';
 import 'services/audio_session_service.dart';
 import 'services/storage/db.dart';
+
+import 'core/locator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint('[DB_TRACE] App Start');
+
+  setupLocator(); // Initialize dependency injection (Real implementations)
+
 
   // Check for wireless debugging (iOS only) and log warnings
   if (Platform.isIOS && kDebugMode) {
@@ -35,10 +39,6 @@ Future<void> main() async {
   // Pre-generate exercise cache for current range (if set)
   // This allows exercises to start instantly without generation delay
   ExerciseCacheService.instance.loadCache();
-
-  // Initialize audio route service (uses flutter_audio_output)
-  // This is the single source of truth for audio route detection
-  await AudioRouteService().initialize();
 
   // Pre-warm database to avoid lazy loading jank on first navigation
   await AppDatabase().database;
