@@ -228,6 +228,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   RecordingService? _recording;
   StreamSubscription<PitchFrame>? _sub;
   StreamSubscription<Duration>? _audioPosSub;
+  StreamSubscription<void>? _playbackCompleteSub;
   double? _scorePct;
   DateTime? _startedAt;
   bool _attemptSaved = false;
@@ -371,6 +372,14 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
     // Prime audio player to avoid first-play latency
     _primeAudio();
+
+    // Listen for audio playback completion to trigger auto-navigation
+    _playbackCompleteSub = _synth.onComplete.listen((_) {
+      if (mounted && isRunning) {
+        debugPrint('[ExercisePlayerScreen] Audio complete event received -> stopping');
+        _stop();
+      }
+    });
 
     // Schedule heavy work after first frame to avoid blocking UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -695,6 +704,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _sub = null;
     _audioPosSub?.cancel();
     _audioPosSub = null;
+    _playbackCompleteSub?.cancel();
+    _playbackCompleteSub = null;
 
     // Stop and dispose recording service
     if (_recording != null) {
