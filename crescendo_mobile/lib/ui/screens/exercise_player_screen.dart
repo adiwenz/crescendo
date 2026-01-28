@@ -1557,9 +1557,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         // referenceWavSha1: null, // Computed lazily or added to plan later if needed
       );
 
-      // Fire persistence in background - DO NOT AWAIT
-      // We explicitly unawaited this to ensure fast navigation
-      _persistAttempt(draft, subScores, wavPath);
+      // Fire persistence - AWAITED
+      await _persistAttempt(draft, subScores, wavPath);
     }
 
     setState(() {
@@ -1589,79 +1588,39 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
   Future<void> _persistAttempt(LastTakeDraft draft, Map<String, double> subScores, String wavPath) async {
-    // 1. Save Last Take (History for "Resume")
-    // Note: LastTakeStore logic requires frames. We reconstruct or use captured.
-    // Since _captured might be cleared or changed if we don't copy, we use a local copy.
-    // However, _stop runs on UI thread. We should have passed frames.
-    // For now, we rely on _captured still being available or rely on draft.
-    // BUT LastTakeStore needs List<PitchFrame>.
-    // To handle this cleanly without racing, we should have passed frames to this method.
-    // Since I can't easily change signature in this tool call without looking at _stop again...
-    // I will assume _captured is safe to access here OR I will update _stop in a separate call.
-    // Actually, _stop call to _persistAttempt is inside _stop scope where _captured is available.
-    // But _persistAttempt is async and awaits. _captured is a field.
-    // Code in _stop clears buffers: _pitchState.reset(), _tailBuffer.clear(). _captured is NOT cleared in _stop.
-    // So accessing _captured here is probably safe IF no new run starts immediately.
-    // But better to sanitize immediately.
-    
-    final frames = _captured.map((f) {
-      final midi = f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
-      return PitchFrame(
-        time: f.time,
-        hz: f.hz,
-        midi: midi,
-        voicedProb: f.voicedProb,
-        rms: f.rms,
-      );
-    }).toList();
+    // 1. Build ExerciseAttempt
+    if (_startedAt == null) return;
 
-    final take = LastTake(
+    final attempt = _progress.buildAttempt(
       exerciseId: draft.exerciseId,
-      recordedAt: draft.createdAt,
-      frames: frames,
-      durationSec: draft.durationMs / 1000.0,
-      audioPath: wavPath.isNotEmpty ? wavPath : null,
+      categoryId: widget.exercise.categoryId,
+      startedAt: _startedAt!,
+      completedAt: draft.createdAt,
+      overallScore: draft.score.toDouble(),
+      subScores: subScores,
+      recorderStartSec: _recorderStartSec,
       pitchDifficulty: widget.pitchDifficulty.name,
-      offsetMs: draft.offsetMs.toDouble(),
+      recordingPath: wavPath.isNotEmpty ? wavPath : null,
+      contourJson: draft.contourJson,
+      targetNotesJson: _buildTargetNotesJson(),
+      segmentsJson: _buildSegmentsJson(),
       minMidi: draft.minMidi,
       maxMidi: draft.maxMidi,
       referenceWavPath: draft.referenceWavPath,
       referenceSampleRate: draft.referenceSampleRate,
       referenceWavSha1: draft.referenceWavSha1,
     );
-    // Fire and forget (unawaited by UI, but awaited here)
-    await _lastTakeStore.saveLastTake(take);
+    _attemptSaved = true;
+    
+    final level = pitchHighwayDifficultyLevel(widget.pitchDifficulty);
 
-    // 2. Save Exercise Attempt + Level Progress (Unified Transaction)
-    if (_startedAt != null) {
-        final attempt = _progress.buildAttempt(
-          exerciseId: draft.exerciseId,
-          categoryId: widget.exercise.categoryId,
-          startedAt: _startedAt!,
-          completedAt: draft.createdAt,
-          overallScore: draft.score.toDouble(),
-          subScores: subScores,
-          recorderStartSec: _recorderStartSec,
-          pitchDifficulty: widget.pitchDifficulty.name,
-          recordingPath: wavPath.isNotEmpty ? wavPath : null,
-          contourJson: draft.contourJson,
-          targetNotesJson: _buildTargetNotesJson(),
-          segmentsJson: _buildSegmentsJson(),
-          minMidi: draft.minMidi,
-          maxMidi: draft.maxMidi,
-          referenceWavPath: draft.referenceWavPath,
-          referenceSampleRate: draft.referenceSampleRate,
-          referenceWavSha1: draft.referenceWavSha1,
-        );
-        _attemptSaved = true;
-        
-        final level = pitchHighwayDifficultyLevel(widget.pitchDifficulty);
-        await _progress.saveCompleteAttempt(
-          attempt: attempt,
-          level: level,
-          score: draft.score,
-        );
-    }
+    // 2. Persist via unified service (Awaited)
+    // This handles LastTake (assets/upsert), History (take_scores), and Progress (exercise_progress)
+    await _progress.persistAttempt(
+      attempt: attempt,
+      level: level,
+      score: draft.score,
+    );
   }
 
   void _navigateToReview(LastTakeDraft? draft) {

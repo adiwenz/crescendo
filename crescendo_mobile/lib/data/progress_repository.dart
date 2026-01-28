@@ -34,117 +34,99 @@ class ProgressRepository {
     }
   }
 
-  /// Transactional save of attempt + level progress
+  /// Unified transactional save for an attempt.
+  /// Handles file assets and all DB updates (history, last_take, progress).
+  Future<void> persistAttempt({
+    required ExerciseAttempt attempt,
+    int? level,
+    int? score,
+  }) async {
+    final start = DateTime.now();
+    debugPrint('[AttemptPersistence] SAVE_START exerciseId=${attempt.exerciseId} score=${attempt.overallScore} level=$level pathType=${level != null ? "full" : "partial/exit"}');
+
+    try {
+      // 1. Prepare assets (File I/O outside transaction)
+      ExerciseTake? lastTake;
+      if (attempt.recordingPath != null || attempt.contourJson != null) {
+        lastTake = await _manageAssetsAndCreateTake(attempt);
+      }
+
+      final db = overrideDb ?? await _db.database;
+      
+      await db.transaction((txn) async {
+        // 2. Insert into take_scores (History)
+        final scoreObj = ExerciseScore(
+          id: attempt.id,
+          exerciseId: attempt.exerciseId,
+          categoryId: attempt.categoryId,
+          createdAt: attempt.completedAt ?? DateTime.now(),
+          score: attempt.overallScore,
+          durationMs: (attempt.completedAt != null && attempt.startedAt != null)
+              ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
+              : 0,
+        );
+        await txn.insert('take_scores', scoreObj.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+
+        // 3. Upsert last_take
+        if (lastTake != null) {
+          final toWrite = lastTake.toMap();
+          if (kDebugMode) {
+            // await _logLastTakeSchema(txn); // Reduce noise
+            debugPrint('[AttemptPersistence] LastTake columns=${toWrite.keys.toList()}');
+          }
+          await txn.insert('last_take', toWrite, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+
+        // 4. Update Level Progress (if applicable)
+        if (level != null && score != null) {
+          final levelRepo = ExerciseLevelProgressRepository(overrideDb: txn);
+          final updated = await levelRepo.saveAttempt(
+            exerciseId: attempt.exerciseId,
+            level: level,
+            score: score,
+          );
+          
+          if (score > 90 &&
+              level == updated.highestUnlockedLevel &&
+              level < ExerciseLevelProgress.maxLevel) {
+            await levelRepo.updateUnlockedLevel(
+              exerciseId: attempt.exerciseId,
+              newLevel: level + 1,
+            );
+            debugPrint('[AttemptPersistence] Level Up! New level: ${level + 1}');
+          }
+        }
+      });
+      
+      debugPrint('[AttemptPersistence] SAVE_COMMIT_OK duration=${DateTime.now().difference(start).inMilliseconds}ms');
+      
+      // 5. Diagnostics (Post-commit)
+      if (kDebugMode) {
+        final count = await countAttemptsForExercise(attempt.exerciseId);
+        debugPrint('[AttemptPersistence] Post-save count for ${attempt.exerciseId}: $count');
+        final recent = await fetchLastScore(attempt.exerciseId);
+        debugPrint('[AttemptPersistence] Verified read-back: id=${recent?.id} score=${recent?.score}');
+      }
+
+    } catch (e, st) {
+      debugPrint('[AttemptPersistence] SAVE_ERROR: $e\n$st');
+      rethrow; // Propagate to UI for snackbar/error handling
+    }
+  }
+
+  // Deprecated methods kept for compatibility during refactor, but should redirect or warn
   Future<void> saveCompleteAttempt({
     required ExerciseAttempt attempt,
     required int level,
     required int score,
   }) async {
-    final db = overrideDb ?? await _db.database;
-    
-    await db.transaction((txn) async {
-       // 1. Save Attempt (Scores + Assets)
-       // We duplicate saveAttempt logic here to use 'txn'
-       final scoreObj = ExerciseScore(
-        id: attempt.id,
-        exerciseId: attempt.exerciseId,
-        categoryId: attempt.categoryId,
-        createdAt: attempt.completedAt ?? DateTime.now(),
-        score: attempt.overallScore,
-        durationMs: (attempt.completedAt != null && attempt.startedAt != null)
-            ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
-            : 0,
-      );
-      await txn.insert('take_scores', scoreObj.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-
-      if (attempt.recordingPath != null || attempt.contourJson != null) {
-        if (kDebugMode) {
-          debugPrint('[AttemptSave] exerciseId=${attempt.exerciseId} pitchDifficulty=${attempt.pitchDifficulty}');
-        }
-        final lastTake = await _manageAssetsAndCreateTake(attempt);
-        final toWrite = lastTake.toMap();
-        if (kDebugMode) {
-          await _logLastTakeSchema(txn);
-          debugPrint('[LastTakeWrite] columns=${toWrite.keys.toList()}');
-          debugPrint('[LastTakeWrite] values=${toWrite.values.toList()}');
-        }
-        await txn.insert('last_take', toWrite, conflictAlgorithm: ConflictAlgorithm.replace);
-        
-        if (kDebugMode) {
-          final persisted = await txn.query('last_take', where: 'exerciseId = ?', whereArgs: [attempt.exerciseId]);
-          if (persisted.isNotEmpty) {
-            debugPrint('[LastTakeWrite] persistedRow=${persisted.first}');
-          } else {
-             debugPrint('[LastTakeWrite] persistedRow=NULL (Read failed after write)');
-          }
-        }
-      }
-
-      // 2. Update Level Progress
-      final levelRepo = ExerciseLevelProgressRepository(overrideDb: txn);
-      final updated = await levelRepo.saveAttempt(
-        exerciseId: attempt.exerciseId,
-        level: level,
-        score: score,
-      );
-      
-      if (score > 90 &&
-          level == updated.highestUnlockedLevel &&
-          level < ExerciseLevelProgress.maxLevel) {
-        await levelRepo.updateUnlockedLevel(
-          exerciseId: attempt.exerciseId,
-          newLevel: level + 1,
-        );
-      }
-    });
+    debugPrint('[ProgressRepository] DEPRECATED: call persistAttempt instead');
+    return persistAttempt(attempt: attempt, level: level, score: score);
   }
 
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
-    final db = overrideDb ?? await _db.database;
-    
-    // Use transaction for atomicity and speed
-    await db.transaction((txn) async {
-      // 1. Save lightweight score history
-      final score = ExerciseScore(
-        id: attempt.id,
-        exerciseId: attempt.exerciseId,
-        categoryId: attempt.categoryId,
-        createdAt: attempt.completedAt ?? DateTime.now(),
-        score: attempt.overallScore,
-        durationMs: (attempt.completedAt != null && attempt.startedAt != null)
-            ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
-            : 0,
-      );
-      await txn.insert('take_scores', score.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-
-      // 2. Manage assets and update last_take (UPSERT)
-      // Only last_take needs to track file paths.
-      // We don't save heavy blobs to exercise_attempts anymore.
-      if (attempt.recordingPath != null || attempt.contourJson != null) {
-        if (kDebugMode) {
-           debugPrint('[AttemptSave] exerciseId=${attempt.exerciseId} pitchDifficulty=${attempt.pitchDifficulty}');
-        }
-        final lastTake = await _manageAssetsAndCreateTake(attempt);
-        // UPSERT: Insert or replace based on PRIMARY KEY (exerciseId)
-        // Schema must utilize exerciseId as primary key for this to work as an upsert on that key
-        final toWrite = lastTake.toMap();
-        if (kDebugMode) {
-          await _logLastTakeSchema(txn);
-          debugPrint('[LastTakeWrite] columns=${toWrite.keys.toList()}');
-          debugPrint('[LastTakeWrite] values=${toWrite.values.toList()}');
-        }
-        await txn.insert('last_take', toWrite, conflictAlgorithm: ConflictAlgorithm.replace);
-
-        if (kDebugMode) {
-          final persisted = await txn.query('last_take', where: 'exerciseId = ?', whereArgs: [attempt.exerciseId]);
-          if (persisted.isNotEmpty) {
-            debugPrint('[LastTakeWrite] persistedRow=${persisted.first}');
-          } else {
-             debugPrint('[LastTakeWrite] persistedRow=NULL (Read failed after write)');
-          }
-        }
-      }
-    });
+     debugPrint('[ProgressRepository] DEPRECATED: call persistAttempt instead');
+     return persistAttempt(attempt: attempt);
   }
 
   Future<ExerciseTake> _manageAssetsAndCreateTake(ExerciseAttempt attempt) async {
