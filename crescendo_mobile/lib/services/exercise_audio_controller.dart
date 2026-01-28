@@ -22,14 +22,14 @@ class ExerciseAudioController {
 
   /// Stop all audio playback and recording instantly.
   /// Enforces a clean shutdown sequence to prevent iOS audio glitches.
-  /// Returns the RecordingResult if recording was active.
-  Future<RecordingResult?> stopAndRelease() async {
+  /// Returns the RecordingStopResult if recording was active.
+  Future<RecordingStopResult?> stopAndRelease() async {
     if (_isShuttingDown) return null;
     _isShuttingDown = true;
     
     final startTime = DateTime.now();
     debugPrint('[AudioController] Starting stopAndRelease teardown...');
-    RecordingResult? result;
+    RecordingStopResult? result;
 
     try {
       // Phase 1: Immediate mute to prevent buzzing/glitches
@@ -47,7 +47,7 @@ class ExerciseAudioController {
       ]);
       
       if (recordingStop != null && results.length > 1) {
-        result = results[1] as RecordingResult?;
+        result = results[1] as RecordingStopResult?;
       }
       
       // Phase 3: Pause clock and release resources

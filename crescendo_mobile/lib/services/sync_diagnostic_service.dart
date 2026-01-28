@@ -96,15 +96,15 @@ class SyncDiagnosticService {
       final result = await recorder.stop(customPath: wavPath);
       await _dumpAudioSession('after_recording_stop');
 
-      if (result == null || result.audioPath.isEmpty) {
+      if (result == null || result.wavPath.isEmpty) {
         debugPrint('[SyncDiag] Recording failed - empty audio path');
         return null;
       }
 
-      debugPrint('[SyncDiag] Recording saved: ${result.audioPath}');
+      debugPrint('[SyncDiag] Recording saved: ${result.wavPath}');
 
       // Analyze WAV file (use recording start as timeline anchor)
-      final offsetMs = await _analyzeWavFile(result.audioPath, recordingStartEpochMs);
+      final offsetMs = await _analyzeWavFile(result.wavPath, recordingStartEpochMs);
       
       if (offsetMs != null) {
         // Save offset to SharedPreferences

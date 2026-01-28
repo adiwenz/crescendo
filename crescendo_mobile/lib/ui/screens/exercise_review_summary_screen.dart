@@ -22,15 +22,19 @@ import '../../services/attempt_repository.dart';
 import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
 
+import '../../models/last_take_draft.dart';
+
 class ExerciseReviewSummaryScreen extends StatefulWidget {
   final VocalExercise exercise;
-  final ExerciseAttempt attempt;
+  final ExerciseAttempt? attempt;
+  final LastTakeDraft? draft;
 
   const ExerciseReviewSummaryScreen({
     super.key,
     required this.exercise,
-    required this.attempt,
-  });
+    this.attempt,
+    this.draft,
+  }) : assert(attempt != null || draft != null, 'Must provide attempt or draft');
 
   @override
   State<ExerciseReviewSummaryScreen> createState() =>
@@ -46,53 +50,80 @@ class _ExerciseReviewSummaryScreenState
   int _durationMs = 0;
   bool _loading = true;
   ExerciseTake? _dbTake;
+  late ExerciseAttempt _displayAttempt;
 
   @override
   void initState() {
     super.initState();
+    _initAttempt();
     _loadReviewData();
   }
 
+  void _initAttempt() {
+    if (widget.attempt != null) {
+      _displayAttempt = widget.attempt!;
+    } else {
+      // Build from draft
+      final d = widget.draft!;
+      _displayAttempt = ExerciseAttempt(
+         id: '0', // transient
+         exerciseId: d.exerciseId,
+         categoryId: widget.exercise.categoryId,
+         startedAt: d.createdAt.subtract(Duration(milliseconds: d.durationMs)),
+         completedAt: d.createdAt,
+         overallScore: d.score.toDouble(),
+         recorderStartSec: 0.0, // approximates
+         contourJson: d.contourJson,
+         subScores: {}, // or {'intonation': d.score}
+      );
+    }
+  }
+
   Future<void> _loadReviewData() async {
-    var currentAttempt = widget.attempt;
+    var currentAttempt = _displayAttempt;
     String? pitchJson = currentAttempt.contourJson;
 
     try {
-
-    // 1. If we have a summary (no contourJson), try to load from last_take
-    if (pitchJson == null || widget.attempt.recordingPath == null || !File(widget.attempt.recordingPath!).existsSync()) {
-      final lastTake = await AttemptRepository.instance.loadLastTake(widget.exercise.id);
-      
-      // Check if this latest take corresponds to the attempt we're viewing
-      if (lastTake != null && 
-          widget.attempt.completedAt != null &&
-          (lastTake.createdAt.millisecondsSinceEpoch - widget.attempt.completedAt!.millisecondsSinceEpoch).abs() < 1000) {
-        _dbTake = lastTake;
-        debugPrint('[ReviewSummary] Loading data from file: pitch=${lastTake.pitchPath}, audio=${lastTake.audioPath}');
-        
-        // Load pitch if needed
-        if (pitchJson == null) {
-          try {
-            final file = File(lastTake.pitchPath);
-            if (await file.exists()) {
-              pitchJson = await file.readAsString();
+      // If NOT using a draft, try to recover/load missing data from storage
+      if (widget.draft == null) {
+        // 1. If we have a summary (no contourJson) or missing audio, try to load from last_take
+        if (pitchJson == null || 
+            _displayAttempt.recordingPath == null || 
+            !File(_displayAttempt.recordingPath!).existsSync()) {
+          
+          final lastTake = await AttemptRepository.instance.loadLastTake(widget.exercise.id);
+          
+          // Check if this latest take corresponds to the attempt we're viewing
+          if (lastTake != null && 
+              currentAttempt.completedAt != null &&
+              (lastTake.createdAt.millisecondsSinceEpoch - currentAttempt.completedAt!.millisecondsSinceEpoch).abs() < 1000) {
+            _dbTake = lastTake;
+            debugPrint('[ReviewSummary] Loading data from file: pitch=${lastTake.pitchPath}, audio=${lastTake.audioPath}');
+            
+            // Load pitch if needed
+            if (pitchJson == null) {
+              try {
+                final file = File(lastTake.pitchPath);
+                if (await file.exists()) {
+                  pitchJson = await file.readAsString();
+                }
+              } catch (e) {
+                debugPrint('[ReviewSummary] Error reading pitch file: $e');
+              }
             }
-          } catch (e) {
-            debugPrint('[ReviewSummary] Error reading pitch file: $e');
+          }
+        }
+
+        // 2. If still null, try falling back to legacy DB
+        if (pitchJson == null) {
+          debugPrint('[ReviewSummary] Fetching legacy full record for id=${currentAttempt.id}');
+          final full = await AttemptRepository.instance.getFullAttempt(currentAttempt.id);
+          if (full != null) {
+            pitchJson = full.contourJson;
+            currentAttempt = full;
           }
         }
       }
-    }
-
-    // 2. If still null, try falling back to legacy DB (for transition period)
-    if (pitchJson == null) {
-      debugPrint('[ReviewSummary] Fetching legacy full record for id=${currentAttempt.id}');
-      final full = await AttemptRepository.instance.getFullAttempt(currentAttempt.id);
-      if (full != null) {
-        pitchJson = full.contourJson;
-        currentAttempt = full;
-      }
-    }
 
     // Parse contour data (pitch samples)
     _samples = _parseContour(pitchJson);
@@ -224,8 +255,8 @@ class _ExerciseReviewSummaryScreenState
   Future<List<TargetNote>> _buildTargetNotesFromExercise() async {
     // Fallback: build from exercise if target notes weren't saved
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-    final difficulty = widget.attempt.pitchDifficulty != null
-        ? pitchHighwayDifficultyFromName(widget.attempt.pitchDifficulty!)
+    final difficulty = _displayAttempt.pitchDifficulty != null
+        ? pitchHighwayDifficultyFromName(_displayAttempt.pitchDifficulty!)
         : PitchHighwayDifficulty.medium;
 
     // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
@@ -352,12 +383,12 @@ class _ExerciseReviewSummaryScreenState
     }).toList();
     return LastTake(
       exerciseId: widget.exercise.id,
-      recordedAt: widget.attempt.completedAt ?? DateTime.now(),
+      recordedAt: _displayAttempt.completedAt ?? DateTime.now(),
       frames: frames,
       durationSec: _durationMs / 1000.0,
-      audioPath: _dbTake?.audioPath ?? widget.attempt.recordingPath,
-      pitchDifficulty: widget.attempt.pitchDifficulty,
-      recorderStartSec: widget.attempt.recorderStartSec,
+      audioPath: _dbTake?.audioPath ?? _displayAttempt.recordingPath,
+      pitchDifficulty: _displayAttempt.pitchDifficulty,
+      recorderStartSec: _displayAttempt.recorderStartSec,
     );
   }
 
@@ -392,7 +423,7 @@ class _ExerciseReviewSummaryScreenState
                           TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                     ),
                     Text(
-                      '${widget.attempt.overallScore.toStringAsFixed(0)}%',
+                      '${_displayAttempt.overallScore.toStringAsFixed(0)}%',
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,

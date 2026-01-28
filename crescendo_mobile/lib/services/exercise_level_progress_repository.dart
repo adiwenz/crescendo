@@ -5,7 +5,7 @@ import '../services/storage/db.dart';
 
 class ExerciseLevelProgressRepository {
   final AppDatabase _db = AppDatabase();
-  final Database? overrideDb;
+  final DatabaseExecutor? overrideDb;
 
   ExerciseLevelProgressRepository({this.overrideDb});
 

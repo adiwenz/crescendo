@@ -22,15 +22,22 @@ enum RecordingMode {
   take,
 }
 
-class RecordingResult {
-  final String audioPath;
+class RecordingStopResult {
+  final String pcmPath;
+  final int durationMs;
+  final Future<String> wavPathFuture;
+  final String wavPath;
   final List<PitchFrame> frames;
 
-  RecordingResult(this.audioPath, this.frames);
+  RecordingStopResult({
+    required this.pcmPath,
+    required this.durationMs,
+    required this.wavPathFuture,
+    required this.wavPath,
+    required this.frames,
+  });
 }
 
-/// Thin wrapper around [AudioRecorder] that exposes PCM stream + simple frames.
-/// Coordinates with AudioSessionManager to prevent microphone conflicts.
 class RecordingService {
   final AudioSessionManager _sessionManager = AudioSessionManager.instance;
   final String _owner; // 'piano' or 'exercise'
@@ -45,6 +52,7 @@ class RecordingService {
   StreamSubscription<Uint8List>? _sub;
   bool _isRecording = false;
   RecordingMode _currentMode = RecordingMode.take;
+  DateTime? _startTime;
 
 
   // Isolate-based worker
@@ -78,6 +86,7 @@ class RecordingService {
     }
 
     _activeOwner = owner;
+    _startTime = DateTime.now();
 
     // Pre-launch worker isolate
     await _ensureWorker();
@@ -183,7 +192,7 @@ class RecordingService {
     debugPrint('[RecordingService] Worker isolate ready');
   }
 
-  Future<RecordingResult?> stop({String? customPath}) async {
+  Future<RecordingStopResult?> stop({String? customPath}) async {
     if (!_isRecording) {
       _activeOwner = null;
       return null;
@@ -193,6 +202,7 @@ class RecordingService {
     debugPrint('[RecordingService] ($currentOwner) Mic stopping - reason: normal stop');
     _isRecording = false; // Block further sends to worker immediately
     _activeOwner = null;
+    final durationMs = _startTime != null ? DateTime.now().difference(_startTime!).inMilliseconds : 0;
     
     await _sub?.cancel();
     _sub = null;
@@ -218,28 +228,32 @@ class RecordingService {
 
     if (_currentMode == RecordingMode.live) {
       debugPrint('[RecordingService] Live mode: skipping WAV writing and returning null');
-      final result = RecordingResult('', List<PitchFrame>.from(_frames));
-      _frames.clear();
-      return result;
+      return null;
     }
 
     final dir = await getApplicationDocumentsDirectory();
     final path = customPath ?? p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
     
-    // Performance Trace: Offloading WAV encoding & IO to background
-    debugPrint('[RecordingService] Offloading WAV encoding from PCM file to background for $path');
-    final startTime = DateTime.now();
+    // Optimization: Return immediately with Future for WAV encoding
+    debugPrint('[RecordingService] Starting background WAV encoding for $path');
     
-    await compute(_writeWavFromPcm, {
+    // Start background job but DO NOT AWAIT IT
+    final wavFuture = compute(_writeWavFromPcm, {
       'path': path,
       'pcmPath': _tempPcmPath,
       'sampleRate': sampleRate,
+    }).then((_) {
+        debugPrint('[RecordingService] WAV encoding complete: $path');
+        return path;
     });
 
-    final elapsed = DateTime.now().difference(startTime);
-    debugPrint('[RecordingService] Finished WAV writing in ${elapsed.inMilliseconds}ms');
-
-    return RecordingResult(path, List<PitchFrame>.from(_frames));
+    return RecordingStopResult(
+      pcmPath: _tempPcmPath ?? '', 
+      durationMs: durationMs, 
+      wavPathFuture: wavFuture,
+      wavPath: path,
+      frames: List<PitchFrame>.from(_frames),
+    );
   }
 
   /// Background isolate worker for encoding and writing WAV from PCM file

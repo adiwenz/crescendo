@@ -10,11 +10,61 @@ import '../models/exercise_score.dart';
 import '../models/exercise_take.dart';
 import '../services/storage/db.dart';
 
+import '../services/exercise_level_progress_repository.dart';
+import '../models/exercise_level_progress.dart';
+
 class ProgressRepository {
   final AppDatabase _db = AppDatabase();
   final Database? overrideDb;
 
   ProgressRepository({this.overrideDb});
+
+  /// Transactional save of attempt + level progress
+  Future<void> saveCompleteAttempt({
+    required ExerciseAttempt attempt,
+    required int level,
+    required int score,
+  }) async {
+    final db = overrideDb ?? await _db.database;
+    
+    await db.transaction((txn) async {
+       // 1. Save Attempt (Scores + Assets)
+       // We duplicate saveAttempt logic here to use 'txn'
+       final scoreObj = ExerciseScore(
+        id: attempt.id,
+        exerciseId: attempt.exerciseId,
+        categoryId: attempt.categoryId,
+        createdAt: attempt.completedAt ?? DateTime.now(),
+        score: attempt.overallScore,
+        durationMs: (attempt.completedAt != null && attempt.startedAt != null)
+            ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
+            : 0,
+      );
+      await txn.insert('take_scores', scoreObj.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+
+      if (attempt.recordingPath != null || attempt.contourJson != null) {
+        final lastTake = await _manageAssetsAndCreateTake(attempt);
+        await txn.insert('last_take', lastTake.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      // 2. Update Level Progress
+      final levelRepo = ExerciseLevelProgressRepository(overrideDb: txn);
+      final updated = await levelRepo.saveAttempt(
+        exerciseId: attempt.exerciseId,
+        level: level,
+        score: score,
+      );
+      
+      if (score > 90 &&
+          level == updated.highestUnlockedLevel &&
+          level < ExerciseLevelProgress.maxLevel) {
+        await levelRepo.updateUnlockedLevel(
+          exerciseId: attempt.exerciseId,
+          newLevel: level + 1,
+        );
+      }
+    });
+  }
 
   Future<void> saveAttempt(ExerciseAttempt attempt) async {
     final db = overrideDb ?? await _db.database;
