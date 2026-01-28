@@ -131,6 +131,9 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
                         builder: (_) => ExerciseReviewSummaryScreen(
                           exercise: widget.exercise,
                           attempt: _currentAttempt,
+                          difficulty: _currentAttempt.pitchDifficulty != null
+                              ? pitchHighwayDifficultyFromName(_currentAttempt.pitchDifficulty!)
+                              : null,
                         ),
                       ),
                     );
@@ -243,6 +246,9 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
         builder: (_) => PitchHighwayReviewScreen(
           exercise: widget.exercise,
           lastTake: take,
+          explicitDifficulty: _currentAttempt.pitchDifficulty != null
+              ? pitchHighwayDifficultyFromName(_currentAttempt.pitchDifficulty!)
+              : null,
         ),
       ),
     );
@@ -264,6 +270,11 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
       durationSec: _durationMs / 1000.0,
       audioPath: _currentAttempt.recordingPath,
       pitchDifficulty: _currentAttempt.pitchDifficulty,
+      minMidi: _currentAttempt.minMidi,
+      maxMidi: _currentAttempt.maxMidi,
+      referenceWavPath: _currentAttempt.referenceWavPath,
+      referenceSampleRate: _currentAttempt.referenceSampleRate,
+      referenceWavSha1: _currentAttempt.referenceWavSha1,
     );
   }
 }

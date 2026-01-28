@@ -210,12 +210,26 @@ class ReviewAudioBounceService {
       throw Exception('Failed to parse WAV headers');
     }
     
-    final sampleRate = micWavInfo.sampleRate;
-    final micSamples = _readWavSamples(micBytes, micWavInfo);
-    var refSamples = _readWavSamples(refBytes, refWavInfo);
+    final sampleRate = refWavInfo.sampleRate; // Target rate matches reference (usually 48kHz)
     
+    // Read samples as float [-1.0, 1.0]
+    var micSamples = _readWavSamples(micBytes, micWavInfo);
+    var refSamples = _readWavSamples(refBytes, refWavInfo);
+
+    if (kDebugMode) {
+      debugPrint('[ReviewBounce] Mixing: Mic=${micWavInfo.sampleRate}Hz Ref=${refWavInfo.sampleRate}Hz -> Target=${sampleRate}Hz');
+    }
+    
+    // Resample Mic if needed
+    if (micWavInfo.sampleRate != sampleRate) {
+      if (kDebugMode) debugPrint('[ReviewBounce] Resampling MIC from ${micWavInfo.sampleRate} to $sampleRate');
+      micSamples = _resample(micSamples, micWavInfo.sampleRate, sampleRate);
+    }
+
+    // Resample Ref if needed (unlikely if we chose ref rate, but good for safety)
     if (refWavInfo.sampleRate != sampleRate) {
-      refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
+       if (kDebugMode) debugPrint('[ReviewBounce] Resampling REF from ${refWavInfo.sampleRate} to $sampleRate');
+       refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
     }
     
     final micOffsetSamples = (micOffsetSec * sampleRate).round();

@@ -18,6 +18,7 @@ import '../../services/review_audio_bounce_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../audio/midi_playback_config.dart';
 import '../../services/transposed_exercise_builder.dart';
+import '../../services/reference_audio_generator.dart';
 import '../../services/vocal_range_service.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/pitch_math.dart';
@@ -35,12 +36,14 @@ class PitchHighwayReviewScreen extends StatefulWidget {
   final VocalExercise exercise;
   final LastTake lastTake;
   final double startTimeSec;
+  final PitchHighwayDifficulty? explicitDifficulty;
 
   const PitchHighwayReviewScreen({
     super.key,
     required this.exercise,
     required this.lastTake,
     this.startTimeSec = 0.0,
+    this.explicitDifficulty,
   });
 
   @override
@@ -91,6 +94,10 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   double _sliceStartSec = 0.0;
   double _renderStartSec = 0.0; // Anchor for visual 0.0
   double _micOffsetSec = 0.0; // Where the mic starts in the replayed file
+  
+  // Y-axis mapping state (fallback if not in LastTake)
+  int _midiMin = 48;
+  int _midiMax = 72;
 
   @override
   void initState() {
@@ -107,9 +114,32 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       mode: 'replay',
     );
     
-    final difficulty =
-        pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ??
-            PitchHighwayDifficulty.medium;
+    // Use explicit difficulty if available (passed from route)
+    // Fallback to persisted difficulty from attempt
+    // Final fallback to easy (safety default)
+    PitchHighwayDifficulty difficulty;
+    String source;
+
+    if (widget.explicitDifficulty != null) {
+      difficulty = widget.explicitDifficulty!;
+      source = 'Route';
+    } else if (widget.lastTake.pitchDifficulty != null) {
+      final parsed = pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty!);
+      if (parsed != null) {
+        difficulty = parsed;
+        source = 'LastTake';
+      } else {
+        difficulty = PitchHighwayDifficulty.easy;
+        source = 'Fallback (Parse Fail)';
+      }
+    } else {
+      difficulty = PitchHighwayDifficulty.easy;
+      source = 'Fallback (Missing)';
+    }
+
+    if (kDebugMode) {
+      debugPrint('[Review] difficultySource=$source difficulty=${difficulty.name}');
+    }
     _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(difficulty);
     _ticker = createTicker(_onTick);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
@@ -150,9 +180,30 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
     // Log replay start (now with assigned paths)
     unawaited(_logReplayStart());
     
+    // Load vocal range if metadata is missing (backward compatibility)
+    if (widget.lastTake.minMidi == null || widget.lastTake.maxMidi == null) {
+      unawaited(_loadUserVocalRange());
+    }
+    
     _preloadEverything(difficulty);
   }
   
+  Future<void> _loadUserVocalRange() async {
+    try {
+      final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+      if (mounted) {
+        setState(() {
+          // Add 3 semitones of visual padding (matches ExercisePlayerScreen)
+          const paddingMidi = 3;
+          _midiMin = lowestMidi - paddingMidi;
+          _midiMax = highestMidi + paddingMidi;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Review] Error loading vocal range: $e');
+    }
+  }
+
   /// Log replay start
   Future<void> _logReplayStart() async {
     DebugLog.event(
@@ -266,15 +317,28 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       }
       
       if (kDebugMode) {
-        debugPrint('[Review Bounce] Cache miss, rendering and mixing audio...');
+        debugPrint('[Review Bounce] Cache miss, mixing audio...');
       }
       
-      // Render reference WAV
-      final referenceWav = await _bounceService.renderReferenceWav(
-        notes: _notes,
-        durationSec: _durationSec,
-        sampleRate: ReviewAudioBounceService.defaultSampleRate,
-      );
+      // 1. Get reference WAV
+      File referenceWav;
+      if (widget.lastTake.referenceWavPath != null && 
+          await File(widget.lastTake.referenceWavPath!).exists()) {
+        referenceWav = File(widget.lastTake.referenceWavPath!);
+        if (kDebugMode) {
+          debugPrint('[Review Bounce] Using persisted reference WAV from exercise: ${referenceWav.path}');
+        }
+      } else {
+        // Fallback: Get canonical reference WAV from generator
+        final plan = await ReferenceAudioGenerator.instance.prepare(
+          widget.exercise,
+          difficulty,
+        );
+        referenceWav = File(plan.wavFilePath);
+        if (kDebugMode) {
+          debugPrint('[Review Bounce] Persisted ref missing, using generated canonical WAV: ${referenceWav.path}');
+        }
+      }
       
       // Mix with recorded audio
       final micWav = File(_recordedAudioPath!);
@@ -309,19 +373,22 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
   /// Bounce reference audio only (no recorded audio)
   Future<void> _bounceReferenceAudio(PitchHighwayDifficulty difficulty) async {
     try {
-      final reviewConfig = MidiPlaybackConfig.review();
-      
-      // Render reference WAV
-      final referenceWav = await _bounceService.renderReferenceWav(
-        notes: _notes,
-        durationSec: _durationSec,
-        sampleRate: ReviewAudioBounceService.defaultSampleRate,
-      );
-      
-      _referenceAudioPath = referenceWav.path;
-      
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Reference WAV rendered: ${_referenceAudioPath}');
+      if (widget.lastTake.referenceWavPath != null && 
+          await File(widget.lastTake.referenceWavPath!).exists()) {
+        _referenceAudioPath = widget.lastTake.referenceWavPath;
+        if (kDebugMode) {
+           debugPrint('[Review Bounce] Using persisted reference WAV from exercise: $_referenceAudioPath');
+        }
+      } else {
+        // Get canonical reference WAV (same as used in ExercisePlayer)
+        final plan = await ReferenceAudioGenerator.instance.prepare(
+          widget.exercise,
+          difficulty,
+        );
+        _referenceAudioPath = plan.wavFilePath;
+        if (kDebugMode) {
+          debugPrint('[Review Bounce] Persisted ref missing, using generated canonical WAV: $_referenceAudioPath');
+        }
       }
     } catch (e) {
       if (kDebugMode) {
@@ -788,17 +855,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         .whereType<double>()
         .toList();
     
-    // For Sirens, use visual path for MIDI range (more accurate)
-    final minMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
-        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce(math.min<double>).floor() - 3)
-        : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
-            ? ([...noteMidis, ...contourMidis].reduce(math.min<double>).floor() - 3)
-            : 48);
-    final maxMidi = widget.exercise.id == 'sirens' && _sirenVisualPath != null && _sirenVisualPath!.points.isNotEmpty
-        ? (_sirenVisualPath!.points.map((p) => p.midiFloat).reduce(math.max<double>).ceil() + 3)
-        : (noteMidis.isNotEmpty || contourMidis.isNotEmpty
-            ? ([...noteMidis, ...contourMidis].reduce(math.max<double>).ceil() + 3)
-            : 72);
+    // Use persisted Y-axis mapping if available, otherwise use loaded user range (or defaults)
+    final minMidi = widget.lastTake.minMidi ?? _midiMin;
+    final maxMidi = widget.lastTake.maxMidi ?? _midiMax;
     assert(() {
       debugPrint('[Review] exerciseId: ${widget.lastTake.exerciseId}');
       if (noteMidis.isNotEmpty) {

@@ -8,6 +8,11 @@ class LastTakeDraft {
   final int durationMs;
   final DateTime createdAt;
   final String? contourJson;
+  final int? minMidi;
+  final int? maxMidi;
+  final String? referenceWavPath;
+  final int? referenceSampleRate;
+  final String? referenceWavSha1;
 
   LastTakeDraft({
     required this.exerciseId,
@@ -19,5 +24,10 @@ class LastTakeDraft {
     required this.durationMs,
     required this.createdAt,
     this.contourJson,
+    this.minMidi,
+    this.maxMidi,
+    this.referenceWavPath,
+    this.referenceSampleRate,
+    this.referenceWavSha1,
   });
 }

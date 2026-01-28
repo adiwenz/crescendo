@@ -28,12 +28,14 @@ class ExerciseReviewSummaryScreen extends StatefulWidget {
   final VocalExercise exercise;
   final ExerciseAttempt? attempt;
   final LastTakeDraft? draft;
+  final PitchHighwayDifficulty? difficulty;
 
   const ExerciseReviewSummaryScreen({
     super.key,
     required this.exercise,
     this.attempt,
     this.draft,
+    this.difficulty,
   }) : assert(attempt != null || draft != null, 'Must provide attempt or draft');
 
   @override
@@ -75,6 +77,8 @@ class _ExerciseReviewSummaryScreenState
          recorderStartSec: 0.0, // approximates
          contourJson: d.contourJson,
          subScores: {}, // or {'intonation': d.score}
+         minMidi: d.minMidi,
+         maxMidi: d.maxMidi,
       );
     }
   }
@@ -329,6 +333,10 @@ class _ExerciseReviewSummaryScreenState
           exercise: widget.exercise,
           lastTake: take,
           startTimeSec: replayStartSec,
+          explicitDifficulty: widget.difficulty ?? 
+              (take.pitchDifficulty != null 
+                  ? pitchHighwayDifficultyFromName(take.pitchDifficulty!) 
+                  : null),
         ),
       ),
     );
@@ -367,6 +375,10 @@ class _ExerciseReviewSummaryScreenState
           exercise: widget.exercise,
           lastTake: take,
           startTimeSec: replayStartSec,
+          explicitDifficulty: widget.difficulty ?? 
+              (take.pitchDifficulty != null 
+                  ? pitchHighwayDifficultyFromName(take.pitchDifficulty!) 
+                  : null),
         ),
       ),
     );
@@ -389,6 +401,11 @@ class _ExerciseReviewSummaryScreenState
       audioPath: _dbTake?.audioPath ?? _displayAttempt.recordingPath,
       pitchDifficulty: _displayAttempt.pitchDifficulty,
       recorderStartSec: _displayAttempt.recorderStartSec,
+      minMidi: _dbTake?.minMidi ?? _displayAttempt.minMidi,
+      maxMidi: _dbTake?.maxMidi ?? _displayAttempt.maxMidi,
+      referenceWavPath: _dbTake?.referenceWavPath ?? _displayAttempt.referenceWavPath,
+      referenceSampleRate: _dbTake?.referenceSampleRate ?? _displayAttempt.referenceSampleRate,
+      referenceWavSha1: _dbTake?.referenceWavSha1 ?? _displayAttempt.referenceWavSha1,
     );
   }
 

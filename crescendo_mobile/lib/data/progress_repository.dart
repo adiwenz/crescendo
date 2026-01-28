@@ -19,6 +19,21 @@ class ProgressRepository {
 
   ProgressRepository({this.overrideDb});
 
+  static bool _schemaLogged = false;
+
+  Future<void> _logLastTakeSchema(DatabaseExecutor db) async {
+    if (_schemaLogged || !kDebugMode) return;
+    try {
+      final info = await db.rawQuery('PRAGMA table_info(last_take)');
+      for (final row in info) {
+        debugPrint('[LastTakeSchema] name=${row['name']} type=${row['type']} notnull=${row['notnull']} pk=${row['pk']}');
+      }
+      _schemaLogged = true;
+    } catch (e) {
+      debugPrint('[LastTakeSchema] Error fetching schema: $e');
+    }
+  }
+
   /// Transactional save of attempt + level progress
   Future<void> saveCompleteAttempt({
     required ExerciseAttempt attempt,
@@ -43,8 +58,26 @@ class ProgressRepository {
       await txn.insert('take_scores', scoreObj.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
 
       if (attempt.recordingPath != null || attempt.contourJson != null) {
+        if (kDebugMode) {
+          debugPrint('[AttemptSave] exerciseId=${attempt.exerciseId} pitchDifficulty=${attempt.pitchDifficulty}');
+        }
         final lastTake = await _manageAssetsAndCreateTake(attempt);
-        await txn.insert('last_take', lastTake.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        final toWrite = lastTake.toMap();
+        if (kDebugMode) {
+          await _logLastTakeSchema(txn);
+          debugPrint('[LastTakeWrite] columns=${toWrite.keys.toList()}');
+          debugPrint('[LastTakeWrite] values=${toWrite.values.toList()}');
+        }
+        await txn.insert('last_take', toWrite, conflictAlgorithm: ConflictAlgorithm.replace);
+        
+        if (kDebugMode) {
+          final persisted = await txn.query('last_take', where: 'exerciseId = ?', whereArgs: [attempt.exerciseId]);
+          if (persisted.isNotEmpty) {
+            debugPrint('[LastTakeWrite] persistedRow=${persisted.first}');
+          } else {
+             debugPrint('[LastTakeWrite] persistedRow=NULL (Read failed after write)');
+          }
+        }
       }
 
       // 2. Update Level Progress
@@ -88,10 +121,28 @@ class ProgressRepository {
       // Only last_take needs to track file paths.
       // We don't save heavy blobs to exercise_attempts anymore.
       if (attempt.recordingPath != null || attempt.contourJson != null) {
+        if (kDebugMode) {
+           debugPrint('[AttemptSave] exerciseId=${attempt.exerciseId} pitchDifficulty=${attempt.pitchDifficulty}');
+        }
         final lastTake = await _manageAssetsAndCreateTake(attempt);
         // UPSERT: Insert or replace based on PRIMARY KEY (exerciseId)
         // Schema must utilize exerciseId as primary key for this to work as an upsert on that key
-        await txn.insert('last_take', lastTake.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        final toWrite = lastTake.toMap();
+        if (kDebugMode) {
+          await _logLastTakeSchema(txn);
+          debugPrint('[LastTakeWrite] columns=${toWrite.keys.toList()}');
+          debugPrint('[LastTakeWrite] values=${toWrite.values.toList()}');
+        }
+        await txn.insert('last_take', toWrite, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        if (kDebugMode) {
+          final persisted = await txn.query('last_take', where: 'exerciseId = ?', whereArgs: [attempt.exerciseId]);
+          if (persisted.isNotEmpty) {
+            debugPrint('[LastTakeWrite] persistedRow=${persisted.first}');
+          } else {
+             debugPrint('[LastTakeWrite] persistedRow=NULL (Read failed after write)');
+          }
+        }
       }
     });
   }
@@ -127,6 +178,12 @@ class ProgressRepository {
       audioPath: audioFile.path,
       pitchPath: pitchFile.path,
       offsetMs: attempt.recorderStartSec ?? 0.0,
+      minMidi: attempt.minMidi,
+      maxMidi: attempt.maxMidi,
+      referenceWavPath: attempt.referenceWavPath,
+      referenceSampleRate: attempt.referenceSampleRate,
+      referenceWavSha1: attempt.referenceWavSha1,
+      pitchDifficulty: attempt.pitchDifficulty,
     );
   }
 

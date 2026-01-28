@@ -111,6 +111,11 @@ class ProgressService {
     String? targetNotesJson,
     String? segmentsJson,
     double? recorderStartSec,
+    int? minMidi,
+    int? maxMidi,
+    String? referenceWavPath,
+    int? referenceSampleRate,
+    String? referenceWavSha1,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -129,6 +134,11 @@ class ProgressService {
       notes: notes,
       pitchDifficulty: pitchDifficulty,
       recorderStartSec: recorderStartSec,
+      minMidi: minMidi,
+      maxMidi: maxMidi,
+      referenceWavPath: referenceWavPath,
+      referenceSampleRate: referenceSampleRate,
+      referenceWavSha1: referenceWavSha1,
     );
   }
 }

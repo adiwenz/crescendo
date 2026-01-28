@@ -1538,6 +1538,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         durationMs: controllerResult.durationMs,
         createdAt: DateTime.now(),
         contourJson: _lastContourJson,
+        minMidi: _midiMin,
+        maxMidi: _midiMax,
+        referenceWavPath: _resolvedPlan?.wavFilePath,
+        referenceSampleRate: _resolvedPlan?.sampleRate,
+        // referenceWavSha1: null, // Computed lazily or added to plan later if needed
       );
 
       // Fire persistence in background - DO NOT AWAIT
@@ -1606,6 +1611,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       audioPath: wavPath.isNotEmpty ? wavPath : null,
       pitchDifficulty: widget.pitchDifficulty.name,
       offsetMs: draft.offsetMs.toDouble(),
+      minMidi: draft.minMidi,
+      maxMidi: draft.maxMidi,
+      referenceWavPath: draft.referenceWavPath,
+      referenceSampleRate: draft.referenceSampleRate,
+      referenceWavSha1: draft.referenceWavSha1,
     );
     // Fire and forget (unawaited by UI, but awaited here)
     await _lastTakeStore.saveLastTake(take);
@@ -1625,6 +1635,11 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
           contourJson: draft.contourJson,
           targetNotesJson: _buildTargetNotesJson(),
           segmentsJson: _buildSegmentsJson(),
+          minMidi: draft.minMidi,
+          maxMidi: draft.maxMidi,
+          referenceWavPath: draft.referenceWavPath,
+          referenceSampleRate: draft.referenceSampleRate,
+          referenceWavSha1: draft.referenceWavSha1,
         );
         _attemptSaved = true;
         

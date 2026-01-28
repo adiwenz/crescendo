@@ -130,6 +130,11 @@ class AudioSynthService {
     if (!await file.exists()) return;
     final size = await file.length();
     if (size <= 0) return;
+    if (size <= 0) return;
+    
+    // Log WAV header info for debugging speed mismatch
+    await _logWavDetails(path);
+    
     await _player.stop();
     await _applyAudioContext();
     await _player.setVolume(1.0);
@@ -397,5 +402,61 @@ class AudioSynthService {
         Float64List.fromList(samples.map((s) => s.clamp(-1.0, 1.0)).toList());
     final wav = Wav([floats], sampleRate, WavFormat.pcm16bit);
     return wav.write();
+  }
+  Future<void> _logWavDetails(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      
+      final size = await file.length();
+      final openFile = await file.open();
+      final headerBytes = await openFile.read(44);
+      await openFile.close();
+      
+      if (headerBytes.length < 44) {
+        debugPrint('[AudioSynthLog] $path: Too small for WAV header ($size bytes)');
+        return;
+      }
+      
+      // Parse basic WAV header
+      final riff = String.fromCharCodes(headerBytes.sublist(0, 4));
+      final wave = String.fromCharCodes(headerBytes.sublist(8, 12));
+      final fmt = String.fromCharCodes(headerBytes.sublist(12, 16).map((e) => e == 0 ? 32 : e)); // Handle nulls if any, though fmt is usually 'fmt '
+      
+      if (riff != 'RIFF' || wave != 'WAVE') {
+         debugPrint('[AudioSynthLog] $path: Not a valid WAV (RIFF=$riff, WAVE=$wave)');
+         return;
+      }
+      
+      // fmt chunk
+      // offsets:
+      // 22: NumChannels (2 bytes)
+      // 24: SampleRate (4 bytes)
+      // 28: ByteRate (4 bytes)
+      // 32: BlockAlign (2 bytes)
+      // 34: BitsPerSample (2 bytes)
+      
+      final channels = headerBytes[22] | (headerBytes[23] << 8);
+      final sampleRate = headerBytes[24] | (headerBytes[25] << 8) | (headerBytes[26] << 16) | (headerBytes[27] << 24);
+      final bits = headerBytes[34] | (headerBytes[35] << 8);
+      
+      // Compute duration from size (approximate if extra chunks exist, but good enough)
+      // Duration = (TotalBytes - 44) / (SampleRate * Channels * Bits/8)
+      final bytesPerSec = sampleRate * channels * (bits / 8);
+      final durationSec = (size - 44) / bytesPerSec;
+      
+      // Generate partial hash (first 64 bytes + size) to fingerprint
+      // We read 44, let's just use what we have + size
+      final quickHash = '${path.hashCode ^ size}';
+
+      debugPrint('[AudioSynthLog] PLAYING: $path');
+      debugPrint('[AudioSynthLog]   Size: $size bytes');
+      debugPrint('[AudioSynthLog]   Format: ${sampleRate}Hz, ${channels}ch, ${bits}bit');
+      debugPrint('[AudioSynthLog]   Duration: ${durationSec.toStringAsFixed(3)}s');
+      debugPrint('[AudioSynthLog]   Hash: $quickHash');
+      
+    } catch (e) {
+      debugPrint('[AudioSynthLog] Error reading header for $path: $e');
+    }
   }
 }

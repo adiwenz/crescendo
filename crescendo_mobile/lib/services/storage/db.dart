@@ -17,7 +17,7 @@ class AppDatabase {
     final start = DateTime.now();
     
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    final realDb = await openDatabase(path, version: 11, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    final realDb = await openDatabase(path, version: 13, onCreate: _onCreate, onUpgrade: _onUpgrade);
     
     debugPrint('[DB_TRACE] AppDatabase opened in ${DateTime.now().difference(start).inMilliseconds}ms');
 
@@ -47,7 +47,13 @@ class AppDatabase {
         score REAL,
         audioPath TEXT,
         pitchPath TEXT,
-        offsetMs REAL
+        offsetMs REAL,
+        minMidi INTEGER,
+        maxMidi INTEGER,
+        pitchDifficulty TEXT,
+        referenceWavPath TEXT,
+        referenceSampleRate INTEGER,
+        referenceWavSha1 TEXT
       )
     ''');
     await db.execute('''
@@ -227,6 +233,20 @@ class AppDatabase {
           GROUP BY exerciseId
         ) latest ON ea.exerciseId = latest.exerciseId AND ea.completedAt = latest.lastComp
       ''');
+    }
+    if (oldVersion < 12) {
+      // Migrate exercise_attempts
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceWavPath', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceSampleRate', 'INTEGER');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceWavSha1', 'TEXT');
+
+      // Migrate last_take
+      await _addColumnIfMissing(db, 'last_take', 'referenceWavPath', 'TEXT');
+      await _addColumnIfMissing(db, 'last_take', 'referenceSampleRate', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'referenceWavSha1', 'TEXT');
+      await _addColumnIfMissing(db, 'last_take', 'minMidi', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'maxMidi', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'pitchDifficulty', 'TEXT');
     }
   }
 

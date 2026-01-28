@@ -17,6 +17,11 @@ class ExerciseAttempt {
   final String? notes;
   final String? pitchDifficulty;
   final double? recorderStartSec;
+  final int? minMidi;
+  final int? maxMidi;
+  final String? referenceWavPath;
+  final int? referenceSampleRate;
+  final String? referenceWavSha1;
   final int version;
 
   const ExerciseAttempt({
@@ -34,6 +39,11 @@ class ExerciseAttempt {
     this.notes,
     this.pitchDifficulty,
     this.recorderStartSec,
+    this.minMidi,
+    this.maxMidi,
+    this.referenceWavPath,
+    this.referenceSampleRate,
+    this.referenceWavSha1,
     this.version = 1,
   });
 
@@ -53,6 +63,9 @@ class ExerciseAttempt {
         'notes': notes,
         'pitchDifficulty': pitchDifficulty,
         'recorderStartSec': recorderStartSec,
+        'referenceWavPath': referenceWavPath,
+        'referenceSampleRate': referenceSampleRate,
+        'referenceWavSha1': referenceWavSha1,
         'version': version,
       };
 
@@ -73,6 +86,11 @@ class ExerciseAttempt {
       notes: map['notes'] as String?,
       pitchDifficulty: map['pitchDifficulty'] as String?,
       recorderStartSec: (map['recorderStartSec'] as num?)?.toDouble(),
+      minMidi: (map['minMidi'] as num?)?.toInt(),
+      maxMidi: (map['maxMidi'] as num?)?.toInt(),
+      referenceWavPath: map['referenceWavPath'] as String?,
+      referenceSampleRate: (map['referenceSampleRate'] as num?)?.toInt(),
+      referenceWavSha1: map['referenceWavSha1'] as String?,
       version: (map['version'] as num?)?.toInt() ?? 1,
     );
   }
@@ -149,6 +167,11 @@ class ExerciseAttempt {
       notes: parseNotes(m['notes']),
       pitchDifficulty: (m['pitchDifficulty'] ?? m['pitchDifficultyText'])?.toString(),
       recorderStartSec: (m['recorderStartSec'] as num?)?.toDouble(),
+      minMidi: (m['minMidi'] as num?)?.toInt(),
+      maxMidi: (m['maxMidi'] as num?)?.toInt(),
+      referenceWavPath: m['referenceWavPath'] as String?,
+      referenceSampleRate: (m['referenceSampleRate'] as num?)?.toInt(),
+      referenceWavSha1: m['referenceWavSha1'] as String?,
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,
     );
 
