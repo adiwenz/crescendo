@@ -30,6 +30,7 @@ class VocalExercise {
   final DateTime createdAt;
   final String iconKey;
   final int estimatedMinutes;
+  final bool isGlide; // True if exercise uses continuous pitch movement (sirens, slides, etc.)
 
   VocalExercise({
     required this.id,
@@ -46,8 +47,10 @@ class VocalExercise {
     this.durationSeconds,
     this.reps,
     this.highwaySpec,
+    bool? isGlide,
   })  : iconKey = iconKey ?? _defaultIconKey(type),
-        estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds);
+        estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds),
+        isGlide = isGlide ?? _defaultIsGlide(type, highwaySpec);
 
   VocalExercise transpose(int semitones) {
     if (semitones == 0 || highwaySpec == null) return this;
@@ -79,7 +82,18 @@ class VocalExercise {
       durationSeconds: durationSeconds,
       reps: reps,
       highwaySpec: PitchHighwaySpec(segments: segments),
+      isGlide: isGlide,
     );
+  }
+
+  /// Determine if an exercise is a glide based on type and highway spec
+  static bool _defaultIsGlide(ExerciseType type, PitchHighwaySpec? highwaySpec) {
+    // Check if any segment in the highway spec is a glide
+    if (highwaySpec != null) {
+      return highwaySpec.segments.any((seg) => seg.isGlide);
+    }
+    // Default based on exercise type
+    return type == ExerciseType.sovtTimer; // Yawn-sigh is a glide
   }
 
   static String _defaultIconKey(ExerciseType type) {

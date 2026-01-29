@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../models/exercise_note.dart';
 import '../../models/exercise_plan.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
@@ -58,6 +57,17 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
   @override
   void initState() {
     super.initState();
+    final notes = <ReferenceNote>[];
+    double cursor = 0;
+    for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) {
+      notes.add(ReferenceNote(
+        startSec: cursor,
+        endSec: cursor + 0.5,
+        midi: midi,
+      ));
+      cursor += 0.5 + 0.1; // duration + gap
+    }
+
     plan = ExercisePlan(
       id: 'c_major_scale',
       title: 'Scale',
@@ -65,9 +75,13 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
       bpm: 120,
       gapSec: 0.1,
       scoreOffsetMs: 80,
-      notes: [
-        for (final midi in [60, 62, 64, 65, 67, 69, 71, 72]) ExerciseNote(midi: midi, durationSec: 0.5),
-      ],
+      notes: notes,
+      wavFilePath: '',
+      sampleRate: 48000,
+      durationMs: (cursor * 1000).round(),
+      rangeHash: 'mock',
+      patternHash: 'mock',
+      leadInSec: 0.0,
     );
     _offsetMs = plan.scoreOffsetMs;
     _synth = AudioSynthService();
@@ -81,10 +95,25 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] dispose - cleaning up resources');
     _ticker.dispose();
     _liveSub?.cancel();
     _referenceSub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error stopping recording: $e');
+    });
     _synth.stop();
     _player.dispose();
     _pitchMidi.dispose();
@@ -155,10 +184,21 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _referenceSub?.cancel();
     await _synth.stop();
     await _liveSub?.cancel();
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] _stop - stopping recording');
     final result = await _recording.stop();
     if (result.audioPath.isNotEmpty) {
       _recordedPath = result.audioPath;
       _capturedFrames.addAll(result.frames);
+    }
+    // Dispose the recording service to fully release resources
+    try {
+      await _recording.dispose();
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Recording disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error disposing recording: $e');
     }
     _stopping = false;
     setState(() {});
@@ -169,6 +209,26 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
     _ticker.stop();
     _lastTick = null;
     _liveSub?.cancel();
+    // Stop and dispose recording when exercise finishes
+    // ignore: avoid_print
+    print('[ExercisePitchScreen] _finishExercise - stopping recording');
+    _recording.stop().then((result) async {
+      if (result.audioPath.isNotEmpty) {
+        _recordedPath = result.audioPath;
+        _capturedFrames.addAll(result.frames);
+      }
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ExercisePitchScreen] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[ExercisePitchScreen] Error stopping recording: $e');
+    });
     final scored = ExerciseRunScoringService().score(
       plan: plan,
       frames: _capturedFrames,
@@ -251,7 +311,7 @@ class _ExercisePitchScreenState extends State<ExercisePitchScreen> with SingleTi
 
   Future<void> _startExercise() async {
     await _liveSub?.cancel();
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);
       if (midi == null) return;

@@ -3,9 +3,18 @@ import 'package:crescendo_mobile/services/attempt_repository.dart';
 import 'package:crescendo_mobile/services/progress_service.dart';
 import 'package:crescendo_mobile/services/simple_progress_repository.dart';
 import 'package:crescendo_mobile/models/exercise_attempt.dart';
+import 'test_bootstrap.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  // Initialize test environment
+  setUpAll(() async {
+    await bootstrapTests();
+  });
+
+  // Reset database before each test
+  setUp(() async {
+    await resetTestDatabase();
+  });
 
   test('Progress summary reflects new attempt', () async {
     final attempts = AttemptRepository.instance;

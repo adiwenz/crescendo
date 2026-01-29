@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:crescendo_mobile/audio/hold_stability.dart';
 import 'package:crescendo_mobile/models/pitch_frame.dart';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('computeHoldMetrics', () {
@@ -30,7 +30,7 @@ void main() {
       for (var i = 0; i < 20; i++) {
         final t = i * 0.05;
         final cents = 10 * math.sin(t * math.pi * 2);
-        final hz = 440 * math.pow(2, cents / 1200);
+        final hz = (440 * math.pow(2, cents / 1200)).toDouble();
         frames.add(PitchFrame(time: t, hz: hz));
       }
 
@@ -49,9 +49,9 @@ void main() {
     test('drift outside threshold truncates hold', () {
       final frames = <PitchFrame>[
         PitchFrame(time: 0.0, hz: 440),
-        PitchFrame(time: 0.1, hz: 440 * math.pow(2, 20 / 1200)),
-        PitchFrame(time: 0.2, hz: 440 * math.pow(2, 26 / 1200)), // outside
-        PitchFrame(time: 0.3, hz: 440 * math.pow(2, 30 / 1200)),
+        PitchFrame(time: 0.1, hz: (440 * math.pow(2, 20 / 1200)).toDouble()),
+        PitchFrame(time: 0.2, hz: (440 * math.pow(2, 26 / 1200)).toDouble()), // outside
+        PitchFrame(time: 0.3, hz: (440 * math.pow(2, 30 / 1200)).toDouble()),
       ];
 
       final m = computeHoldMetrics(

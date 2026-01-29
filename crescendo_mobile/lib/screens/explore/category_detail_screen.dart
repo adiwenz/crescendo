@@ -1,35 +1,60 @@
 import 'package:flutter/material.dart';
 
-import '../../data/seed_library.dart';
-import '../../models/category.dart';
+import '../../models/exercise_category.dart';
+import '../../models/vocal_exercise.dart';
+import '../../services/exercise_repository.dart';
 import '../../services/attempt_repository.dart';
 import '../../state/library_store.dart';
-import '../../widgets/abstract_banner_painter.dart';
 import '../../widgets/exercise_row_banner.dart';
 import 'exercise_preview_screen.dart';
+import '../../ui/route_observer.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
-  final Category category;
+  final ExerciseCategory category;
+  final int? initialCategoryIndex;
 
-  const CategoryDetailScreen({super.key, required this.category});
+  const CategoryDetailScreen({
+    super.key,
+    required this.category,
+    this.initialCategoryIndex,
+  });
 
   @override
   State<CategoryDetailScreen> createState() => _CategoryDetailScreenState();
 }
 
-class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
+class _CategoryDetailScreenState extends State<CategoryDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final ExerciseRepository _exerciseRepo = ExerciseRepository();
   final AttemptRepository _attempts = AttemptRepository.instance;
+  List<ExerciseCategory> _categories = [];
 
   @override
   void initState() {
     super.initState();
+    _categories = _exerciseRepo.getCategories();
+    final initialIndex = widget.initialCategoryIndex ?? 
+        _categories.indexWhere((c) => c.id == widget.category.id);
+    _tabController = TabController(
+      length: _categories.length,
+      initialIndex: initialIndex >= 0 ? initialIndex : 0,
+      vsync: this,
+    );
+    _tabController.addListener(_onTabChanged);
     _attempts.addListener(_onAttemptsChanged);
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _attempts.removeListener(_onAttemptsChanged);
+    _tabController.dispose();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    setState(() {}); // Update header title when tab changes
   }
 
   void _onAttemptsChanged() {
@@ -38,49 +63,200 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final exercises = seedExercisesFor(widget.category.id);
-    final completedIds = _attempts.cache.map((a) => a.exerciseId).toSet()
-      ..addAll(libraryStore.completedExerciseIds);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.category.title)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          SizedBox(
-            height: 180,
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              child: CustomPaint(painter: AbstractBannerPainter(widget.category.bannerStyleId)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(widget.category.subtitle, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 16),
-          ...exercises.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ExerciseRowBanner(
-                title: e.title,
-                subtitle: e.subtitle,
-                bannerStyleId: e.bannerStyleId,
-                completed: completedIds.contains(e.id),
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExercisePreviewScreen(exerciseId: e.id),
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header with back button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  Expanded(
+                    child: Text(
+                      _categories[_tabController.index].title,
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                  );
-                  await _attempts.refresh();
-                  await libraryStore.load();
-                  if (mounted) setState(() {});
-                },
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            // Horizontal category selector (swipeable)
+            Container(
+              color: Colors.white,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelColor: Theme.of(context).colorScheme.primary,
+                unselectedLabelColor: Colors.black54,
+                indicatorColor: Theme.of(context).colorScheme.primary,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 14,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                onTap: (index) {
+                  setState(() {}); // Update header title
+                },
+                tabs: _categories.map((category) {
+                  return Tab(text: category.title);
+                }).toList(),
+              ),
+            ),
+            // Exercise list (swipeable between categories)
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: _categories.map((category) {
+                  return _ExerciseListForCategory(category: category);
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _ExerciseListForCategory extends StatefulWidget {
+  final ExerciseCategory category;
+
+  const _ExerciseListForCategory({required this.category});
+
+  @override
+  State<_ExerciseListForCategory> createState() =>
+      _ExerciseListForCategoryState();
+}
+
+
+
+class _ExerciseListForCategoryState extends State<_ExerciseListForCategory> with RouteAware {
+  final ExerciseRepository _exerciseRepo = ExerciseRepository();
+  final AttemptRepository _attempts = AttemptRepository.instance;
+  List<VocalExercise> _exercises = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExercises();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // Refresh when returning to this screen
+    _loadExercises();
+    libraryStore.load();
+  }
+
+  Future<void> _loadExercises() async {
+    final exercises = _exerciseRepo.getExercisesForCategory(widget.category.id);
+    // Force refresh attempts to ensure UI is up to date
+    await _attempts.ensureLoaded();
+    if (mounted) {
+      setState(() {
+        _exercises = exercises;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final completedIds = _attempts.cache
+        .map((a) => a.exerciseId)
+        .toSet()
+      ..addAll(libraryStore.completedExerciseIds);
+
+    if (_exercises.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.inbox_outlined,
+                size: 64,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No exercises yet in this category.',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Use the category's sortOrder to determine bannerStyleId for consistent colors
+    final bannerStyleId = widget.category.sortOrder % 8;
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _exercises.length,
+      itemBuilder: (context, index) {
+        final exercise = _exercises[index];
+        final isCompleted = completedIds.contains(exercise.id);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ExerciseRowBanner(
+            title: exercise.name,
+            subtitle: exercise.description,
+            bannerStyleId: bannerStyleId, // Use category's color
+            completed: isCompleted,
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ExercisePreviewScreen(exerciseId: exercise.id),
+                ),
+              );
+              // Cache is already updated by AttemptRepository.save()
+              // Just refresh the UI state
+              await libraryStore.load();
+              if (mounted) {
+                setState(() {});
+              }
+            },
+          ),
+        );
+      },
     );
   }
 }

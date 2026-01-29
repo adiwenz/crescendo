@@ -1,8 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
-import 'screens/landing_home_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/pitch_highway_screen.dart';
 import 'screens/piano_pitch_screen.dart';
 import 'screens/progress_home_screen.dart';
 import 'screens/find_range_lowest_screen.dart';
@@ -14,6 +14,8 @@ import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'route_observer.dart';
+import 'widgets/app_background.dart';
+import 'widgets/lazy_indexed_stack.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -26,6 +28,13 @@ class _CrescendoAppState extends State<CrescendoApp> {
   int _index = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // Frame jank detection
+
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppThemeController.mode,
@@ -36,11 +45,36 @@ class _CrescendoAppState extends State<CrescendoApp> {
             final theme = magical ? AppTheme.magical() : AppTheme.light();
             final darkTheme = magical ? AppTheme.magical() : AppTheme.dark();
             final resolvedMode = magical ? ThemeMode.dark : mode;
+            // Get Manrope font family for Cupertino
+            final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
             return MaterialApp(
               title: 'Crescendo Mobile',
               theme: theme,
               darkTheme: darkTheme,
               themeMode: resolvedMode,
+              // Set Cupertino theme to use Manrope
+              builder: (context, child) {
+                return CupertinoTheme(
+                  data: CupertinoThemeData(
+                    textTheme: CupertinoTextThemeData(
+                      textStyle: TextStyle(fontFamily: manropeFontFamily),
+                      navTitleTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      navLargeTitleTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      tabLabelTextStyle: TextStyle(
+                        fontFamily: manropeFontFamily,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
               navigatorObservers: [routeObserver],
               routes: {
                 '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
@@ -69,29 +103,61 @@ class _RootScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      const HomeScreen(),
-      const ExploreScreen(),
-      const PianoPitchScreen(),
-      const ProgressHomeScreen(),
-      const ProfileScreen(),
-    ];
+    final theme = Theme.of(context);
+    final manropeFontFamily = theme.textTheme.bodyMedium?.fontFamily;
     return Scaffold(
-      body: IndexedStack(
-        index: currentIndex,
-        children: tabs,
+      body: AppBackground(
+        child: LazyIndexedStack(
+          index: currentIndex,
+          children: [
+            const HomeScreen(),
+            const ExploreScreen(),
+            currentIndex == 2 ? const PianoPitchScreen() : const SizedBox.shrink(),
+            const ProgressHomeScreen(),
+            const ProfileScreen(),
+          ],
+        ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
-        type: BottomNavigationBarType.fixed,
-        onTap: onTab,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
-          BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
-          BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppThemeColors.light.surfaceGlass,
+          border: Border(
+            top: BorderSide(
+              color: AppThemeColors.light.borderGlass,
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          type: BottomNavigationBarType.fixed,
+          onTap: onTab,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          selectedItemColor: AppThemeColors.light.accentPurple,
+          unselectedItemColor: AppThemeColors.light.iconMuted,
+          selectedLabelStyle: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontFamily: manropeFontFamily,
+          ),
+          unselectedLabelStyle: TextStyle(
+            fontFamily: manropeFontFamily,
+          ),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Explore'),
+            BottomNavigationBarItem(icon: Icon(Icons.piano), label: 'Piano'),
+            BottomNavigationBarItem(icon: Icon(Icons.insights_outlined), label: 'Progress'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          ],
+        ),
       ),
     );
   }

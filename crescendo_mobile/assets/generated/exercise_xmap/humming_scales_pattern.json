@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "humming_scales",
+  "patternId": "default",
+  "noteCount": 9,
+  "patternDurationSec": 4.5,
+  "gapBetweenPatterns": 0.75,
+  "notes": [
+    {
+      "i": 0,
+      "midiDelta": 0,
+      "xStart": 0.0,
+      "xEnd": 0.5
+    },
+    {
+      "i": 1,
+      "midiDelta": 2,
+      "xStart": 0.5,
+      "xEnd": 1.0
+    },
+    {
+      "i": 2,
+      "midiDelta": 4,
+      "xStart": 1.0,
+      "xEnd": 1.5
+    },
+    {
+      "i": 3,
+      "midiDelta": 5,
+      "xStart": 1.5,
+      "xEnd": 2.0
+    },
+    {
+      "i": 4,
+      "midiDelta": 7,
+      "xStart": 2.0,
+      "xEnd": 2.5
+    },
+    {
+      "i": 5,
+      "midiDelta": 5,
+      "xStart": 2.5,
+      "xEnd": 3.0
+    },
+    {
+      "i": 6,
+      "midiDelta": 4,
+      "xStart": 3.0,
+      "xEnd": 3.5
+    },
+    {
+      "i": 7,
+      "midiDelta": 2,
+      "xStart": 3.5,
+      "xEnd": 4.0
+    },
+    {
+      "i": 8,
+      "midiDelta": 0,
+      "xStart": 4.0,
+      "xEnd": 4.5
+    }
+  ]
+}

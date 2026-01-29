@@ -1,0 +1,85 @@
+{
+  "exercises": [
+    {
+      "id": "head_voice_scales",
+      "name": "Head Voice Scales",
+      "isGlide": false,
+      "highwaySpec": {
+        "segments": [
+          {
+            "startMs": 0,
+            "endMs": 450,
+            "midiNote": 67,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 450,
+            "endMs": 900,
+            "midiNote": 69,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 900,
+            "endMs": 1350,
+            "midiNote": 71,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 1350,
+            "endMs": 1800,
+            "midiNote": 72,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 1800,
+            "endMs": 2250,
+            "midiNote": 74,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 2250,
+            "endMs": 2700,
+            "midiNote": 76,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 2700,
+            "endMs": 3150,
+            "midiNote": 77,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          },
+          {
+            "startMs": 3150,
+            "endMs": 3600,
+            "midiNote": 79,
+            "toleranceCents": 50.0,
+            "label": null,
+            "startMidi": null,
+            "endMidi": null
+          }
+        ]
+      }
+    }
+  ]
+}

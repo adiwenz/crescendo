@@ -1,25 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../data/progress_repository.dart';
-import '../../models/last_take.dart';
+import '../../models/exercise_attempt.dart';
 import '../../models/pitch_highway_difficulty.dart';
-import '../../models/reference_note.dart';
 import '../../models/vocal_exercise.dart';
-import '../../models/exercise_instance.dart';
 import '../../models/exercise_level_progress.dart';
-import '../../models/pitch_highway_spec.dart';
-import '../../models/pitch_segment.dart';
 import '../../services/exercise_repository.dart';
-import '../../services/last_take_store.dart';
-import '../../services/audio_synth_service.dart';
-import '../../services/range_exercise_generator.dart';
-import '../../services/range_store.dart';
+import '../../services/preview_audio_service.dart';
+import '../../services/exercise_metadata.dart';
 import '../../services/exercise_level_progress_repository.dart';
-import '../../utils/pitch_highway_tempo.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_player_screen.dart';
 import 'exercise_navigation.dart';
-import 'pitch_highway_review_screen.dart';
+import 'exercise_review_summary_screen.dart';
+import '../../services/attempt_repository.dart';
+import '../../services/reference_audio_generator.dart';
+import '../../models/exercise_plan.dart';
+import '../../utils/pitch_math.dart';
 
 class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
@@ -33,32 +33,38 @@ class ExerciseInfoScreen extends StatefulWidget {
 class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   final _repo = ExerciseRepository();
   final _progress = ProgressRepository();
-  final _lastTakeStore = LastTakeStore();
-  final AudioSynthService _synth = AudioSynthService();
+  final _attempts = AttemptRepository.instance;
+  final PreviewAudioService _previewAudio = PreviewAudioService();
   final ExerciseLevelProgressRepository _levelProgress =
       ExerciseLevelProgressRepository();
-  final _rangeStore = RangeStore();
-  final _rangeGenerator = RangeExerciseGenerator();
   int _highestUnlockedLevel = ExerciseLevelProgress.minLevel;
   int _selectedLevel = ExerciseLevelProgress.minLevel;
   int? _highlightedLevel;
   Map<int, int> _bestScoresByLevel = const <int, int>{};
   bool _progressLoaded = false;
   double? _lastScore;
-  LastTake? _lastTake;
-  bool _lastTakeLoaded = false;
+  ExerciseAttempt? _latestAttempt;
+  bool _preparing = false;
+  Future<ExercisePlan>? _planFuture;
 
   @override
   void initState() {
     super.initState();
     _loadLastScore();
-    _loadLastTake();
+    _loadLatestAttempt();
     _loadProgress();
+    
+    // Requirements: Defer heavy generation until after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _triggerPreparation();
+      }
+    });
   }
 
   @override
   void dispose() {
-    _synth.dispose();
+    _previewAudio.dispose();
     super.dispose();
   }
 
@@ -77,12 +83,14 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     setState(() => _lastScore = attempts.first.overallScore);
   }
 
-  Future<void> _loadLastTake() async {
-    final take = await _lastTakeStore.getLastTake(widget.exerciseId);
+  Future<void> _loadLatestAttempt() async {
+    // Ensure attempts are loaded from database
+    await _attempts.ensureLoaded();
     if (!mounted) return;
+    // Query most recent session by exerciseId (resilient to re-entry)
+    final latest = _attempts.latestFor(widget.exerciseId);
     setState(() {
-      _lastTake = take;
-      _lastTakeLoaded = true;
+      _latestAttempt = latest;
     });
   }
 
@@ -112,6 +120,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
+    // Removed duplicate _triggerPreparation() as it's handled by postFrame and manual updates
     if (levelUp && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
@@ -119,6 +128,40 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       Future.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
         setState(() => _highlightedLevel = null);
+      });
+    }
+  }
+
+  void _triggerPreparation() async {
+    final exercise = ExerciseRepository().getExercise(widget.exerciseId);
+    final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    
+    // Fast-path: Check cache first
+    final cached = await ReferenceAudioGenerator.instance.tryGetCached(exercise, difficulty);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _planFuture = Future.value(cached);
+          _preparing = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _preparing = true;
+        _planFuture = ReferenceAudioGenerator.instance.prepare(exercise, difficulty).then((plan) {
+          if (mounted) {
+            setState(() => _preparing = false);
+          }
+          return plan;
+        }).catchError((e) {
+          if (mounted) {
+            setState(() => _preparing = false);
+          }
+          throw e;
+        });
       });
     }
   }
@@ -134,9 +177,9 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
     final isPitchHighway = exercise.type == ExerciseType.pitchHighway;
-    final canPreviewAudio = isPitchHighway &&
-        exercise.highwaySpec?.segments.isNotEmpty == true;
-    final canReview = isPitchHighway && _lastTake != null;
+    final metadata = ExerciseMetadata.forExercise(exercise);
+    final canPreviewAudio = metadata.previewSupported;
+    final canReview = isPitchHighway && _latestAttempt != null;
     final selectionLocked = isPitchHighway && _selectedLevel > _highestUnlockedLevel;
     return Scaffold(
       appBar: AppBar(
@@ -275,29 +318,46 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           ),
           const SizedBox(height: 8),
           ElevatedButton.icon(
-            onPressed: selectionLocked
+            onPressed: selectionLocked || _preparing
                 ? null
                 : () async {
-                    await _synth.stop();
-                    await _startExercise(exercise);
+                    final tapTime = DateTime.now();
+                    debugPrint('[StartExercise] tapped at ${tapTime.millisecondsSinceEpoch}');
+                    await _previewAudio.stop();
+                    
+                    if (isPitchHighway) {
+                      setState(() => _preparing = true);
+                    }
+                    
+                    try {
+                      await _startExercise(exercise);
+                    } finally {
+                      if (mounted) {
+                        setState(() => _preparing = false);
+                      }
+                    }
+                    
                     await _loadLastScore();
-                    await _loadLastTake();
+                    await _loadLatestAttempt();
                     await _loadProgress(showToast: true);
                   },
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Start Exercise'),
+            icon: _preparing 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.play_arrow),
+            label: Text(_preparing ? 'Preparing...' : 'Start Exercise'),
           ),
           if (exercise.type == ExerciseType.pitchHighway) ...[
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: canReview
                   ? () {
+                      // Navigate directly to Detailed Review (ExerciseReviewSummaryScreen)
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PitchHighwayReviewScreen(
+                          builder: (_) => ExerciseReviewSummaryScreen(
                             exercise: exercise,
-                            lastTake: _lastTake!,
+                            attempt: _latestAttempt!,
                           ),
                         ),
                       );
@@ -306,11 +366,11 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
               icon: const Icon(Icons.replay),
               label: const Text('Review last take'),
             ),
-            if (_lastTakeLoaded && !canReview)
+            if (!canReview)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'No last take recorded yet.',
+                  'No take recorded yet.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -332,93 +392,45 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   }
 
   Future<void> _startExercise(VocalExercise exercise) async {
+    final startTime = DateTime.now();
+    debugPrint('[StartExercise] _startExercise called at ${startTime.millisecondsSinceEpoch}');
+    
+    final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+    
     if (exercise.type == ExerciseType.pitchHighway) {
-      _levelProgress.setLastSelectedLevel(
+      // Navigate immediately
+      unawaited(_levelProgress.setLastSelectedLevel(
         exerciseId: widget.exerciseId,
         level: _selectedLevel,
-      );
-      final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-      final range = await _rangeStore.getRange();
-      final lowest = range.$1;
-      final highest = range.$2;
-      if (lowest != null && highest != null) {
-        final instances = _rangeGenerator.generate(
-          exercise: exercise,
-          lowestMidi: lowest,
-          highestMidi: highest,
-        );
-        if (instances.isNotEmpty) {
-          final combined = _buildConcatenatedExercise(exercise, instances);
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ExercisePlayerScreen(
-                exercise: combined,
-                pitchDifficulty: selectedDifficulty,
-              ),
+      ));
+      
+      if (mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ExercisePlayerScreen(
+              exercise: exercise,
+              pitchDifficulty: selectedDifficulty,
+              exercisePlanFuture: _planFuture,
             ),
-          );
-          return;
-        }
+          ),
+        );
       }
+      return;
     }
+    
+    // For non-pitchHighway exercises, navigate immediately
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => buildExerciseScreen(
           exercise,
-          pitchDifficulty: pitchHighwayDifficultyFromLevel(_selectedLevel),
+          pitchDifficulty: selectedDifficulty,
         ),
       ),
     );
   }
 
-  VocalExercise _buildConcatenatedExercise(
-    VocalExercise base,
-    List<ExerciseInstance> instances,
-  ) {
-    final baseSpec = base.highwaySpec;
-    if (baseSpec == null || baseSpec.segments.isEmpty) return base;
-    final stitched = <PitchSegment>[];
-    var cursorMs = 0;
-    const gapMs = 1000;
-    for (final instance in instances) {
-      final applied = instance.apply(base);
-      final spec = applied.highwaySpec;
-      if (spec == null || spec.segments.isEmpty) continue;
-      var localEnd = 0;
-      for (final seg in spec.segments) {
-        stitched.add(PitchSegment(
-          startMs: seg.startMs + cursorMs,
-          endMs: seg.endMs + cursorMs,
-          midiNote: seg.midiNote,
-          toleranceCents: seg.toleranceCents,
-          label: seg.label,
-          startMidi: seg.startMidi,
-          endMidi: seg.endMidi,
-        ));
-        if (seg.endMs > localEnd) localEnd = seg.endMs;
-      }
-      cursorMs += localEnd + gapMs;
-    }
-    final durationSec = (cursorMs / 1000.0).round();
-    return VocalExercise(
-      id: base.id,
-      name: base.name,
-      categoryId: base.categoryId,
-      type: base.type,
-      description: base.description,
-      purpose: base.purpose,
-      difficulty: base.difficulty,
-      tags: base.tags,
-      createdAt: base.createdAt,
-      iconKey: base.iconKey,
-      estimatedMinutes: base.estimatedMinutes,
-      durationSeconds: durationSec,
-      reps: base.reps,
-      highwaySpec: PitchHighwaySpec(segments: stitched),
-    );
-  }
 
   List<String> _targetsForExercise(VocalExercise exercise) {
     if (exercise.type == ExerciseType.pitchHighway &&
@@ -465,60 +477,33 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   }
 
   Future<void> _playPreview(VocalExercise exercise) async {
-    final notes = _buildReferenceNotes(
-      exercise,
-      pitchHighwayDifficultyFromLevel(_selectedLevel),
-    );
-    if (notes.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No preview available for this exercise.')),
-      );
-      return;
-    }
-    await _synth.stop();
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
-  }
-
-  List<ReferenceNote> _buildReferenceNotes(
-    VocalExercise exercise,
-    PitchHighwayDifficulty difficulty,
-  ) {
-    final spec = exercise.highwaySpec;
-    if (spec == null) return const [];
-    final multiplier = PitchHighwayTempo.multiplierFor(difficulty, spec.segments);
-    final segments = PitchHighwayTempo.scaleSegments(spec.segments, multiplier);
-    final notes = <ReferenceNote>[];
-    for (final seg in segments) {
-      if (seg.isGlide) {
-        final startMidi = seg.startMidi ?? seg.midiNote;
-        final endMidi = seg.endMidi ?? seg.midiNote;
-        final durationMs = seg.endMs - seg.startMs;
-        final steps = (durationMs / 200).round().clamp(4, 24);
-        for (var i = 0; i < steps; i++) {
-          final ratio = i / steps;
-          final midi = (startMidi + (endMidi - startMidi) * ratio).round();
-          final stepStart = seg.startMs + (durationMs * ratio).round();
-          final stepEnd = seg.startMs + (durationMs * ((i + 1) / steps)).round();
-          notes.add(ReferenceNote(
-            startSec: stepStart / 1000.0,
-            endSec: stepEnd / 1000.0,
-            midi: midi,
-            lyric: seg.label,
-          ));
+    debugPrint('[Preview] start - exercise=${exercise.id}');
+    
+    try {
+      final metadata = ExerciseMetadata.forExercise(exercise);
+      
+      // Check if preview is supported
+      if (!metadata.previewSupported) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No preview available for this exercise.')),
+          );
         }
-      } else {
-        notes.add(ReferenceNote(
-          startSec: seg.startMs / 1000.0,
-          endSec: seg.endMs / 1000.0,
-          midi: seg.midiNote,
-          lyric: seg.label,
-        ));
+        return;
+      }
+
+      // Use the new preview audio service (loads bundled assets or generates real-time)
+      await _previewAudio.playPreview(exercise);
+    } catch (e) {
+      debugPrint('[Preview] error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Preview failed: $e')),
+        );
       }
     }
-    return notes;
   }
+
 }
 
 class _SectionHeader extends StatelessWidget {

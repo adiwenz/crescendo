@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'logging_database.dart';
+import 'package:meta/meta.dart';
 
 class AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
@@ -10,12 +13,63 @@ class AppDatabase {
 
   Future<Database> get database async {
     if (_db != null) return _db!;
+    
+    debugPrint('[DB_TRACE] AppDatabase opening...');
+    final start = DateTime.now();
+    
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    _db = await openDatabase(path, version: 7, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    final realDb = await openDatabase(path, version: 13, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    
+    debugPrint('[DB_TRACE] AppDatabase opened in ${DateTime.now().difference(start).inMilliseconds}ms');
+
+    if (kDebugMode) {
+       _db = LoggingDatabase(realDb);
+    } else {
+       _db = realDb;
+    }
     return _db!;
   }
 
+  /// Reset the database singleton for tests
+  /// 
+  /// WARNING: This should ONLY be called from tests!
+  /// It closes the database connection and resets the singleton.
+  @visibleForTesting
+  static Future<void> resetForTests() async {
+    final instance = AppDatabase._instance;
+    if (instance._db != null) {
+      await instance._db!.close();
+      instance._db = null;
+    }
+  }
+
   Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE take_scores(
+        id TEXT PRIMARY KEY,
+        exerciseId TEXT,
+        categoryId TEXT,
+        createdAt INTEGER,
+        score REAL,
+        durationMs INTEGER
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE last_take(
+        exerciseId TEXT PRIMARY KEY,
+        createdAt INTEGER,
+        score REAL,
+        audioPath TEXT,
+        pitchPath TEXT,
+        offsetMs REAL,
+        minMidi INTEGER,
+        maxMidi INTEGER,
+        pitchDifficulty TEXT,
+        referenceWavPath TEXT,
+        referenceSampleRate INTEGER,
+        referenceWavSha1 TEXT
+      )
+    ''');
     await db.execute('''
       CREATE TABLE takes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +95,9 @@ class AppDatabase {
         pitchDifficulty TEXT,
         recordingPath TEXT,
         contourJson TEXT,
+        targetNotesJson TEXT,
+        segmentsJson TEXT,
+        recorderStartSec REAL,
         version INTEGER
       )
     ''');
@@ -54,6 +111,25 @@ class AppDatabase {
         attemptsJson TEXT,
         updatedAt INTEGER
       )
+    ''');
+    await db.execute('''
+      CREATE TABLE reference_audio_cache(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        rangeHash TEXT NOT NULL,
+        variantKey TEXT NOT NULL,
+        filePath TEXT NOT NULL,
+        durationMs INTEGER NOT NULL,
+        sampleRate INTEGER NOT NULL,
+        codec TEXT NOT NULL,
+        generatedAt INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        UNIQUE(exerciseId, rangeHash, variantKey)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_reference_audio_cache_lookup 
+      ON reference_audio_cache(exerciseId, rangeHash, variantKey)
     ''');
   }
 
@@ -85,6 +161,10 @@ class AppDatabase {
       await _addColumnIfMissing(db, 'exercise_attempts', 'startedAt', 'INTEGER');
       await _addColumnIfMissing(db, 'exercise_attempts', 'completedAt', 'INTEGER');
     }
+    if (oldVersion < 8) {
+      await _addColumnIfMissing(db, 'exercise_attempts', 'targetNotesJson', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'segmentsJson', 'TEXT');
+    }
     if (oldVersion < 6) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS exercise_progress(
@@ -100,6 +180,87 @@ class AppDatabase {
     }
     if (oldVersion < 7) {
       await _addColumnIfMissing(db, 'exercise_progress', 'lastSelectedLevel', 'INTEGER');
+    }
+    if (oldVersion < 9) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS reference_audio_cache(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          exerciseId TEXT NOT NULL,
+          rangeHash TEXT NOT NULL,
+          variantKey TEXT NOT NULL,
+          filePath TEXT NOT NULL,
+          durationMs INTEGER NOT NULL,
+          sampleRate INTEGER NOT NULL,
+          codec TEXT NOT NULL,
+          generatedAt INTEGER NOT NULL,
+          version INTEGER NOT NULL,
+          UNIQUE(exerciseId, rangeHash, variantKey)
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reference_audio_cache_lookup 
+        ON reference_audio_cache(exerciseId, rangeHash, variantKey)
+      ''');
+    }
+    if (oldVersion < 10) {
+      await _addColumnIfMissing(db, 'exercise_attempts', 'recorderStartSec', 'REAL');
+    }
+    if (oldVersion < 11) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS take_scores(
+          id TEXT PRIMARY KEY,
+          exerciseId TEXT,
+          categoryId TEXT,
+          createdAt INTEGER,
+          score REAL,
+          durationMs INTEGER
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS last_take(
+          exerciseId TEXT PRIMARY KEY,
+          createdAt INTEGER,
+          score REAL,
+          audioPath TEXT,
+          pitchPath TEXT,
+          offsetMs REAL
+        )
+      ''');
+
+      // Migrate scores
+      await db.execute('''
+        INSERT INTO take_scores (id, exerciseId, categoryId, createdAt, score, durationMs)
+        SELECT id, exerciseId, categoryId, completedAt, overallScore, (completedAt - startedAt)
+        FROM exercise_attempts
+        WHERE completedAt IS NOT NULL AND startedAt IS NOT NULL
+      ''');
+
+      // Migrate last takes
+      // We'll pick the latest completion for each exercise
+      await db.execute('''
+        INSERT OR REPLACE INTO last_take (exerciseId, createdAt, score, audioPath, pitchPath, offsetMs)
+        SELECT ea.exerciseId, ea.completedAt, ea.overallScore, ea.recordingPath, '', ea.recorderStartSec
+        FROM exercise_attempts ea
+        INNER JOIN (
+          SELECT exerciseId, MAX(completedAt) as lastComp
+          FROM exercise_attempts
+          GROUP BY exerciseId
+        ) latest ON ea.exerciseId = latest.exerciseId AND ea.completedAt = latest.lastComp
+      ''');
+    }
+    if (oldVersion < 12) {
+      // Migrate exercise_attempts
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceWavPath', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceSampleRate', 'INTEGER');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'referenceWavSha1', 'TEXT');
+
+      // Migrate last_take
+      await _addColumnIfMissing(db, 'last_take', 'referenceWavPath', 'TEXT');
+      await _addColumnIfMissing(db, 'last_take', 'referenceSampleRate', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'referenceWavSha1', 'TEXT');
+      await _addColumnIfMissing(db, 'last_take', 'minMidi', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'maxMidi', 'INTEGER');
+      await _addColumnIfMissing(db, 'last_take', 'pitchDifficulty', 'TEXT');
     }
   }
 

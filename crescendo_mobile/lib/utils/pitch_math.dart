@@ -11,9 +11,12 @@ class PitchMath {
     required double height,
     required int midiMin,
     required int midiMax,
+    bool clamp = true,
   }) {
-    final clamped = midi.clamp(midiMin.toDouble(), midiMax.toDouble());
-    final ratio = (clamped - midiMin) / (midiMax - midiMin);
+    final effectiveMidi = clamp
+        ? midi.clamp(midiMin.toDouble(), midiMax.toDouble())
+        : midi;
+    final ratio = (effectiveMidi - midiMin) / (midiMax - midiMin);
     return height - ratio * height;
   }
 

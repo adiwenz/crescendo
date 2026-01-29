@@ -23,93 +23,121 @@ class AppBackground extends StatelessWidget {
     }
     return Stack(
       children: [
+        // Main gradient background
         Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [colors.bgTop, colors.bgBottom],
-            ),
+            gradient: colors.backgroundGradient,
           ),
         ),
+        // Subtle wave overlay
         Positioned.fill(
           child: CustomPaint(
-            painter: _StarFieldPainter(isDark: colors.isDark),
+            painter: _WaveOverlayPainter(colors: colors),
           ),
         ),
-        if (showWave)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SizedBox(
-              height: 140,
-              child: CustomPaint(
-                painter: _WavePainter(
-                  start: colors.bgBottom,
-                  end: colors.blueAccent,
-                ),
-              ),
-            ),
+        // Bokeh circles (very low opacity)
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _BokehPainter(colors: colors),
           ),
+        ),
         Positioned.fill(child: child),
       ],
     );
   }
 }
 
-class _StarFieldPainter extends CustomPainter {
-  final bool isDark;
+class _WaveOverlayPainter extends CustomPainter {
+  final AppThemeColors colors;
 
-  const _StarFieldPainter({required this.isDark});
+  const _WaveOverlayPainter({required this.colors});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rand = Random(42);
-    final dotCount = isDark
-        ? (size.width * size.height / 9000).clamp(60, 160).toInt()
-        : (size.width * size.height / 12000).clamp(30, 80).toInt();
-    final paint = Paint()
-      ..color = isDark
-          ? Colors.white.withOpacity(0.06)
-          : const Color(0xFF7DBCD9).withOpacity(0.12);
-    for (var i = 0; i < dotCount; i++) {
-      final dx = rand.nextDouble() * size.width;
-      final dy = rand.nextDouble() * size.height;
-      final r = rand.nextDouble() * 1.6 + 0.4;
-      canvas.drawCircle(Offset(dx, dy), r, paint);
-    }
+    // Subtle wave shapes with very low opacity
+    final paint1 = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          colors.accentBlue.withOpacity(0.08),
+          colors.accentPurple.withOpacity(0.06),
+        ],
+      ).createShader(Offset.zero & size)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    final paint2 = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topRight,
+        end: Alignment.bottomLeft,
+        colors: [
+          colors.accentPurple.withOpacity(0.06),
+          colors.accentBlue.withOpacity(0.08),
+        ],
+      ).createShader(Offset.zero & size)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    // Wave 1
+    final path1 = Path()
+      ..moveTo(0, size.height * 0.4)
+      ..quadraticBezierTo(size.width * 0.3, size.height * 0.3, size.width * 0.55,
+          size.height * 0.55)
+      ..quadraticBezierTo(
+          size.width * 0.75, size.height * 0.7, size.width, size.height * 0.55)
+      ..lineTo(size.width, 0)
+      ..lineTo(0, 0);
+
+    // Wave 2
+    final path2 = Path()
+      ..moveTo(0, size.height * 0.65)
+      ..quadraticBezierTo(size.width * 0.25, size.height * 0.8,
+          size.width * 0.55, size.height * 0.7)
+      ..quadraticBezierTo(
+          size.width * 0.8, size.height * 0.55, size.width, size.height * 0.7)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height);
+
+    canvas.drawPath(path1, paint1);
+    canvas.drawPath(path2, paint2);
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _WavePainter extends CustomPainter {
-  final Color start;
-  final Color end;
+class _BokehPainter extends CustomPainter {
+  final AppThemeColors colors;
 
-  const _WavePainter({required this.start, required this.end});
+  const _BokehPainter({required this.colors});
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rand = Random(42);
+    // Very subtle bokeh circles
+    final circleCount = (size.width * size.height / 15000).clamp(8, 20).toInt();
     final paint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: [start.withOpacity(0.25), end.withOpacity(0.35)],
-      ).createShader(Offset.zero & size)
+      ..color = colors.accentPurple.withOpacity(0.04)
       ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(0, size.height * 0.5)
-      ..quadraticBezierTo(size.width * 0.25, size.height * 0.35,
-          size.width * 0.5, size.height * 0.5)
-      ..quadraticBezierTo(size.width * 0.75, size.height * 0.65,
-          size.width, size.height * 0.5)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
+
+    for (var i = 0; i < circleCount; i++) {
+      final dx = rand.nextDouble() * size.width;
+      final dy = rand.nextDouble() * size.height;
+      final r = rand.nextDouble() * 40 + 20; // 20-60 radius
+      canvas.drawCircle(Offset(dx, dy), r, paint);
+    }
+
+    // A few smaller circles
+    final smallPaint = Paint()
+      ..color = colors.accentBlue.withOpacity(0.03)
+      ..style = PaintingStyle.fill;
+    for (var i = 0; i < circleCount ~/ 2; i++) {
+      final dx = rand.nextDouble() * size.width;
+      final dy = rand.nextDouble() * size.height;
+      final r = rand.nextDouble() * 15 + 10; // 10-25 radius
+      canvas.drawCircle(Offset(dx, dy), r, smallPaint);
+    }
   }
 
   @override

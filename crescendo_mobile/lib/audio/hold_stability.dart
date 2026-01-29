@@ -22,17 +22,22 @@ class HoldMetrics {
 }
 
 class _RunStats {
-  final double start;
-  double end;
+  double duration = 0.0; // Accumulated interval-based duration
   final List<double> cents;
   final List<double> times;
 
-  _RunStats({required this.start})
-      : end = start,
-        cents = [],
+  _RunStats()
+      : cents = [],
         times = [];
 
-  double get duration => math.max(0.0, end - start);
+  void addFrame(double centsValue, double timeValue) {
+    cents.add(centsValue);
+    times.add(timeValue);
+  }
+
+  void addDuration(double dt) {
+    duration += dt;
+  }
 }
 
 HoldMetrics computeHoldMetrics({
@@ -65,6 +70,7 @@ HoldMetrics computeHoldMetrics({
     );
   }
 
+  // Calculate median hop for gap detection
   final deltas = <double>[];
   for (var i = 1; i < windowFrames.length; i++) {
     final d = windowFrames[i].time - windowFrames[i - 1].time;
@@ -75,6 +81,7 @@ HoldMetrics computeHoldMetrics({
 
   _RunStats? best;
   _RunStats? current;
+  double totalOnPitchDuration = 0.0;
 
   for (var i = 0; i < windowFrames.length; i++) {
     final f = windowFrames[i];
@@ -83,25 +90,55 @@ HoldMetrics computeHoldMetrics({
     final cents = voiced ? hzToCents(hz!, targetHz) : double.nan;
     final onPitch = voiced && cents.abs() <= centsThreshold && cents.isFinite;
 
-    double gap = 0;
-    if (current != null) {
-      gap = f.time - current.end;
+    // Check gap to previous frame if we have a current run
+    bool gapTooLarge = false;
+    if (current != null && i > 0) {
+      final gap = f.time - windowFrames[i - 1].time;
+      gapTooLarge = gap > gapBreak;
     }
 
-    final gapTooLarge = gap > gapBreak;
-
     if (onPitch && !gapTooLarge) {
-      current ??= _RunStats(start: f.time);
-      current.end = f.time;
-      current.cents.add(cents);
-      current.times.add(f.time - noteStart);
+      // Start new run if needed
+      current ??= _RunStats();
+      
+      // Add this frame's cents and time to the run
+      current.addFrame(cents, f.time - noteStart);
+      
+      // Calculate duration contribution: time until next frame (or noteEnd)
+      // Only contribute if next frame continues the run OR this is the last frame
+      double intervalDuration = 0.0;
+      
+      if (i + 1 < windowFrames.length) {
+        final nextFrame = windowFrames[i + 1];
+        final nextHz = nextFrame.hz;
+        final nextVoiced = nextHz != null && nextHz > 0;
+        final nextCents = nextVoiced ? hzToCents(nextHz!, targetHz) : double.nan;
+        final nextOnPitch = nextVoiced && nextCents.abs() <= centsThreshold && nextCents.isFinite;
+        final nextGap = nextFrame.time - f.time;
+        final nextGapTooLarge = nextGap > gapBreak;
+        
+        if (nextOnPitch && !nextGapTooLarge) {
+          // Next frame continues the run - contribute time up to next frame
+          intervalDuration = math.max(0.0, math.min(nextFrame.time, noteEnd) - f.time);
+        }
+        // else: next frame breaks the run - don't contribute duration
+      } else {
+        // This is the last frame - contribute time until noteEnd
+        intervalDuration = math.max(0.0, noteEnd - f.time);
+      }
+      
+      current.addDuration(intervalDuration);
+      totalOnPitchDuration += intervalDuration;
     } else {
+      // Break current run
       if (current != null) {
         best = _pickBest(best, current);
         current = null;
       }
     }
   }
+  
+  // Finalize any remaining run
   if (current != null) {
     best = _pickBest(best, current);
   }
@@ -116,15 +153,13 @@ HoldMetrics computeHoldMetrics({
     );
   }
 
-  final stddev =
-      best.cents.isNotEmpty ? _stdDev(best.cents) : null;
+  final stddev = best.cents.isNotEmpty ? _stdDev(best.cents) : null;
   final slope = best.cents.length >= 2 ? _slope(best.times, best.cents) : null;
 
-  final hold = best.duration;
   return HoldMetrics(
-    maxContinuousOnPitchSec: hold,
+    maxContinuousOnPitchSec: best.duration,
     stabilityCentsStdDev: stddev,
-    holdPercent: (hold / noteDuration).clamp(0.0, 1.0),
+    holdPercent: (totalOnPitchDuration / noteDuration).clamp(0.0, 1.0),
     driftCentsPerSec: slope,
   );
 }

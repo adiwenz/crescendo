@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'abstract_banner_painter.dart';
+import '../ui/theme/app_theme.dart';
 
 class BannerCard extends StatelessWidget {
   final String title;
@@ -19,12 +20,16 @@ class BannerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(20);
-    return Card(
+    final colors = AppThemeColors.of(context);
+    final radius = BorderRadius.circular(AppThemeColors.radiusMd);
+    return Container(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: radius),
-      elevation: 4,
-      margin: EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: colors.surfaceGlass,
+        borderRadius: radius,
+        border: Border.all(color: colors.borderGlass, width: 1),
+        boxShadow: colors.elevationShadow,
+      ),
       child: InkWell(
         onTap: onTap,
         child: SizedBox(

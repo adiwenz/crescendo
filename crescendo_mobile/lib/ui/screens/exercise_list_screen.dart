@@ -6,7 +6,7 @@ import '../../models/exercise_level_progress.dart';
 import '../../services/exercise_repository.dart';
 import '../../services/exercise_level_progress_repository.dart';
 import '../../services/range_exercise_generator.dart';
-import '../../services/range_store.dart';
+import '../../services/vocal_range_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/exercise_preview_mini.dart';
@@ -31,7 +31,7 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
     final category = repo.getCategory(widget.categoryId);
     final exercises = repo.getExercisesForCategory(widget.categoryId);
     final progressFuture = _loadProgress(exercises);
-    final rangeFuture = RangeStore().getRange();
+    final rangeFuture = VocalRangeService().getRange();
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -40,17 +40,17 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
       ),
       body: AppBackground(
         child: SafeArea(
-          child: FutureBuilder<(Map<String, ExerciseLevelProgress>, (int?, int?))>(
+          child: FutureBuilder<(Map<String, ExerciseLevelProgress>, (int, int))>(
             future: Future.wait([progressFuture, rangeFuture]).then(
               (values) =>
-                  (values[0] as Map<String, ExerciseLevelProgress>, values[1] as (int?, int?)),
+                  (values[0] as Map<String, ExerciseLevelProgress>, values[1] as (int, int)),
             ),
             builder: (context, snapshot) {
               final progressMap =
                   snapshot.data?.$1 ?? const <String, ExerciseLevelProgress>{};
-              final range = snapshot.data?.$2 ?? (null, null);
-              final lowest = range.$1;
-              final highest = range.$2;
+              final range = snapshot.data?.$2;
+              final lowest = range?.$1;
+              final highest = range?.$2;
               final generator = RangeExerciseGenerator();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

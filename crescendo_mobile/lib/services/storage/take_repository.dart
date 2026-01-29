@@ -1,9 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../models/take.dart';
+import '../../core/interfaces/i_take_repository.dart';
 import 'db.dart';
 
-class TakeRepository {
+class TakeRepository implements ITakeRepository {
   final AppDatabase _db = AppDatabase();
   final Database? overrideDb;
 

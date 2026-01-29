@@ -24,7 +24,7 @@ class ProgressScoreRing extends StatelessWidget {
             strokeWidth: 8,
             backgroundColor: colors.divider,
             valueColor: AlwaysStoppedAnimation<Color>(
-              colors.isDark ? colors.textPrimary : colors.goldAccent,
+              colors.accentPurple,
             ),
           ),
         ),
@@ -56,7 +56,7 @@ class ProgressLineChart extends StatelessWidget {
     return CustomPaint(
       painter: _LineChartPainter(
         values: values,
-        color: lineColor ?? colors.blueAccent,
+        color: lineColor ?? colors.accentPurple,
         baselineColor: colors.divider.withOpacity(0.6),
       ),
       child: const SizedBox.expand(),
@@ -80,7 +80,7 @@ class ProgressSparkline extends StatelessWidget {
     return CustomPaint(
       painter: _LineChartPainter(
         values: values,
-        color: color ?? colors.blueAccent,
+        color: color ?? colors.accentPurple,
         baselineColor: Colors.transparent,
         showBaseline: false,
         strokeWidth: 2,
@@ -106,7 +106,7 @@ class ProgressBarChart extends StatelessWidget {
     return CustomPaint(
       painter: _BarChartPainter(
         values: values,
-        color: color ?? colors.blueAccent,
+        color: color ?? colors.accentPurple,
       ),
       child: const SizedBox.expand(),
     );

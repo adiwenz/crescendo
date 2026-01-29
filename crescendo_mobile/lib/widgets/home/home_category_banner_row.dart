@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../design/app_colors.dart';
+import '../../screens/home/styles.dart';
 import '../abstract_banner_painter.dart';
 
 class HomeCategoryBannerRow extends StatelessWidget {
@@ -22,27 +22,18 @@ class HomeCategoryBannerRow extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
+        decoration: HomeScreenStyles.categoryBannerDecoration,
+        constraints: const BoxConstraints(minHeight: 96),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                bottomLeft: Radius.circular(20),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(HomeScreenStyles.categoryBannerBorderRadius),
+                bottomLeft: Radius.circular(HomeScreenStyles.categoryBannerBorderRadius),
               ),
-              child: SizedBox(
-                width: 110,
-                height: 96,
+              child: Container(
+                width: 80,
                 child: CustomPaint(
                   painter: AbstractBannerPainter(bannerStyleId, intensity: 1.0),
                 ),
@@ -52,23 +43,14 @@ class HomeCategoryBannerRow extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
+                      style: HomeScreenStyles.categoryTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -76,7 +58,7 @@ class HomeCategoryBannerRow extends StatelessWidget {
             ),
             const Padding(
               padding: EdgeInsets.only(right: 12),
-              child: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              child: Icon(Icons.chevron_right, color: HomeScreenStyles.iconInactive),
             ),
           ],
         ),

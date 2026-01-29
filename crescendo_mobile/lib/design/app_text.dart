@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 class AppText {
+  // Text styles that inherit Manrope fontFamily from ThemeData
+  // fontFamily is not specified here - it will be inherited from ThemeData.fontFamily
   static const TextStyle h1 = TextStyle(
     fontSize: 24,
     fontWeight: FontWeight.w700,

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "exerciseId": "descending_runs",
+  "patternId": "default",
+  "noteCount": 8,
+  "patternDurationSec": 1.6,
+  "gapBetweenPatterns": 0.75,
+  "notes": [
+    {
+      "i": 0,
+      "midiDelta": 0,
+      "xStart": 0.0,
+      "xEnd": 0.2
+    },
+    {
+      "i": 1,
+      "midiDelta": -1,
+      "xStart": 0.2,
+      "xEnd": 0.4
+    },
+    {
+      "i": 2,
+      "midiDelta": -3,
+      "xStart": 0.4,
+      "xEnd": 0.6
+    },
+    {
+      "i": 3,
+      "midiDelta": -5,
+      "xStart": 0.6,
+      "xEnd": 0.8
+    },
+    {
+      "i": 4,
+      "midiDelta": -7,
+      "xStart": 0.8,
+      "xEnd": 1.0
+    },
+    {
+      "i": 5,
+      "midiDelta": -8,
+      "xStart": 1.0,
+      "xEnd": 1.2
+    },
+    {
+      "i": 6,
+      "midiDelta": -10,
+      "xStart": 1.2,
+      "xEnd": 1.4
+    },
+    {
+      "i": 7,
+      "midiDelta": -12,
+      "xStart": 1.4,
+      "xEnd": 1.6
+    }
+  ]
+}

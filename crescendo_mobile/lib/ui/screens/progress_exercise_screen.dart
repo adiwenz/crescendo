@@ -53,7 +53,11 @@ class _ProgressExerciseScreenState extends State<ProgressExerciseScreen> {
           final exerciseAttempts = attempts
               .where((a) => a.exerciseId == widget.exercise.id)
               .toList()
-            ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+            ..sort((a, b) {
+              final aTime = a.completedAt ?? DateTime(1970);
+              final bTime = b.completedAt ?? DateTime(1970);
+              return aTime.compareTo(bTime);
+            });
           final filtered = _applyRange(exerciseAttempts);
           final scores = filtered.map((a) => a.overallScore).toList();
           final stats = computeExerciseStats(

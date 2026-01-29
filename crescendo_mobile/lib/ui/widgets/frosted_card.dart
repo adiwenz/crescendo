@@ -17,7 +17,7 @@ class FrostedCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
-    this.borderRadius = const BorderRadius.all(Radius.circular(20)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(22)),
     this.blurSigma = 14,
     this.fillColor,
     this.borderColor,
@@ -28,24 +28,19 @@ class FrostedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppThemeColors.of(context);
     if (!colors.isDark) {
+      // Light mode: frosted glass style
       return Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: fillColor ?? colors.surface1,
+          color: fillColor ?? colors.surfaceGlass,
           borderRadius: borderRadius,
-          border: Border.all(color: borderColor ?? colors.borderSubtle, width: 1),
-          boxShadow: shadow ??
-              [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 14,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+          border: Border.all(color: borderColor ?? colors.borderGlass, width: 1),
+          boxShadow: shadow ?? colors.elevationShadow,
         ),
         child: child,
       );
     }
+    // Dark mode: backdrop blur
     return ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
@@ -56,14 +51,7 @@ class FrostedCard extends StatelessWidget {
             color: fillColor ?? colors.glassFill,
             borderRadius: borderRadius,
             border: Border.all(color: borderColor ?? colors.glassBorder, width: 1),
-            boxShadow: shadow ??
-                [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+            boxShadow: shadow ?? colors.elevationShadow,
           ),
           child: child,
         ),

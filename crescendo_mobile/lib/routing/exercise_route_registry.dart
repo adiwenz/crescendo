@@ -4,6 +4,7 @@ import '../services/exercise_repository.dart';
 import '../ui/screens/exercise_player_screen.dart';
 import '../models/vocal_exercise.dart';
 import '../models/pitch_highway_difficulty.dart';
+import '../models/exercise_plan.dart';
 
 class ExerciseRouteEntry {
   final String id;
@@ -45,6 +46,8 @@ class ExerciseRouteRegistry {
     BuildContext context,
     String exerciseId, {
     int? difficultyLevel,
+    ExercisePlan? exercisePlan,
+    Future<ExercisePlan>? exercisePlanFuture,
   }) {
     final entry = entryFor(exerciseId);
     if (entry == null) return false;
@@ -63,6 +66,8 @@ class ExerciseRouteRegistry {
           builder: (_) => ExercisePlayerScreen(
             exercise: exercise,
             pitchDifficulty: pitchDifficulty,
+            exercisePlan: exercisePlan,
+            exercisePlanFuture: exercisePlanFuture,
           ),
         ),
       );

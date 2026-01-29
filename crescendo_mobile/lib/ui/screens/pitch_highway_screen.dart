@@ -105,17 +105,32 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _scoring = ScoringService();
     _repo = TakeRepository();
     _ticker = createTicker(_onTick);
-    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 100.0 : 150.0);
+    _audioLatencyMs = kIsWeb ? 0 : (Platform.isIOS ? 150.0 : 200.0);
     _clock.setAudioPositionProvider(() => _audioPositionSec);
     _clock.setLatencyCompensationMs(_audioLatencyMs);
   }
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[PitchHighwayScreen] dispose - cleaning up resources');
     _ticker.dispose();
     _liveSub?.cancel();
     _audioPosSub?.cancel();
-    _recording.stop();
+    // Properly stop and dispose the recording service
+    _recording.stop().then((_) async {
+      try {
+        await _recording.dispose();
+        // ignore: avoid_print
+        print('[PitchHighwayScreen] Recording disposed');
+      } catch (e) {
+        // ignore: avoid_print
+        print('[PitchHighwayScreen] Error disposing recording: $e');
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[PitchHighwayScreen] Error stopping recording: $e');
+    });
     _synth.stop();
     _timeNotifier.dispose();
     _liveMidi.dispose();
@@ -194,7 +209,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   Future<void> _startRecording() async {
     _capturedFrames.clear();
     await _liveSub?.cancel();
-    await _recording.start();
+    await _recording.start(owner: 'exercise');
     _recordingActive = true;
     _liveSub = _recording.liveStream.listen((frame) {
       final midi = frame.midi ?? (frame.hz != null ? _hzToMidi(frame.hz!) : null);
@@ -215,8 +230,19 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _recordingActive = false;
     await _liveSub?.cancel();
     _liveSub = null;
+    // ignore: avoid_print
+    print('[PitchHighwayScreen] _stopRecording - stopping recording');
     final result = await _recording.stop();
     _lastRecordingPath = result.audioPath.isNotEmpty ? result.audioPath : _lastRecordingPath;
+    // Dispose the recording service to fully release resources
+    try {
+      await _recording.dispose();
+      // ignore: avoid_print
+      print('[PitchHighwayScreen] Recording disposed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[PitchHighwayScreen] Error disposing recording: $e');
+    }
   }
 
   Future<String> _ensureReferenceAudio() async {
@@ -418,7 +444,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
                                       child: Container(
                                         height: 6,
                                         decoration: BoxDecoration(
-                                          color: colors.blueAccent,
+                                          color: colors.accentPurple,
                                           borderRadius: BorderRadius.circular(3),
                                         ),
                                       ),

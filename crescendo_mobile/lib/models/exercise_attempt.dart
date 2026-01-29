@@ -12,8 +12,16 @@ class ExerciseAttempt {
   final Map<String, double> subScores;
   final String? recordingPath;
   final String? contourJson;
+  final String? targetNotesJson;
+  final String? segmentsJson;
   final String? notes;
   final String? pitchDifficulty;
+  final double? recorderStartSec;
+  final int? minMidi;
+  final int? maxMidi;
+  final String? referenceWavPath;
+  final int? referenceSampleRate;
+  final String? referenceWavSha1;
   final int version;
 
   const ExerciseAttempt({
@@ -26,8 +34,16 @@ class ExerciseAttempt {
     this.subScores = const {},
     this.recordingPath,
     this.contourJson,
+    this.targetNotesJson,
+    this.segmentsJson,
     this.notes,
     this.pitchDifficulty,
+    this.recorderStartSec,
+    this.minMidi,
+    this.maxMidi,
+    this.referenceWavPath,
+    this.referenceSampleRate,
+    this.referenceWavSha1,
     this.version = 1,
   });
 
@@ -42,8 +58,14 @@ class ExerciseAttempt {
         'subScoresJson': subScores.isEmpty ? null : jsonEncode(subScores),
         'recordingPath': recordingPath,
         'contourJson': contourJson,
+        'targetNotesJson': targetNotesJson,
+        'segmentsJson': segmentsJson,
         'notes': notes,
         'pitchDifficulty': pitchDifficulty,
+        'recorderStartSec': recorderStartSec,
+        'referenceWavPath': referenceWavPath,
+        'referenceSampleRate': referenceSampleRate,
+        'referenceWavSha1': referenceWavSha1,
         'version': version,
       };
 
@@ -59,8 +81,16 @@ class ExerciseAttempt {
       subScores: const {},
       recordingPath: map['recordingPath'] as String?,
       contourJson: map['contourJson'] as String?,
+      targetNotesJson: map['targetNotesJson'] as String?,
+      segmentsJson: map['segmentsJson'] as String?,
       notes: map['notes'] as String?,
       pitchDifficulty: map['pitchDifficulty'] as String?,
+      recorderStartSec: (map['recorderStartSec'] as num?)?.toDouble(),
+      minMidi: (map['minMidi'] as num?)?.toInt(),
+      maxMidi: (map['maxMidi'] as num?)?.toInt(),
+      referenceWavPath: map['referenceWavPath'] as String?,
+      referenceSampleRate: (map['referenceSampleRate'] as num?)?.toInt(),
+      referenceWavSha1: map['referenceWavSha1'] as String?,
       version: (map['version'] as num?)?.toInt() ?? 1,
     );
   }
@@ -132,8 +162,16 @@ class ExerciseAttempt {
       subScores: parseScores(m['subScores'] ?? m['subScoresJson']),
       recordingPath: (m['recordingPath'] ?? m['recording'])?.toString(),
       contourJson: (m['contourJson'] ?? m['contour'])?.toString(),
+      targetNotesJson: m['targetNotesJson']?.toString(),
+      segmentsJson: m['segmentsJson']?.toString(),
       notes: parseNotes(m['notes']),
       pitchDifficulty: (m['pitchDifficulty'] ?? m['pitchDifficultyText'])?.toString(),
+      recorderStartSec: (m['recorderStartSec'] as num?)?.toDouble(),
+      minMidi: (m['minMidi'] as num?)?.toInt(),
+      maxMidi: (m['maxMidi'] as num?)?.toInt(),
+      referenceWavPath: m['referenceWavPath'] as String?,
+      referenceSampleRate: (m['referenceSampleRate'] as num?)?.toInt(),
+      referenceWavSha1: m['referenceWavSha1'] as String?,
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,
     );
 

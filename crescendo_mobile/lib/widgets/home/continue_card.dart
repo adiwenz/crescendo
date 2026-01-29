@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../design/app_colors.dart';
+import '../../screens/home/styles.dart';
 import '../abstract_banner_painter.dart';
 
 class ContinueCard extends StatelessWidget {
@@ -29,7 +29,7 @@ class ContinueCard extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(HomeScreenStyles.continueCardBorderRadius),
           child: Stack(
             children: [
               Positioned.fill(
@@ -40,48 +40,37 @@ class ContinueCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(HomeScreenStyles.continueCardBorderRadius),
+                  color: HomeScreenStyles.continueCardOverlay,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
+                      style: HomeScreenStyles.cardTitle,
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
+                      style: HomeScreenStyles.cardSubtitle,
                     ),
                     const Spacer(),
                     if (pillText != null)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.7),
+                          color: HomeScreenStyles.continueCardPillBg,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.play_circle_fill, size: 16, color: AppColors.accent),
+                            const Icon(Icons.play_circle_fill, size: 16, color: HomeScreenStyles.iconActive),
                             const SizedBox(height: 4, width: 6),
                             Text(
                               pillText!,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
+                              style: HomeScreenStyles.pillText,
                             ),
                           ],
                         ),
@@ -111,8 +100,8 @@ class _ProgressBar extends StatelessWidget {
       child: LinearProgressIndicator(
         value: value.clamp(0.0, 1.0),
         minHeight: 8,
-        backgroundColor: Colors.white.withOpacity(0.4),
-        valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+        backgroundColor: HomeScreenStyles.progressBarBackground,
+        valueColor: const AlwaysStoppedAnimation<Color>(HomeScreenStyles.progressBarFill),
       ),
     );
   }

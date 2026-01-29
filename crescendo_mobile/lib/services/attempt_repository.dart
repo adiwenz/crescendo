@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import '../data/progress_repository.dart';
 import '../models/exercise_attempt.dart';
+import '../models/exercise_take.dart';
+import '../models/exercise_score.dart';
 
 /// Thin wrapper over ProgressRepository to expose latest attempts.
 class AttemptRepository extends ChangeNotifier {
@@ -12,21 +14,30 @@ class AttemptRepository extends ChangeNotifier {
   List<ExerciseAttempt> _cache = const [];
   bool _loaded = false;
   int _revision = 0;
+  bool _isRefreshing = false;
 
   List<ExerciseAttempt> get cache => _cache;
   int get revision => _revision;
 
   Future<List<ExerciseAttempt>> refresh() async {
+    // Prevent concurrent refreshes
+    if (_isRefreshing) {
+      debugPrint('[AttemptRepository] Refresh already in progress, skipping');
+      return _cache;
+    }
+    _isRefreshing = true;
     try {
-      final attempts = await _repo.fetchAllAttempts();
+      final attempts = await _repo.fetchAttemptSummaries();
       _cache = attempts;
-      debugPrint('[AttemptRepository] refreshed: ${_cache.length} attempts (instance=${identityHashCode(this)})');
+      debugPrint('[AttemptRepository] refreshed: ${_cache.length} summaries');
+      _loaded = true;
+      _revision++;
+      notifyListeners();
     } catch (e, st) {
       debugPrint('[AttemptRepository] refresh failed: $e\n$st');
+    } finally {
+      _isRefreshing = false;
     }
-    _loaded = true;
-    _revision++;
-    notifyListeners();
     return _cache;
   }
 
@@ -55,6 +66,35 @@ class AttemptRepository extends ChangeNotifier {
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
-    await refresh();
+    if (_isRefreshing) {
+      // If a refresh is already in progress, wait for it to finish or just return
+      // Since it's a future, we can just return and the caller can await if needed,
+      // but simpler to just skip if already loading.
+      return;
+    }
+    try {
+      // Use summary fetch to avoid loading huge JSON blobs into memory
+      final attempts = await _repo.fetchAttemptSummaries();
+      _cache = attempts;
+      _loaded = true;
+      debugPrint('[AttemptRepository] ensureLoaded: ${_cache.length} summaries');
+    } catch (e, st) {
+      debugPrint('[AttemptRepository] ensureLoaded failed: $e\n$st');
+    }
+  }
+
+  /// Fetches a full attempt with all heavy JSON blobs from the database.
+  /// Used for detailed review screens.
+  Future<ExerciseAttempt?> getFullAttempt(String id) async {
+    return _repo.fetchAttempt(id);
+  }
+
+  Future<ExerciseTake?> loadLastTake(String exerciseId) async {
+    return _repo.fetchLastTake(exerciseId);
+  }
+  
+  /// Fetches the most recent score for an exercise without loading global history.
+  Future<ExerciseScore?> fetchLastScore(String exerciseId) async {
+    return _repo.fetchLastScore(exerciseId);
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../design/app_colors.dart';
 import '../../design/app_text.dart';
+import '../../screens/home/styles.dart';
 
 class HomeHeroHeader extends StatelessWidget {
   final String title;
@@ -58,28 +58,19 @@ class _WavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final base = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFF7FBFF), Color(0xFFFFFFFF)],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      ..shader = HomeScreenStyles.heroBaseGradient.createShader(
+          Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawRect(Offset.zero & size, base);
 
     final paint1 = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFECF4FF), Color(0xFFDDEBFF)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..shader = HomeScreenStyles.heroWave1Gradient.createShader(
+          Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
     final paint2 = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFFF5EA), Color(0xFFFFF1D6)],
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..shader = HomeScreenStyles.heroWave2Gradient.createShader(
+          Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
@@ -104,7 +95,7 @@ class _WavePainter extends CustomPainter {
     canvas.drawPath(path1, paint1);
     canvas.drawPath(path2, paint2);
 
-    final notePaint = Paint()..color = AppColors.accent.withOpacity(0.12);
+    final notePaint = Paint()..color = HomeScreenStyles.heroBokehColor;
     canvas.drawCircle(Offset(size.width * 0.8, size.height * 0.25), 10, notePaint);
     canvas.drawCircle(Offset(size.width * 0.7, size.height * 0.3), 6, notePaint);
   }

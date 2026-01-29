@@ -18,7 +18,7 @@ class PitchContourPainter extends CustomPainter {
   final Color coreColor;
   final bool debugLogMapping;
 
-  static final Set<int> _loggedContourPainters = <int>{};
+
 
   PitchContourPainter({
     required this.frames,
@@ -45,22 +45,17 @@ class PitchContourPainter extends CustomPainter {
     final leftTime = currentTime - (playheadX / pixelsPerSecond);
     final rightTime = currentTime + ((size.width - playheadX) / pixelsPerSecond);
 
-    double? firstMidi;
-    double? lastMidi;
-    if (debugLogMapping && kDebugMode && _loggedContourPainters.add(identityHashCode(this))) {
-      for (final f in frames) {
-        final midi = f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null);
-        if (midi == null) continue;
-        firstMidi ??= midi;
-        lastMidi = midi;
-      }
-      if (firstMidi != null && lastMidi != null) {
-        debugPrint(
-          'CONTOUR RANGE: firstMidi=${firstMidi!.toStringAsFixed(2)} '
-          'lastMidi=${lastMidi!.toStringAsFixed(2)}',
-        );
-      }
-    }
+    // // --- DIAGNOSTIC LOGGING ---
+    // if (kDebugMode) {
+    //   double minF = double.infinity;
+    //   double maxF = -double.infinity;
+    //   for (final f in frames) {
+    //     if (f.time < minF) minF = f.time;
+    //     if (f.time > maxF) maxF = f.time;
+    //   }
+    //   debugPrint('[Contour] instance=${identityHashCode(this)} frames=${frames.length} range=[${minF.toStringAsFixed(2)}..${maxF.toStringAsFixed(2)}] clock=${currentTime.toStringAsFixed(2)}');
+    // }
+    // // --------------------------
 
     final glowPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -79,46 +74,27 @@ class PitchContourPainter extends CustomPainter {
     final path = Path();
     bool hasStarted = false;
     double? lastTime;
-    var sampleIndex = 0;
+    int pointsAdded = 0;
+
     for (final f in frames) {
       if (f.time < leftTime) continue;
-      if (f.time > rightTime) break;
-      final hz = f.hz ?? 0.0;
-      if (hz <= 0) {
+      if (f.time > rightTime) continue; // Use continue instead of break to be robust to sorting
+
+      final sampleMidi = f.midi ?? (f.hz != null && f.hz! > 0 ? PitchMath.hzToMidi(f.hz!) : null);
+      if (sampleMidi == null || !sampleMidi.isFinite || sampleMidi <= 0) {
         hasStarted = false;
         lastTime = null;
         continue;
       }
-      if ((f.voicedProb ?? 1.0) < confidenceThreshold) {
-        hasStarted = false;
-        lastTime = null;
-        continue;
-      }
-      if ((f.rms ?? 1.0) < rmsThreshold) {
-        hasStarted = false;
-        lastTime = null;
-        continue;
-      }
-      if (lastTime != null && (f.time - lastTime!) > maxGapSec) {
-        hasStarted = false;
-      }
-      final midi = f.midi ?? PitchMath.hzToMidi(hz);
-      if (debugLogMapping && kDebugMode) {
-        assert(midi > 0 && midi < 127);
-      }
+
       final x = playheadX + (f.time - currentTime) * pixelsPerSecond;
       final y = PitchMath.midiToY(
-        midi: midi,
+        midi: sampleMidi,
         height: size.height,
         midiMin: midiMin,
         midiMax: midiMax,
       );
-      if (debugLogMapping && kDebugMode && sampleIndex % 20 == 0) {
-        debugPrint(
-          'CONTOUR Y: timeMs=${(f.time * 1000).round()} '
-          'midi=${midi.toStringAsFixed(2)} y=${y.toStringAsFixed(2)}',
-        );
-      }
+
       if (!hasStarted) {
         path.moveTo(x, y);
         hasStarted = true;
@@ -126,10 +102,13 @@ class PitchContourPainter extends CustomPainter {
         path.lineTo(x, y);
       }
       lastTime = f.time;
-      sampleIndex += 1;
+      pointsAdded++;
     }
-    canvas.drawPath(path, glowPaint);
-    canvas.drawPath(path, corePaint);
+
+    if (pointsAdded > 0) {
+      canvas.drawPath(path, glowPaint);
+      canvas.drawPath(path, corePaint);
+    }
   }
 
   @override

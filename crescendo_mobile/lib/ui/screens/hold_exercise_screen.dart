@@ -14,6 +14,7 @@ import '../../models/hold_exercise_result.dart';
 import '../../models/metrics.dart';
 import '../../models/pitch_frame.dart';
 import '../../models/take.dart';
+import '../../utils/audio_constants.dart';
 import '../../services/hold_exercise_controller.dart';
 import '../../services/hold_exercise_repository.dart';
 import '../../services/loudness_meter.dart';
@@ -39,7 +40,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
   final _appState = AppState();
   final _player = AudioPlayer();
   final PitchDetector _pitchDetector =
-      PitchDetector(audioSampleRate: 44100, bufferSize: 2048);
+      PitchDetector(audioSampleRate: AudioConstants.audioSampleRate.toDouble(), bufferSize: 2048);
 
   double _targetHz = 440 / math.pow(2, 9 / 12); // default A3
   HoldExerciseState _state = const HoldExerciseState(
@@ -117,16 +118,16 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
     await _playTargetTone();
     _pcmSub?.cancel();
     final stream = await _recorder.startStream(
-      const RecordConfig(
+      RecordConfig(
         encoder: AudioEncoder.pcm16bits,
-        sampleRate: 44100,
+        sampleRate: AudioConstants.audioSampleRate,
         numChannels: 1,
       ),
     );
     _pcmSub = stream.listen((data) async {
       final buf = _pcm16BytesToDoubles(data);
       _samples.addAll(buf);
-      final dt = buf.isEmpty ? 0.0 : buf.length / 44100;
+      final dt = buf.isEmpty ? 0.0 : buf.length / AudioConstants.audioSampleRate;
       _timeCursor += dt;
       double? hz;
       try {
@@ -195,7 +196,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
         '${dir.path}/hold_${DateTime.now().millisecondsSinceEpoch}.wav';
     final intSamples =
         _samples.map((s) => (s.clamp(-1.0, 1.0) * 32767).round()).toList();
-    await _writeWav(audioPath, intSamples, 44100);
+    await _writeWav(audioPath, intSamples, AudioConstants.audioSampleRate);
 
     final take = Take(
       name: 'Hold ${_hzLabel(_targetHz)} ${DateTime.now().toIso8601String()}',
@@ -221,7 +222,7 @@ class _HoldExerciseScreenState extends State<HoldExerciseScreen> {
   }
 
   Future<void> _playTargetTone() async {
-    final sr = 44100;
+    final sr = AudioConstants.audioSampleRate;
     final dur = 1.0;
     final samples = <int>[];
     for (var i = 0; i < sr * dur; i++) {

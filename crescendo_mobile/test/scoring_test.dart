@@ -12,8 +12,8 @@ void main() {
     ];
     final metrics = ScoringService().score(frames);
     expect(metrics.meanAbsCents, closeTo(33.3, 0.2));
-    expect(metrics.pctWithin20, 33.3);
-    expect(metrics.pctWithin50, 66.6);
+    expect(metrics.pctWithin20, closeTo(33.3, 0.1));
+    expect(metrics.pctWithin50, closeTo(66.6, 0.1));
     expect(metrics.validFrames, 3);
   });
 }

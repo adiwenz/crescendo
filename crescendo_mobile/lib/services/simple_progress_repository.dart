@@ -1,8 +1,9 @@
 import 'package:collection/collection.dart';
 
-import '../data/seed_library.dart';
-import '../models/exercise.dart';
 import '../models/exercise_attempt.dart';
+import '../models/exercise_category.dart';
+import '../models/vocal_exercise.dart';
+import '../services/exercise_repository.dart';
 import 'attempt_repository.dart';
 
 class ProgressSummary {
@@ -60,9 +61,9 @@ class SimpleProgressRepository {
   Future<ProgressSummary> buildSummary() async {
     try {
       await AttemptRepository.instance.ensureLoaded();
-      final attempts = AttemptRepository.instance.cache.isEmpty
-          ? await AttemptRepository.instance.refresh()
-          : AttemptRepository.instance.cache;
+      // After ensureLoaded(), the cache is already populated (even if empty)
+      // No need to call refresh() again - that would trigger listeners and cause loops
+      final attempts = AttemptRepository.instance.cache;
       return _buildSummaryFrom(attempts);
     } catch (_) {
       // As a fallback, return empty summary.
@@ -84,12 +85,11 @@ class SimpleProgressRepository {
   ProgressSummary _buildSummaryFrom(List<ExerciseAttempt> attempts) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final categories = seedLibraryCategories();
-    final allExercises = <String, Exercise>{};
-    for (final c in categories) {
-      for (final ex in seedExercisesFor(c.id)) {
-        allExercises[ex.id] = ex;
-      }
+    final repo = ExerciseRepository();
+    final categories = repo.getCategories();
+    final allExercises = <String, VocalExercise>{};
+    for (final ex in repo.getExercises()) {
+      allExercises[ex.id] = ex;
     }
 
     if (attempts.isEmpty) {
@@ -122,10 +122,17 @@ class SimpleProgressRepository {
         })
         .map((a) {
           final ex = allExercises[a.exerciseId];
-          final cat = ex == null ? null : categories.firstWhere((c) => c.id == ex.categoryId, orElse: () => categories.first);
+          ExerciseCategory? cat;
+          if (ex != null && categories.isNotEmpty) {
+            try {
+              cat = categories.firstWhere((c) => c.id == ex.categoryId);
+            } catch (_) {
+              cat = categories.first;
+            }
+          }
           return Activity(
             exerciseId: ex?.id ?? a.exerciseId,
-            exerciseTitle: ex?.title ?? 'Unknown exercise',
+            exerciseTitle: ex?.name ?? 'Unknown exercise',
             categoryId: cat?.id ?? (ex?.categoryId ?? 'unknown'),
             categoryTitle: cat?.title ?? 'Unknown',
             date: a.completedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
@@ -149,7 +156,7 @@ class SimpleProgressRepository {
     final trendScores = recent.take(7).map((a) => (a.score ?? 0).toDouble()).toList().reversed.toList();
 
     final List<CategoryProgressSummary> categorySummaries = categories.map((c) {
-      final exes = seedExercisesFor(c.id);
+      final exes = repo.getExercisesForCategory(c.id);
       final completedCount =
           exes.where((e) => latestByExercise.containsKey(e.id)).length;
       return CategoryProgressSummary(
@@ -171,13 +178,17 @@ class SimpleProgressRepository {
   }
 
   List<CategoryProgressSummary> _emptyCategories() {
-    return seedLibraryCategories()
-        .map((c) => CategoryProgressSummary(
-              categoryId: c.id,
-              title: c.title,
-              completedCount: 0,
-              totalCount: seedExercisesFor(c.id).length,
-            ))
+    final repo = ExerciseRepository();
+    return repo.getCategories()
+        .map((c) {
+          final exes = repo.getExercisesForCategory(c.id);
+          return CategoryProgressSummary(
+            categoryId: c.id,
+            title: c.title,
+            completedCount: 0,
+            totalCount: exes.length,
+          );
+        })
         .toList();
   }
 }

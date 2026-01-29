@@ -62,15 +62,16 @@ class AbstractBannerPainter extends CustomPainter {
   }
 
   Color _palette(int id) {
+    // Purple and blue gradient palette - variations of the theme colors
     const colors = [
-      Color(0xFF4C6FFF),
-      Color(0xFFFF8C42),
-      Color(0xFF2CB67D),
-      Color(0xFF9C6BFF),
-      Color(0xFFFF6F91),
-      Color(0xFF00B7C2),
-      Color(0xFF556CD6),
-      Color(0xFF3BC8B5),
+      Color(0xFF8B5CF6), // Saturated purple (primary)
+      Color(0xFF7C3AED), // Deeper purple
+      Color(0xFF60A5FA), // Light blue (secondary)
+      Color(0xFF3B82F6), // Medium blue
+      Color(0xFFA78BFA), // Lighter purple
+      Color(0xFF818CF8), // Periwinkle
+      Color(0xFF6366F1), // Indigo-purple
+      Color(0xFF4F46E5), // Deep indigo
     ];
     return colors[id % colors.length];
   }

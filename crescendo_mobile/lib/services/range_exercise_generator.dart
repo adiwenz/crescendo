@@ -28,7 +28,7 @@ class ExerciseSegment {
 class RangeExerciseGenerator {
   static const int safeMinMidi = 36;
   static const int safeMaxMidi = 84;
-  static const bool enableRangeGeneration = false;
+  static const bool enableRangeGeneration = true;
 
   List<ExerciseSegment> buildTransposedSegments({
     required List<int> patternOffsets,
@@ -40,13 +40,26 @@ class RangeExerciseGenerator {
     if (patternOffsets.isEmpty) return const [];
     final patternMin = patternOffsets.reduce(math.min);
     final patternMax = patternOffsets.reduce(math.max);
-    final firstRootMidi = userLowestMidi - patternMin;
+    // Start the root note (starting note) at userLowestMidi
+    // The root note corresponds to offset 0 in patternOffsets
+    // If the pattern has notes below the root (patternMin < 0), adjust so the lowest note is at userLowestMidi
+    // Otherwise, the root starts at userLowestMidi
+    final firstRootMidi = patternMin < 0 ? userLowestMidi - patternMin : userLowestMidi;
     final segments = <ExerciseSegment>[];
     var t = 0;
     while (true) {
       final segmentLow = firstRootMidi + patternMin + t;
       final segmentHigh = firstRootMidi + patternMax + t;
+      // Ensure the lowest note is at least userLowestMidi (starting note requirement)
+      if (segmentLow < userLowestMidi) {
+        // Skip this iteration if it would go below the starting note
+        t += stepSemitones;
+        if (stepSemitones <= 0) break;
+        continue;
+      }
+      // Stop if the highest note would exceed userHighestMidi
       if (!allowOverhang && segmentHigh > userHighestMidi) break;
+      // Skip if outside safe MIDI range
       if (segmentLow < safeMinMidi || segmentHigh > safeMaxMidi) {
         if (!allowOverhang) break;
         t += stepSemitones;
@@ -60,6 +73,7 @@ class RangeExerciseGenerator {
         notesMidi: notes,
         range: SegmentRange(lowMidi: segmentLow, highMidi: segmentHigh),
       ));
+      // Stop when we've reached or exceeded the highest note
       if (segmentHigh >= userHighestMidi) break;
       t += stepSemitones;
       if (stepSemitones <= 0) break;

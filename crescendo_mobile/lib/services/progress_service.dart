@@ -29,19 +29,36 @@ class ProgressService {
     _controller.add(_buildSnapshot(_cache));
   }
 
-  Future<void> saveAttempt(ExerciseAttempt attempt) async {
-    debugPrint('[Complete] saving attempt exerciseId=${attempt.exerciseId}');
-    await _repo.saveAttempt(attempt);
-    final count = await _repo.countAttemptsForExercise(attempt.exerciseId);
-    debugPrint('[Progress] attempts for ${attempt.exerciseId}: $count');
-    await AttemptRepository.instance.refresh();
-    // Mirror into the simpler library store so the rest of the app (Home/Explore/Progress)
-    // can reflect completions immediately.
+  Future<void> persistAttempt({
+    required ExerciseAttempt attempt,
+    int? level,
+    int? score,
+  }) async {
+    // 1. Persist to DB (Transaction)
+    await _repo.persistAttempt(attempt: attempt, level: level, score: score);
+    
+    // 2. Update simple library store (for tick marks etc)
     libraryStore.markCompleted(
       attempt.exerciseId,
-      score: attempt.overallScore.round(),
+      score: score ?? attempt.overallScore.round(),
     );
-    await refresh();
+
+    // 3. Force refresh AttemptRepository cache (for Progress screen)
+    // This ensures UI rebuilt immediately with new data
+    await AttemptRepository.instance.refresh();
+  }
+
+  // Deprecated methods
+  Future<void> saveCompleteAttempt({
+    required ExerciseAttempt attempt,
+    required int level,
+    required int score,
+  }) async {
+    return persistAttempt(attempt: attempt, level: level, score: score);
+  }
+
+  Future<void> saveAttempt(ExerciseAttempt attempt) async {
+    return persistAttempt(attempt: attempt);
   }
 
   ProgressSnapshot<ExerciseAttempt> snapshot() => _buildSnapshot(_cache);
@@ -82,6 +99,14 @@ class ProgressService {
     String? pitchDifficulty,
     String? recordingPath,
     String? contourJson,
+    String? targetNotesJson,
+    String? segmentsJson,
+    double? recorderStartSec,
+    int? minMidi,
+    int? maxMidi,
+    String? referenceWavPath,
+    int? referenceSampleRate,
+    String? referenceWavSha1,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -95,8 +120,16 @@ class ProgressService {
       subScores: subScores ?? const {},
       recordingPath: recordingPath,
       contourJson: contourJson,
+      targetNotesJson: targetNotesJson,
+      segmentsJson: segmentsJson,
       notes: notes,
       pitchDifficulty: pitchDifficulty,
+      recorderStartSec: recorderStartSec,
+      minMidi: minMidi,
+      maxMidi: maxMidi,
+      referenceWavPath: referenceWavPath,
+      referenceSampleRate: referenceSampleRate,
+      referenceWavSha1: referenceWavSha1,
     );
   }
 }

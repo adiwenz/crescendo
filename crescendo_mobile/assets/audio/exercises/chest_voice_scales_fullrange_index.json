@@ -1,0 +1,280 @@
+{
+  "exerciseId": "chest_voice_scales",
+  "leadInSec": 2.0,
+  "range": {
+    "minMidi": 36,
+    "maxMidi": 96
+  },
+  "steps": [
+    {
+      "rootMidi": 36,
+      "startSec": 2.0,
+      "endSec": 6.5
+    },
+    {
+      "rootMidi": 37,
+      "startSec": 7.25,
+      "endSec": 11.75
+    },
+    {
+      "rootMidi": 38,
+      "startSec": 12.5,
+      "endSec": 17.0
+    },
+    {
+      "rootMidi": 39,
+      "startSec": 17.75,
+      "endSec": 22.25
+    },
+    {
+      "rootMidi": 40,
+      "startSec": 23.0,
+      "endSec": 27.5
+    },
+    {
+      "rootMidi": 41,
+      "startSec": 28.25,
+      "endSec": 32.75
+    },
+    {
+      "rootMidi": 42,
+      "startSec": 33.5,
+      "endSec": 38.0
+    },
+    {
+      "rootMidi": 43,
+      "startSec": 38.75,
+      "endSec": 43.25
+    },
+    {
+      "rootMidi": 44,
+      "startSec": 44.0,
+      "endSec": 48.5
+    },
+    {
+      "rootMidi": 45,
+      "startSec": 49.25,
+      "endSec": 53.75
+    },
+    {
+      "rootMidi": 46,
+      "startSec": 54.5,
+      "endSec": 59.0
+    },
+    {
+      "rootMidi": 47,
+      "startSec": 59.75,
+      "endSec": 64.25
+    },
+    {
+      "rootMidi": 48,
+      "startSec": 65.0,
+      "endSec": 69.5
+    },
+    {
+      "rootMidi": 49,
+      "startSec": 70.25,
+      "endSec": 74.75
+    },
+    {
+      "rootMidi": 50,
+      "startSec": 75.5,
+      "endSec": 80.0
+    },
+    {
+      "rootMidi": 51,
+      "startSec": 80.75,
+      "endSec": 85.25
+    },
+    {
+      "rootMidi": 52,
+      "startSec": 86.0,
+      "endSec": 90.5
+    },
+    {
+      "rootMidi": 53,
+      "startSec": 91.25,
+      "endSec": 95.75
+    },
+    {
+      "rootMidi": 54,
+      "startSec": 96.5,
+      "endSec": 101.0
+    },
+    {
+      "rootMidi": 55,
+      "startSec": 101.75,
+      "endSec": 106.25
+    },
+    {
+      "rootMidi": 56,
+      "startSec": 107.0,
+      "endSec": 111.5
+    },
+    {
+      "rootMidi": 57,
+      "startSec": 112.25,
+      "endSec": 116.75
+    },
+    {
+      "rootMidi": 58,
+      "startSec": 117.5,
+      "endSec": 122.0
+    },
+    {
+      "rootMidi": 59,
+      "startSec": 122.75,
+      "endSec": 127.25
+    },
+    {
+      "rootMidi": 60,
+      "startSec": 128.0,
+      "endSec": 132.5
+    },
+    {
+      "rootMidi": 61,
+      "startSec": 133.25,
+      "endSec": 137.75
+    },
+    {
+      "rootMidi": 62,
+      "startSec": 138.5,
+      "endSec": 143.0
+    },
+    {
+      "rootMidi": 63,
+      "startSec": 143.75,
+      "endSec": 148.25
+    },
+    {
+      "rootMidi": 64,
+      "startSec": 149.0,
+      "endSec": 153.5
+    },
+    {
+      "rootMidi": 65,
+      "startSec": 154.25,
+      "endSec": 158.75
+    },
+    {
+      "rootMidi": 66,
+      "startSec": 159.5,
+      "endSec": 164.0
+    },
+    {
+      "rootMidi": 67,
+      "startSec": 164.75,
+      "endSec": 169.25
+    },
+    {
+      "rootMidi": 68,
+      "startSec": 170.0,
+      "endSec": 174.5
+    },
+    {
+      "rootMidi": 69,
+      "startSec": 175.25,
+      "endSec": 179.75
+    },
+    {
+      "rootMidi": 70,
+      "startSec": 180.5,
+      "endSec": 185.0
+    },
+    {
+      "rootMidi": 71,
+      "startSec": 185.75,
+      "endSec": 190.25
+    },
+    {
+      "rootMidi": 72,
+      "startSec": 191.0,
+      "endSec": 195.5
+    },
+    {
+      "rootMidi": 73,
+      "startSec": 196.25,
+      "endSec": 200.75
+    },
+    {
+      "rootMidi": 74,
+      "startSec": 201.5,
+      "endSec": 206.0
+    },
+    {
+      "rootMidi": 75,
+      "startSec": 206.75,
+      "endSec": 211.25
+    },
+    {
+      "rootMidi": 76,
+      "startSec": 212.0,
+      "endSec": 216.5
+    },
+    {
+      "rootMidi": 77,
+      "startSec": 217.25,
+      "endSec": 221.75
+    },
+    {
+      "rootMidi": 78,
+      "startSec": 222.5,
+      "endSec": 227.0
+    },
+    {
+      "rootMidi": 79,
+      "startSec": 227.75,
+      "endSec": 232.25
+    },
+    {
+      "rootMidi": 80,
+      "startSec": 233.0,
+      "endSec": 237.5
+    },
+    {
+      "rootMidi": 81,
+      "startSec": 238.25,
+      "endSec": 242.75
+    },
+    {
+      "rootMidi": 82,
+      "startSec": 243.5,
+      "endSec": 248.0
+    },
+    {
+      "rootMidi": 83,
+      "startSec": 248.75,
+      "endSec": 253.25
+    },
+    {
+      "rootMidi": 84,
+      "startSec": 254.0,
+      "endSec": 258.5
+    },
+    {
+      "rootMidi": 85,
+      "startSec": 259.25,
+      "endSec": 263.75
+    },
+    {
+      "rootMidi": 86,
+      "startSec": 264.5,
+      "endSec": 269.0
+    },
+    {
+      "rootMidi": 87,
+      "startSec": 269.75,
+      "endSec": 274.25
+    },
+    {
+      "rootMidi": 88,
+      "startSec": 275.0,
+      "endSec": 279.5
+    },
+    {
+      "rootMidi": 89,
+      "startSec": 280.25,
+      "endSec": 284.75
+    }
+  ]
+}
