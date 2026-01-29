@@ -420,13 +420,24 @@ class PitchHighwayPainter extends CustomPainter {
         _drawPitchTrail(canvas, size, currentTime, playheadX);
       }
 
-      if (smoothedMidi != null) {
+      // Derive MIDI value from tail points if smoothedMidi is null but we have tail data
+      double? ballMidi = smoothedMidi;
+      if (ballMidi == null && tailPoints != null && tailPoints!.isNotEmpty) {
+        // Convert the last tail point's Y position back to MIDI
+        // Inverse of midiToY: y = height - ratio * height
+        // So: ratio = (height - y) / height, midi = ratio * (midiMax - midiMin) + midiMin
+        final lastY = tailPoints!.last.yPx;
+        final ratio = (size.height - lastY) / size.height;
+        ballMidi = ratio * (midiMax - midiMin) + midiMin;
+      }
+
+      if (ballMidi != null) {
         assert(() {
           final tailList = tailPoints;
           if (tailList != null && tailList.isNotEmpty) {
             final tailY = tailList.last.yPx;
             final ballY = PitchMath.midiToY(
-              midi: smoothedMidi,
+              midi: ballMidi!,
               height: size.height,
               midiMin: midiMin,
               midiMax: midiMax,
@@ -444,7 +455,7 @@ class PitchHighwayPainter extends CustomPainter {
                 clamp: false,
               );
               final ballY = PitchMath.midiToY(
-                midi: smoothedMidi,
+                midi: ballMidi!,
                 height: size.height,
                 midiMin: midiMin,
                 midiMax: midiMax,
@@ -456,28 +467,29 @@ class PitchHighwayPainter extends CustomPainter {
           return true;
         }());
         final y = PitchMath.midiToY(
-          midi: smoothedMidi,
+          midi: ballMidi!,
           height: size.height,
           midiMin: midiMin,
           midiMax: midiMax,
           clamp: false, // Allow ball to go off-grid
         );
         final head = Offset(playheadX, y);
+        // Pitch ball - same size as tail, but more solid opacity
         canvas.drawCircle(
           head,
-          16,
+          18,
           Paint()
-            ..color = colors.glow
+            ..color = colors.goldAccent.withOpacity(0.9)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
         );
         canvas.drawCircle(
           head,
-          10,
+          14,
           Paint()
-            ..color = colors.textPrimary.withOpacity(0.5)
+            ..color = colors.goldAccent.withOpacity(0.95)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
         );
-        canvas.drawCircle(head, 7, Paint()..color = colors.textPrimary);
+        canvas.drawCircle(head, 10, Paint()..color = colors.goldAccent);
       }
     }
 
@@ -613,14 +625,14 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 16.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(0.2)
+        ..color = colors.goldAccent.withOpacity(0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 12.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(0.35);
+        ..color = colors.goldAccent.withOpacity(0.75);
       final path = Path()
         ..moveTo(startX, y)
         ..lineTo(endX, y);
@@ -649,14 +661,14 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 18.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(alpha * 0.5)
+        ..color = colors.goldAccent.withOpacity(alpha * 1.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(alpha);
+        ..color = colors.goldAccent.withOpacity(alpha * 2.5);
       canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), glowPaint);
       canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), corePaint);
     }
@@ -693,14 +705,14 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 18.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(alpha * 0.5)
+        ..color = colors.goldAccent.withOpacity(alpha * 1.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.textPrimary.withOpacity(alpha);
+        ..color = colors.goldAccent.withOpacity(alpha * 2.5);
       canvas.drawLine(
           Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
       canvas.drawLine(

@@ -4,7 +4,9 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
   - Flutter (1.0.0)
-  - flutter_headset_detector (3.1.0):
+  - flutter_pitch_detection (0.0.1):
+    - Flutter
+  - integration_test (0.0.1):
     - Flutter
   - package_info_plus (0.4.5):
     - Flutter
@@ -28,7 +30,8 @@ DEPENDENCIES:
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
   - Flutter (from `Flutter`)
-  - flutter_headset_detector (from `.symlinks/plugins/flutter_headset_detector/ios`)
+  - flutter_pitch_detection (from `.symlinks/plugins/flutter_pitch_detection/ios`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
@@ -44,8 +47,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/audioplayers_darwin/ios"
   Flutter:
     :path: Flutter
-  flutter_headset_detector:
-    :path: ".symlinks/plugins/flutter_headset_detector/ios"
+  flutter_pitch_detection:
+    :path: ".symlinks/plugins/flutter_pitch_detection/ios"
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
   path_provider_foundation:
@@ -65,7 +70,8 @@ SPEC CHECKSUMS:
   audio_session: 19e9480dbdd4e5f6c4543826b2e8b0e4ab6145fe
   audioplayers_darwin: 877d9a4d06331c5c374595e46e16453ac7eafa40
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_headset_detector: e8a26beb06727626cd1209ead4c37148ce0dc29c
+  flutter_pitch_detection: 547c0754a167559cae38b6734700194c682e1f21
+  integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46
   permission_handler_apple: 9878588469a2b0d0fc1e048d9f43605f92e6cec2
