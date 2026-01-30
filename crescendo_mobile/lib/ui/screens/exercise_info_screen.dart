@@ -12,6 +12,7 @@ import '../../services/exercise_repository.dart';
 import '../../services/preview_audio_service.dart';
 import '../../services/exercise_metadata.dart';
 import '../../services/exercise_level_progress_repository.dart';
+import '../../widgets/home/home_category_banner_row.dart';
 import '../widgets/exercise_icon.dart';
 import 'exercise_player_screen.dart';
 import 'exercise_navigation.dart';
@@ -169,11 +170,10 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   @override
   Widget build(BuildContext context) {
     final exercise = _repo.getExercise(widget.exerciseId);
-    final durationSeconds = exercise.durationSeconds;
-    final timeChip = durationSeconds != null
-        ? (durationSeconds < 60
-            ? '${durationSeconds}s'
-            : '${exercise.estimatedMinutes} min')
+    // Use estimated duration (pattern × range for pitch-highway); show as approximate, rounded to nearest half minute
+    final estimatedSec = exercise.estimatedDurationSec;
+    final timeChip = estimatedSec > 0
+        ? HomeCategoryBannerRow.formatDurationApproximate(estimatedSec)
         : (exercise.reps != null ? '${exercise.reps} reps' : '—');
     final typeLabel = _typeLabel(exercise.type);
     final isPitchHighway = exercise.type == ExerciseType.pitchHighway;

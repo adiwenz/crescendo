@@ -27,6 +27,18 @@ class HomeCategoryBannerRow extends StatelessWidget {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  /// Duration for display, rounded to nearest half minute: "30 sec", "1 min", "1.5 min", "2 min", etc.
+  static String formatDurationApproximate(int sec) {
+    const halfMinSec = 30;
+    final halfMins = (sec / halfMinSec).round().clamp(1, 199);
+    final roundedSec = halfMins * halfMinSec;
+    if (roundedSec < 60) return '$roundedSec sec';
+    final wholeMins = roundedSec ~/ 60;
+    final remainder = roundedSec % 60;
+    if (remainder == 0) return '$wholeMins min';
+    return '$wholeMins.5 min';
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -81,7 +93,7 @@ class HomeCategoryBannerRow extends StatelessWidget {
                         if (durationSec != null && durationSec! > 0) ...[
                           const SizedBox(width: 8),
                           Text(
-                            formatDuration(durationSec!),
+                            formatDurationApproximate(durationSec!),
                             style: HomeScreenStyles.cardSubtitle.copyWith(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
