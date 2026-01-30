@@ -28,6 +28,7 @@ class RecordingStopResult {
   final Future<String> wavPathFuture;
   final String wavPath;
   final List<PitchFrame> frames;
+  final int pcmBytesWritten; // Authoritative byte count from worker
 
   RecordingStopResult({
     required this.pcmPath,
@@ -35,6 +36,7 @@ class RecordingStopResult {
     required this.wavPathFuture,
     required this.wavPath,
     required this.frames,
+    required this.pcmBytesWritten,
   });
 }
 
@@ -53,6 +55,7 @@ class RecordingService {
   bool _isRecording = false;
   RecordingMode _currentMode = RecordingMode.take;
   DateTime? _startTime;
+  Timer? _recordingStateTimer; // [REC] Timer for periodic state logging
 
 
   // Isolate-based worker
@@ -61,6 +64,7 @@ class RecordingService {
   ReceivePort? _workerReceivePort;
   Completer<void>? _workerReady;
   Completer<void>? _stopCompleter;
+  int _workerBytesWritten = 0; // Authoritative byte count from worker
   String? _tempPcmPath;
   String? _activeOwner; // Safety guard to ensure only the visible owner runs
 
@@ -114,11 +118,19 @@ class RecordingService {
     _currentMode = mode;
     _frames.clear();
 
+    // [REC] Log recording configuration
+    if (kDebugMode) {
+      debugPrint('[REC] Starting recording: owner=$_owner, mode=${mode.name}');
+      debugPrint('[REC] Config: sampleRate=$sampleRate, channels=1, encoder=pcm16bits');
+    }
     
     // Prepare temp PCM path if in take mode
     if (_currentMode == RecordingMode.take) {
       final dir = await getTemporaryDirectory();
       _tempPcmPath = p.join(dir.path, 'raw_recording_${DateTime.now().millisecondsSinceEpoch}.pcm');
+      if (kDebugMode) {
+        debugPrint('[REC] Output path: $_tempPcmPath');
+      }
     } else {
       _tempPcmPath = null;
     }
@@ -134,6 +146,21 @@ class RecordingService {
     await _pcmController?.close();
     _pcmController = StreamController<List<double>>.broadcast();
     _isRecording = true;
+
+    // [REC] Start periodic state logging timer
+    if (kDebugMode) {
+      _recordingStateTimer?.cancel();
+      _recordingStateTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+        if (!_isRecording) {
+          timer.cancel();
+          return;
+        }
+        final elapsed = _startTime != null 
+            ? DateTime.now().difference(_startTime!).inMilliseconds 
+            : 0;
+        debugPrint('[REC] State: isRecording=$_isRecording, elapsed=${elapsed}ms, frames=${_frames.length}');
+      });
+    }
 
     final stream = await _recorder.startStream(
       RecordConfig(
@@ -180,8 +207,9 @@ class RecordingService {
         if (_frames.isEmpty) debugPrint('[RecordingService] FIRST PITCH FRAME from worker: hz=${message.hz}');
         _frames.add(message);
         _liveController.add(message);
-      } else if (message == 'done') {
-        debugPrint('[RecordingService] Worker cleanup done');
+      } else if (message is Map && message['done'] == true) {
+        _workerBytesWritten = message['bytesWritten'] as int? ?? 0;
+        debugPrint('[RecordingService] Worker cleanup done, bytesWritten=$_workerBytesWritten');
         _stopCompleter?.complete();
       } else {
         debugPrint('[RecordingService] Unknown message from worker: $message');
@@ -203,6 +231,14 @@ class RecordingService {
     _isRecording = false; // Block further sends to worker immediately
     _activeOwner = null;
     final durationMs = _startTime != null ? DateTime.now().difference(_startTime!).inMilliseconds : 0;
+    
+    // [REC] Cancel state logging timer
+    _recordingStateTimer?.cancel();
+    _recordingStateTimer = null;
+    
+    if (kDebugMode) {
+      debugPrint('[REC] Stopping: elapsed=${durationMs}ms, frames=${_frames.length}');
+    }
     
     await _sub?.cancel();
     _sub = null;
@@ -231,6 +267,26 @@ class RecordingService {
       return null;
     }
 
+    // [REC] Check PCM file size
+    int pcmBytes = 0;
+    if (_tempPcmPath != null) {
+      final pcmFile = File(_tempPcmPath!);
+      if (await pcmFile.exists()) {
+        pcmBytes = await pcmFile.length();
+        if (kDebugMode) {
+          debugPrint('[REC] PCM file: path=$_tempPcmPath, bytes=$pcmBytes');
+          // Warn if suspiciously small (< 50KB suggests ~1s or less at 48kHz)
+          if (pcmBytes < 50000) {
+            debugPrint('[REC] WARNING: Suspiciously small PCM file: $pcmBytes bytes (expected ~96KB/sec at 48kHz)');
+          }
+        }
+      } else {
+        if (kDebugMode) {
+          debugPrint('[REC] WARNING: PCM file does not exist: $_tempPcmPath');
+        }
+      }
+    }
+
     final dir = await getApplicationDocumentsDirectory();
     final path = customPath ?? p.join(dir.path, 'take_${DateTime.now().millisecondsSinceEpoch}.wav');
     
@@ -244,6 +300,17 @@ class RecordingService {
       'sampleRate': sampleRate,
     }).then((_) {
         debugPrint('[RecordingService] WAV encoding complete: $path');
+        if (kDebugMode) {
+          // Log final WAV file size
+          final wavFile = File(path);
+          wavFile.exists().then((exists) {
+            if (exists) {
+              wavFile.length().then((bytes) {
+                debugPrint('[REC] WAV file complete: path=$path, bytes=$bytes');
+              });
+            }
+          });
+        }
         return path;
     });
 
@@ -253,6 +320,7 @@ class RecordingService {
       wavPathFuture: wavFuture,
       wavPath: path,
       frames: List<PitchFrame>.from(_frames),
+      pcmBytesWritten: _workerBytesWritten, // Use worker's authoritative count
     );
   }
 
@@ -294,6 +362,11 @@ class RecordingService {
 
   Future<void> dispose() async {
     debugPrint('[RecordingService] Disposing (owner: $_owner)...');
+    
+    // [REC] Cancel state logging timer
+    _recordingStateTimer?.cancel();
+    _recordingStateTimer = null;
+    
     if (_isRecording) {
       try {
         await stop();
@@ -351,6 +424,18 @@ class _RecordingWorker {
     double timeCursor = 0;
     int chunkCount = 0;
     final pitchBuffer = <double>[];
+    
+    // [PITCH] Debug counters for pitch detection
+    int totalFrames = 0;
+    int voicedFrames = 0;
+    int nullFrames = 0;
+    double? lastFreqHz;
+    double? lastMidi;
+    
+    // [REC] Worker health monitoring
+    int totalBytesWritten = 0;
+    DateTime lastChunkAt = DateTime.now();
+    Timer? healthTimer;
 
     await for (final message in receivePort) {
       final startTime = DateTime.now();
@@ -363,6 +448,13 @@ class _RecordingWorker {
         timeCursor = 0;
         pitchBuffer.clear();
         
+        // [PITCH] Reset counters and log configuration
+        totalFrames = 0;
+        voicedFrames = 0;
+        nullFrames = 0;
+        lastFreqHz = null;
+        lastMidi = null;
+        
         await pcmSink?.close();
         if (message.pcmPath != null) {
           final file = File(message.pcmPath!);
@@ -372,7 +464,31 @@ class _RecordingWorker {
           pcmSink = null;
         }
         debugPrint('[RecordingWorker] ($owner) Configured: rate=$sampleRate, buffer=$bufferSize, path=${message.pcmPath}');
+        if (kDebugMode) {
+          debugPrint('[PITCH] Configured: owner=$owner, sampleRate=$sampleRate, bufferSize=$bufferSize');
+        }
+        
+        // [REC] Start health monitoring timer
+        healthTimer?.cancel();
+        totalBytesWritten = 0;
+        lastChunkAt = DateTime.now();
+        
+        if (kDebugMode) {
+          healthTimer = Timer.periodic(Duration(seconds: 1), (_) {
+            final ageMs = DateTime.now().difference(lastChunkAt).inMilliseconds;
+            debugPrint('[REC] worker: chunks=$chunkCount, bytes=$totalBytesWritten, lastChunkAgeMs=$ageMs');
+            
+            // Detect stalls (no chunks for >1500ms)
+            if (ageMs > 1500) {
+              debugPrint('[REC] STALL detected: no chunks for ${ageMs}ms');
+            }
+          });
+        }
       } else if (message is Uint8List) {
+        // [REC] Update health counters
+        totalBytesWritten += message.length;
+        lastChunkAt = DateTime.now();
+        
         if (pitchBuffer.isEmpty) debugPrint('[RecordingWorker] ($owner) First PCM chunk received: ${message.length} bytes');
         // 1. Write to PCM file if enabled
         if (pcmSink != null) {
@@ -396,16 +512,39 @@ class _RecordingWorker {
           final window = pitchBuffer.sublist(pitchBuffer.length - bufferSize);
           try {
             final res = await detector.getPitchFromFloatBuffer(window);
+            totalFrames++;
+            
             if (res.pitched && res.pitch.isFinite && res.pitch > 0) {
               final hz = res.pitch;
               final midi = 69 + 12 * (math.log(hz / 440.0) / math.ln2);
+              voicedFrames++;
+              lastFreqHz = hz;
+              lastMidi = midi;
               mainSendPort.send(PitchFrame(time: timeCursor, hz: hz, midi: midi));
             } else {
               // Always send a non-pitched frame to keep the stream moving
+              nullFrames++;
+              lastFreqHz = null;
+              lastMidi = null;
               mainSendPort.send(PitchFrame(time: timeCursor, hz: null, midi: null));
+            }
+            
+            // [PITCH] Log every 20 frames
+            if (kDebugMode && totalFrames % 20 == 0) {
+              debugPrint('[PITCH] Frames: total=$totalFrames, voiced=$voicedFrames, null=$nullFrames, lastHz=${lastFreqHz?.toStringAsFixed(1)}, lastMidi=${lastMidi?.toStringAsFixed(1)}');
+              
+              // [PITCH] Warn if no voiced frames after 2 seconds
+              if (timeCursor > 2.0 && (totalFrames < 10 || voicedFrames == 0)) {
+                debugPrint('[PITCH] WARNING: no voiced frames after ${timeCursor.toStringAsFixed(1)}s (total=$totalFrames, voiced=$voicedFrames)');
+              }
             }
           } catch (e) {
             // Send empty frame on error
+            totalFrames++;
+            nullFrames++;
+            if (kDebugMode) {
+              debugPrint('[PITCH] ERROR detecting pitch: $e');
+            }
             mainSendPort.send(PitchFrame(time: timeCursor, hz: null, midi: null));
           }
         }
@@ -423,10 +562,21 @@ class _RecordingWorker {
         }
       } else if (message == 'stop') {
         debugPrint('[RecordingWorker] ($owner) Processing stop request...');
+        
+        // [REC] Cancel health timer
+        healthTimer?.cancel();
+        healthTimer = null;
+        
+        if (kDebugMode) {
+          debugPrint('[PITCH] Final stats: total=$totalFrames, voiced=$voicedFrames, null=$nullFrames');
+          debugPrint('[REC] Final worker stats: chunks=$chunkCount, bytes=$totalBytesWritten');
+        }
         await pcmSink?.flush();
         await pcmSink?.close();
         pcmSink = null;
-        mainSendPort.send('done');
+        
+        // Send byte count back to main isolate for validation
+        mainSendPort.send({'done': true, 'bytesWritten': totalBytesWritten});
       }
     }
   }

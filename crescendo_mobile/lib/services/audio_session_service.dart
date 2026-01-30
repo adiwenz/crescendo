@@ -13,11 +13,54 @@ class AudioSessionService {
   static const MethodChannel _channel = MethodChannel('com.adriannawenz.crescendo/audioSession');
   static StreamSubscription? _interruptionSub;
   static StreamSubscription? _routeChangeSub;
+  
+  // [FOCUS] State tracking for audio focus debugging
+  static String? _currentPhase;
+  static bool _recorderActive = false;
+  static bool _playbackActive = false;
+  static String? _currentOwner;
+  static int? _currentRunId;
 
   /// Initialize audio session
   static Future<void> init() async {
-    // Just get the session to initialize it
-    await _getSession();
+    // Get the session to initialize it
+    final session = await _getSession();
+    
+    // [FOCUS] Subscribe to audio focus events for debugging
+    if (kDebugMode) {
+      _interruptionSub?.cancel();
+      _interruptionSub = session.interruptionEventStream.listen((event) {
+        final began = event.begin;
+        final type = event.type;
+        debugPrint('[FOCUS] interruption ${began ? "began" : "ended"}: type=$type, '
+                   'phase=$_currentPhase, recActive=$_recorderActive, playActive=$_playbackActive, '
+                   'owner=$_currentOwner, runId=$_currentRunId, time=${DateTime.now().millisecondsSinceEpoch}');
+      });
+      
+      _routeChangeSub?.cancel();
+      _routeChangeSub = session.becomingNoisyEventStream.listen((_) {
+        debugPrint('[FOCUS] becomingNoisy event (Android audio focus loss): '
+                   'phase=$_currentPhase, recActive=$_recorderActive, playActive=$_playbackActive, '
+                   'owner=$_currentOwner, runId=$_currentRunId, time=${DateTime.now().millisecondsSinceEpoch}');
+      });
+      
+      debugPrint('[FOCUS] Audio focus event listeners initialized');
+    }
+  }
+  
+  /// Update current state for focus logging
+  static void updateFocusState({
+    String? phase,
+    bool? recorderActive,
+    bool? playbackActive,
+    String? owner,
+    int? runId,
+  }) {
+    if (phase != null) _currentPhase = phase;
+    if (recorderActive != null) _recorderActive = recorderActive;
+    if (playbackActive != null) _playbackActive = playbackActive;
+    if (owner != null) _currentOwner = owner;
+    if (runId != null) _currentRunId = runId;
   }
 
   /// Get or create audio session instance
@@ -72,36 +115,63 @@ class AudioSessionService {
     String tag = 'exercise',
     bool overrideToSpeaker = false,
   }) async {
-    if (!Platform.isIOS) return;
-    
-    final beforeState = await _getSessionState();
-    if (kDebugMode && beforeState != null) {
-      debugPrint('[AudioSessionService] [$tag] BEFORE applyExerciseSession: $beforeState');
-    }
-    
     try {
       final session = await _getSession();
-      await session.configure(
-        AudioSessionConfiguration(
-          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-          avAudioSessionCategoryOptions:
-              AVAudioSessionCategoryOptions.mixWithOthers |
-              AVAudioSessionCategoryOptions.allowBluetooth |
-              AVAudioSessionCategoryOptions.defaultToSpeaker,
-          avAudioSessionMode: AVAudioSessionMode.measurement,
-        ),
-      );
       
-      // Override output port if requested
-      if (overrideToSpeaker) {
-        await overrideOutputPort(useSpeaker: true, tag: tag);
-      }
-      
-      final afterState = await _getSessionState();
-      if (kDebugMode) {
-        debugPrint('[AudioSessionService] [$tag] Applied exercise session (playAndRecord)');
-        if (afterState != null) {
-          debugPrint('[AudioSessionService] [$tag] AFTER applyExerciseSession: $afterState');
+      if (Platform.isAndroid) {
+        // Android: Configure for duplex mode (simultaneous record + play)
+        // This prevents AUDIOFOCUS_LOSS when playback starts during recording
+        await session.configure(
+          AudioSessionConfiguration(
+            avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+            avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker,
+            avAudioSessionMode: AVAudioSessionMode.voiceChat,
+            avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+            avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+            androidAudioAttributes: const AndroidAudioAttributes(
+              contentType: AndroidAudioContentType.speech,
+              flags: AndroidAudioFlags.none,
+              usage: AndroidAudioUsage.voiceCommunication, // KEY: allows duplex
+            ),
+            androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck, // KEY: duckable, not exclusive
+            androidWillPauseWhenDucked: false, // KEY: don't pause recorder when ducked
+          ),
+        );
+        
+        await session.setActive(true);
+        
+        if (kDebugMode) {
+          debugPrint('[AudioSessionService] [$tag] Applied Android duplex session (voiceCommunication + gainTransientMayDuck)');
+        }
+      } else if (Platform.isIOS) {
+        // iOS: Existing configuration
+        final beforeState = await _getSessionState();
+        if (kDebugMode && beforeState != null) {
+          debugPrint('[AudioSessionService] [$tag] BEFORE applyExerciseSession: $beforeState');
+        }
+        
+        await session.configure(
+          AudioSessionConfiguration(
+            avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+            avAudioSessionCategoryOptions:
+                AVAudioSessionCategoryOptions.mixWithOthers |
+                AVAudioSessionCategoryOptions.allowBluetooth |
+                AVAudioSessionCategoryOptions.defaultToSpeaker,
+            avAudioSessionMode: AVAudioSessionMode.measurement,
+          ),
+        );
+        
+        // Override output port if requested
+        if (overrideToSpeaker) {
+          await overrideOutputPort(useSpeaker: true, tag: tag);
+        }
+        
+        final afterState = await _getSessionState();
+        if (kDebugMode) {
+          debugPrint('[AudioSessionService] [$tag] Applied exercise session (playAndRecord)');
+          if (afterState != null) {
+            debugPrint('[AudioSessionService] [$tag] AFTER applyExerciseSession: $afterState');
+          }
         }
       }
     } catch (e) {

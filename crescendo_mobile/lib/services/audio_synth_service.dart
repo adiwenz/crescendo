@@ -376,8 +376,11 @@ class AudioSynthService {
           },
         ),
         android: AudioContextAndroid(
-          contentType: AndroidContentType.music,
-          audioFocus: AndroidAudioFocus.gain,
+          isSpeakerphoneOn: true, // Output to speaker during recording
+          stayAwake: false,
+          contentType: AndroidContentType.speech, // Match AudioSession
+          usageType: AndroidUsageType.voiceCommunication, // KEY: match AudioSession usage
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck, // KEY: duckable, not exclusive
         ),
       ),
     );

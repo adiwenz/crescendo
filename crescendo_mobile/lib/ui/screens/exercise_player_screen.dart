@@ -60,6 +60,13 @@ import '../../models/pattern_spec.dart';
 /// 1024 samples (~23ms at 44.1kHz) is needed for reliable low-frequency pitch detection.
 const int _kBufferSize = 1024;
 
+/// [ISO] Audio isolation modes for debugging Android audio focus issues
+enum AudioIsolationMode { both, recordOnly, playOnly }
+// const AudioIsolationMode kAudioIsolationMode = AudioIsolationMode.both;
+const AudioIsolationMode kAudioIsolationMode = AudioIsolationMode.both;
+
+const bool kAudioDebug = kDebugMode; // Gate audio focus debug logging
+
 /// Single source of truth for exercise start state
 enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
 
@@ -1065,6 +1072,18 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     trace.mark('after reset setState');
     debugPrint('[Start] AFTER setState runId=$_runId phase=$_phase');
 
+    // [ISO] Log isolation mode for debugging
+    if (kAudioDebug) {
+      debugPrint('[ISO] Isolation mode: $kAudioIsolationMode');
+    }
+    
+    // [FOCUS] Update audio focus state for logging
+    AudioSessionService.updateFocusState(
+      phase: 'starting',
+      owner: 'exercise',
+      runId: _runId,
+    );
+
     // Start visuals immediately (no awaits) - idempotent, will only start once
     _ensureVisualsStarted(runId: _runId, startEpochMs: timelineStartMs);
     trace.mark('after ensureVisualsStarted');
@@ -1265,7 +1284,8 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         return;
       }
 
-      if (_useMic) {
+      // [ISO] Skip recorder in playOnly mode
+      if (_useMic && kAudioIsolationMode != AudioIsolationMode.playOnly) {
         // Recording service should already be initialized
         if (_recording == null) {
           trace.mark('creating RecordingService');
@@ -1303,6 +1323,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         _recordingStartHostTime = startMetrics?.currentHostTime;
         
         await _recording!.start(owner: 'exercise', mode: RecordingMode.take);
+        
+        // [FOCUS] Update recorder active state
+        AudioSessionService.updateFocusState(recorderActive: true);
         final afterRecorder = DateTime.now();
         dev.Timeline.finishSync();
         trace.mark('after recorder.start');
@@ -1416,6 +1439,26 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
       debugPrint('[Start] Using dynamic plan notes: ${plan.notes.length}');
 
+      // [ISO] Skip playback in recordOnly mode
+      if (kAudioIsolationMode == AudioIsolationMode.recordOnly) {
+        if (kAudioDebug) {
+          debugPrint('[ISO] Skipping playback in recordOnly mode');
+        }
+        // Still transition to running phase
+        if (mounted && runId == _runId) {
+          setState(() {
+            _phase = StartPhase.running;
+            _audioStarted = false; // No audio in recordOnly mode
+            _captureEnabled = true;
+          });
+          DebugLog.event(LogCat.lifecycle, 'phase_running', runId: _runId);
+          AudioSessionService.updateFocusState(phase: 'running');
+        }
+        trace.mark('recordOnly mode - skipped playback');
+        trace.end();
+        return;
+      }
+
       // Schedule Dynamic WAV Playback
       trace.mark('before playReferenceWav');
       _audioPlayCalledEpochMs = DateTime.now().millisecondsSinceEpoch;
@@ -1431,6 +1474,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
 
         // Start playing the synthesized WAV
         await _synth.playFile(plan.wavFilePath);
+        
+        // [FOCUS] Update playback active state
+        AudioSessionService.updateFocusState(playbackActive: true);
         
         final afterAudio = DateTime.now();
         _audioPlayingEpochMs = afterAudio.millisecondsSinceEpoch;
@@ -1554,8 +1600,25 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         maxMidi: _midiMax,
         referenceWavPath: _resolvedPlan?.wavFilePath,
         referenceSampleRate: _resolvedPlan?.sampleRate,
+        pcmBytesWritten: controllerResult.pcmBytesWritten, // Worker's authoritative count
         // referenceWavSha1: null, // Computed lazily or added to plan later if needed
       );
+
+      // [POSTREC] Log recording details for Android debugging
+      if (kDebugMode) {
+        debugPrint('[POSTREC] Recording complete: path=$wavPath, duration=${controllerResult.durationMs}ms');
+        // Check file size (best effort - file may not exist yet due to async encoding)
+        final wavFile = File(wavPath);
+        if (await wavFile.exists()) {
+          final bytes = await wavFile.length();
+          debugPrint('[POSTREC] WAV file: bytes=$bytes');
+          if (bytes < 50000 || controllerResult.durationMs < 3000) {
+            debugPrint('[POSTREC] WARNING: Suspiciously short recording (bytes=$bytes, duration=${controllerResult.durationMs}ms)');
+          }
+        } else {
+          debugPrint('[POSTREC] WAV file does not exist yet (async encoding in progress)');
+        }
+      }
 
       // Fire persistence - AWAITED
       await _persistAttempt(draft, subScores, wavPath);
@@ -1623,9 +1686,60 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     );
   }
 
-  void _navigateToReview(LastTakeDraft? draft) {
+  void _navigateToReview(LastTakeDraft? draft) async {
     if (!mounted) return;
     if (draft != null) {
+      // [VAL] Enhanced validation with PCM byte checking
+      final durationMs = draft.durationMs;
+      final minDurationMs = 3000; // Minimum 3 seconds
+      
+      // Calculate expected PCM bytes
+      final sampleRate = 48000; // From RecordingService
+      final channels = 1;
+      final bytesPerSample = 2; // PCM16
+      final elapsedSec = durationMs / 1000.0;
+      final expectedBytes = (elapsedSec * sampleRate * channels * bytesPerSample).toInt();
+      final minExpectedBytes = (expectedBytes * 0.5).toInt(); // Allow 50% tolerance
+      
+      // Use worker's authoritative byte count (not filesystem)
+      final actualBytes = draft.pcmBytesWritten;
+      
+      if (kAudioDebug) {
+        debugPrint('[VAL] Recording validation: duration=${durationMs}ms, '
+                   'expectedBytes=$expectedBytes, actualBytes=$actualBytes (source=workerBytes), '
+                   'capturedFrames=${_captured.length}');
+      }
+      
+      // Guard: Prevent navigation if recording is suspiciously short
+      final durationTooShort = durationMs < minDurationMs;
+      final bytesTooSmall = actualBytes < minExpectedBytes || actualBytes < 200000; // 200KB minimum
+      
+      if (durationTooShort || bytesTooSmall) {
+        if (kAudioDebug) {
+          debugPrint('[VAL] Recording validation FAILED: '
+                     'durationTooShort=$durationTooShort (${durationMs}ms < ${minDurationMs}ms), '
+                     'bytesTooSmall=$bytesTooSmall ($actualBytes < $minExpectedBytes or < 200KB)');
+        }
+        
+        // Show error to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording failed (mic stream stopped). Check permissions/audio focus and try again.'),
+            duration: Duration(seconds: 4),
+            backgroundColor: Colors.red,
+          ),
+        );
+        
+        // Pop back instead of navigating to review
+        Navigator.pop(context);
+        return;
+      }
+      
+      if (kAudioDebug) {
+        debugPrint('[VAL] Recording validation PASSED');
+        debugPrint('[NAV] Navigating to review screen');
+      }
+      
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -1636,6 +1750,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
         ),
       );
     } else {
+      if (kDebugMode) {
+        debugPrint('[NAV] No draft available, popping back');
+      }
       Navigator.pop(context);
     }
   }

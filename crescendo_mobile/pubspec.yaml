@@ -1,7 +1,7 @@
 name: crescendo_mobile
 description: Offline-first Crescendo warmup and pitch analysis app.
 publish_to: "none"
-version: 0.1.0
+version: 0.1.0+2
 
 environment:
   sdk: ">=3.2.0 <4.0.0"

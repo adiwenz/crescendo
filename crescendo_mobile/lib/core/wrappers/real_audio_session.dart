@@ -19,4 +19,14 @@ class RealAudioSession implements IAudioSession {
   Future<bool> setActive(bool active) async {
     return (await _get()).setActive(active);
   }
+  
+  @override
+  Stream<AudioInterruptionEvent> get interruptionEventStream async* {
+    yield* (await _get()).interruptionEventStream;
+  }
+  
+  @override
+  Stream<void> get becomingNoisyEventStream async* {
+    yield* (await _get()).becomingNoisyEventStream;
+  }
 }

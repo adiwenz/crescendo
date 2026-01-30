@@ -13,6 +13,7 @@ class LastTakeDraft {
   final String? referenceWavPath;
   final int? referenceSampleRate;
   final String? referenceWavSha1;
+  final int pcmBytesWritten; // Authoritative byte count from worker
 
   LastTakeDraft({
     required this.exerciseId,
@@ -29,5 +30,6 @@ class LastTakeDraft {
     this.referenceWavPath,
     this.referenceSampleRate,
     this.referenceWavSha1,
+    required this.pcmBytesWritten,
   });
 }

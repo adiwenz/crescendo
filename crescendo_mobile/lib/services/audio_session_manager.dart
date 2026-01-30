@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:record/record.dart';
 
 /// Centralized manager for microphone/audio session coordination.
@@ -51,15 +52,42 @@ class AudioSessionManager {
       }
     }
 
+    // [MIC] Debug logging for Android recording issue diagnosis
+    if (kDebugMode) {
+      final platform = Platform.isAndroid ? 'Android' : (Platform.isIOS ? 'iOS' : 'Unknown');
+      // Detect emulator on Android (best effort - check for common emulator indicators)
+      var emulatorStatus = 'unknown';
+      if (Platform.isAndroid) {
+        try {
+          // Common emulator indicators: PRODUCT contains 'sdk' or BRAND contains 'generic'
+          emulatorStatus = Platform.environment['ANDROID_EMULATOR'] == '1' ? 'true' : 'false';
+        } catch (_) {
+          emulatorStatus = 'unknown';
+        }
+      }
+      debugPrint('[MIC] Platform: $platform, Emulator: $emulatorStatus, Owner: $owner');
+    }
+
     // Check permission
-    if (!await _permissionChecker.hasPermission()) {
+    final hadPermissionBefore = await _permissionChecker.hasPermission();
+    if (kDebugMode) {
+      debugPrint('[MIC] Permission status before request: ${hadPermissionBefore ? "granted" : "denied"}');
+    }
+    
+    if (!hadPermissionBefore) {
       debugPrint('[AudioSessionManager] Microphone permission denied');
+      if (kDebugMode) {
+        debugPrint('[MIC] Permission DENIED - cannot start recording');
+      }
       return false;
     }
 
     _currentOwner = owner;
     _isActive = true;
     debugPrint('[AudioSessionManager] Access granted to: $owner');
+    if (kDebugMode) {
+      debugPrint('[MIC] Access granted successfully');
+    }
     return true;
   }
 
