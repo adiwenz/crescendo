@@ -202,6 +202,7 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                         title: exercise.title,
                         subtitle: _slotLabelForIndex(index),
                         bannerStyleId: exercise.bannerStyleId,
+                        durationSec: exercise.estimatedDurationSec,
                         onTap: () {
                           final trace = NavigationTrace.start('Exercise Navigation: ${exercise.id}');
                           trace.mark('HomeScreen tap - pushing Navigator');
@@ -276,25 +277,34 @@ class _TodaysProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final completedIds = libraryStore.completedExerciseIds;
 
+    final totalSec = dailyExercises != null && dailyExercises!.isNotEmpty
+        ? dailyExerciseService.totalPlannedDurationSec(dailyExercises!)
+        : 0;
+    final completedSec = dailyExercises != null && dailyExercises!.isNotEmpty
+        ? dailyExerciseService.completedDurationSec(dailyExercises!, completedIds)
+        : 0;
+    final remainingSec = (totalSec - completedSec).clamp(0, totalSec);
+
     final minutesLeft = dailyExercises != null && dailyExercises!.isNotEmpty
         ? dailyExerciseService.calculateRemainingMinutes(
             dailyExercises!, completedIds)
         : 0;
 
-    final totalExercises = dailyExercises?.length ?? 0;
-    final completedCount = totalExercises > 0
-        ? dailyExercises!.where((e) => completedIds.contains(e.id)).length
-        : 0;
-    final todaysProgress =
-        totalExercises > 0 ? completedCount / totalExercises : 0.0;
+    // Time-based progress: filled portion = completed duration / total planned duration
+    final todaysProgress = totalSec > 0
+        ? (completedSec / totalSec).clamp(0.0, 1.0)
+        : 0.0;
 
+    final totalMins = totalSec > 0 ? (totalSec / 60).ceil() : 0;
     String remainingTimeText;
-    if (minutesLeft <= 0) {
+    if (remainingSec <= 0) {
       remainingTimeText = 'All done for today 🎉';
+    } else if (totalSec < 300 && remainingSec < 60) {
+      remainingTimeText = '${remainingSec.round()} sec left of $totalMins min';
     } else if (minutesLeft < 1) {
-      remainingTimeText = '<1 min left';
+      remainingTimeText = '<1 min left of $totalMins min';
     } else {
-      remainingTimeText = '$minutesLeft min left to practice';
+      remainingTimeText = '$minutesLeft min left of $totalMins min to complete';
     }
 
     return Container(

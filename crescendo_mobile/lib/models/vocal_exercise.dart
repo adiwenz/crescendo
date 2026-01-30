@@ -122,6 +122,71 @@ class VocalExercise {
     return mins.clamp(1, 60);
   }
 
+  /// Default range semitones when user range is not available (VocalRangeService defaults: C3–G5).
+  static const int defaultRangeSemitones = 32; // 79 - 48 + 1
+
+  /// Estimated duration in seconds for this exercise.
+  /// Uses default range when user range is not passed; prefer [estimatedDurationSecForRange] when user range is known.
+  int get estimatedDurationSec =>
+      estimatedDurationSecForRange(defaultRangeSemitones);
+
+  /// Estimated duration in seconds using the user's range (in semitones).
+  /// For pitch-highway: uses easy tempo (0.85), pattern × cycles over [rangeSemitones], plus lead-in and gap.
+  /// Always use the user's range when building daily exercises (range comes with a default).
+  /// Pitch-highway exercises use the computed estimate (not the seed's durationSeconds).
+  int estimatedDurationSecForRange(int rangeSemitones) {
+    // Pitch-highway: prefer computed estimate (pattern × range × easy tempo) over seed durationSeconds
+    if (highwaySpec != null && highwaySpec!.segments.isNotEmpty) {
+      return _estimatePitchHighwayDurationSec(highwaySpec!, rangeSemitones);
+    }
+    if (durationSeconds != null && durationSeconds! > 0) return durationSeconds!;
+    if (breathingPhases != null && breathingPhases!.isNotEmpty) {
+      final cycleSec = breathingPhases!
+          .fold<double>(0, (sum, p) => sum + p.durationSeconds);
+      final repeats = breathingRepeatCount ?? 1;
+      if (repeats == 0) return durationSeconds ?? 60; // infinite → use durationSeconds or 60
+      return (cycleSec * repeats).round();
+    }
+    return 60;
+  }
+
+  /// Easy tempo multiplier (same as PitchHighwayTempo.level1Multiplier).
+  /// Duration estimates use easy tempo so displayed time matches typical user experience.
+  static const double _easyTempoMultiplier = 0.85;
+
+  /// Estimates pitch-highway duration from pattern and user range.
+  /// Uses easy tempo: scaled pattern duration = base / 0.85.
+  /// Matches TransposedExerciseBuilder: cycles = (rangeSemitones - patternMax + patternMin + 1), total = leadIn + cycles * (scaledPatternDuration + gap).
+  int _estimatePitchHighwayDurationSec(
+      PitchHighwaySpec spec, int rangeSemitones) {
+    const leadInSec = 2.0;
+    const gapBetweenRepetitionsSec = 0.75;
+    const sirenRangeSemitones = 16;
+
+    final segments = List<PitchSegment>.from(spec.segments)
+      ..sort((a, b) => a.startMs.compareTo(b.startMs));
+    final firstMidi = segments.first.midiNote;
+    final offsets = segments.map((s) => s.midiNote - firstMidi).toList();
+    final patternMax = offsets.reduce((a, b) => a > b ? a : b);
+    final patternMin = offsets.reduce((a, b) => a < b ? a : b);
+
+    // Easy tempo: scaled duration is longer (base / 0.85)
+    final basePatternDurationSec = spec.totalMs / 1000.0;
+    final patternDurationSec = basePatternDurationSec / _easyTempoMultiplier;
+
+    final int cycles;
+    if (id == 'sirens') {
+      cycles =
+          (rangeSemitones - sirenRangeSemitones + 1).clamp(1, 100);
+    } else {
+      // Scale/arpeggio: num cycles = range - patternMax + patternMin + 1 (matches TransposedExerciseBuilder loop)
+      cycles = (rangeSemitones - patternMax + patternMin + 1).clamp(1, 100);
+    }
+    final totalSec =
+        leadInSec + cycles * (patternDurationSec + gapBetweenRepetitionsSec);
+    return totalSec.round();
+  }
+
   List<ExerciseNoteSegment> buildPreviewSegments({int maxSegments = 10}) {
     final spec = highwaySpec;
     if (spec == null || spec.segments.isEmpty) return const [];

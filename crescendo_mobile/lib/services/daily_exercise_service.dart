@@ -8,6 +8,7 @@ import '../models/vocal_exercise.dart';
 import '../services/attempt_repository.dart';
 import '../services/daily_plan_builder.dart';
 import '../services/exercise_repository.dart';
+import '../services/vocal_range_service.dart';
 import '../utils/daily_completion_utils.dart';
 
 /// Service for selecting daily exercises deterministically based on the current date.
@@ -60,6 +61,7 @@ class DailyExerciseService {
   static const int _numDailyExercises = 4;
 
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
+  final VocalRangeService _vocalRangeService = VocalRangeService();
 
   /// Debug mode: Offset days for testing (0 = today, 1 = tomorrow, -1 = yesterday)
   ///
@@ -73,17 +75,22 @@ class DailyExerciseService {
   /// Get today's selected exercises. Returns the same exercises for the entire day.
   ///
   /// The first exercise is always a Warmup, followed by N-1 randomly selected exercises.
+  /// Uses the user's vocal range for pitch-highway duration estimates (default range if not set).
   Future<List<Exercise>> getTodaysExercises() async {
     final today = _getTodayDateString();
     final prefs = await SharedPreferences.getInstance();
+
+    // User range is always known (comes with a default); used for duration estimates.
+    final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
+    final rangeSemitones = (highestMidi - lowestMidi + 1).clamp(1, 88);
 
     // Check if we have exercises for today
     final savedDate = prefs.getString(_dailyExercisesDateKey);
     if (savedDate == today) {
       final savedIds = prefs.getStringList(_dailyExercisesKey);
       if (savedIds != null && savedIds.length == _numDailyExercises) {
-        // Return saved exercises for today
-        final exercises = _getExercisesByIds(savedIds);
+        // Return saved exercises for today (with user range for duration)
+        final exercises = _getExercisesByIds(savedIds, rangeSemitones);
         if (kDebugMode) {
           debugPrint(
               '[DailyExerciseService] Using cached exercises for $today');
@@ -98,13 +105,14 @@ class DailyExerciseService {
     if (kDebugMode) {
       debugPrint('[DailyExerciseService] Generating new exercises for $today');
     }
-    final selected = await _selectDailyExercises();
+    final selected = await _selectDailyExercises(rangeSemitones);
     await _saveTodaysExercises(prefs, today, selected);
     return selected;
   }
 
   /// Select daily exercises using Daily Plan: Warmup, Technique, Main Work, Finisher (one per role).
-  Future<List<Exercise>> _selectDailyExercises() async {
+  /// [rangeSemitones] is the user's vocal range (always known via default); used for duration estimates.
+  Future<List<Exercise>> _selectDailyExercises(int rangeSemitones) async {
     final today = _getTodayDateString();
     final adjustedDate = _getAdjustedDate();
 
@@ -141,12 +149,12 @@ class DailyExerciseService {
             .toList();
         if (fallback.isNotEmpty) {
           selected.add(_vocalExerciseToExercise(
-              fallback[random.nextInt(fallback.length)]));
+              fallback[random.nextInt(fallback.length)], rangeSemitones));
         }
         continue;
       }
       final picked = candidates[random.nextInt(candidates.length)];
-      selected.add(_vocalExerciseToExercise(picked));
+      selected.add(_vocalExerciseToExercise(picked, rangeSemitones));
       if (kDebugMode) {
         debugPrint(
             '[DailyExerciseService] ${slot.roleLabel}: ${slot.categoryId} -> ${picked.name}');
@@ -156,7 +164,7 @@ class DailyExerciseService {
     if (selected.length < _numDailyExercises) {
       final remaining = allVocalExercises
           .where((ve) => !selected.any((s) => s.id == ve.id))
-          .map(_vocalExerciseToExercise)
+          .map((ve) => _vocalExerciseToExercise(ve, rangeSemitones))
           .toList();
       while (selected.length < _numDailyExercises && remaining.isNotEmpty) {
         selected.add(remaining.removeAt(random.nextInt(remaining.length)));
@@ -181,14 +189,15 @@ class DailyExerciseService {
   }
 
   /// Convert VocalExercise to Exercise model for Home screen display.
-  /// Maps exercise category to the corresponding Category bannerStyleId for consistent colors.
-  Exercise _vocalExerciseToExercise(dynamic vocalEx) {
+  /// Uses [rangeSemitones] (user's vocal range) for pitch-highway duration estimates; always known via default.
+  Exercise _vocalExerciseToExercise(dynamic vocalEx, int rangeSemitones) {
     return Exercise(
       id: vocalEx.id,
       categoryId: vocalEx.categoryId,
       title: vocalEx.name,
       subtitle: vocalEx.description,
       bannerStyleId: _getBannerStyleIdForCategory(vocalEx.categoryId),
+      estimatedDurationSec: vocalEx.estimatedDurationSecForRange(rangeSemitones),
     );
   }
 
@@ -207,11 +216,12 @@ class DailyExerciseService {
     }
   }
 
-  /// Get exercises by their IDs.
-  List<Exercise> _getExercisesByIds(List<String> ids) {
+  /// Get exercises by their IDs. [rangeSemitones] is the user's vocal range (used for duration estimates).
+  List<Exercise> _getExercisesByIds(List<String> ids, int rangeSemitones) {
     final allVocalExercises = _exerciseRepo.getExercises();
-    final allExercises =
-        allVocalExercises.map((ve) => _vocalExerciseToExercise(ve)).toList();
+    final allExercises = allVocalExercises
+        .map((ve) => _vocalExerciseToExercise(ve, rangeSemitones))
+        .toList();
     final exerciseMap = {for (var ex in allExercises) ex.id: ex};
     return ids.map((id) => exerciseMap[id]!).whereType<Exercise>().toList();
   }
@@ -267,38 +277,32 @@ class DailyExerciseService {
     return await getTodaysExercises();
   }
 
-  /// Calculate remaining time in minutes for today's exercises.
-  ///
-  /// Returns the sum of estimated minutes for exercises that are not completed.
-  /// Completed exercises contribute 0 minutes.
-  ///
-  /// [completedExerciseIds] - Set of exercise IDs that have been completed.
-  /// Returns the total remaining minutes, or 0 if all exercises are completed.
-  int calculateRemainingMinutes(
+  /// Total planned duration in seconds (sum of all exercise durations).
+  /// Used for "minutes to complete" and time-based progress.
+  int totalPlannedDurationSec(List<Exercise> exercises) {
+    if (exercises.isEmpty) return 0;
+    return exercises.fold<int>(0, (sum, e) => sum + e.estimatedDurationSec);
+  }
+
+  /// Completed duration in seconds (sum of durations of completed exercises only).
+  /// Used for time-based progress bar fill.
+  int completedDurationSec(
       List<Exercise> exercises, Set<String> completedExerciseIds) {
     if (exercises.isEmpty) return 0;
+    return exercises
+        .where((e) => completedExerciseIds.contains(e.id))
+        .fold<int>(0, (sum, e) => sum + e.estimatedDurationSec);
+  }
 
-    int totalMinutes = 0;
-    for (final exercise in exercises) {
-      // Skip completed exercises
-      if (completedExerciseIds.contains(exercise.id)) {
-        continue;
-      }
-
-      // Get the VocalExercise to access estimatedMinutes
-      try {
-        final vocalExercise = _exerciseRepo.getExercise(exercise.id);
-        totalMinutes += vocalExercise.estimatedMinutes;
-      } catch (e) {
-        // If exercise not found, skip it (don't crash)
-        if (kDebugMode) {
-          debugPrint(
-              '[DailyExerciseService] Exercise ${exercise.id} not found, skipping from time calculation');
-        }
-      }
-    }
-
-    return totalMinutes;
+  /// Remaining time in minutes (total planned - completed, in minutes).
+  /// Uses real exercise durations, not 1 min per exercise.
+  int calculateRemainingMinutes(
+      List<Exercise> exercises, Set<String> completedExerciseIds) {
+    final totalSec = totalPlannedDurationSec(exercises);
+    final completedSec = completedDurationSec(exercises, completedExerciseIds);
+    final remainingSec = (totalSec - completedSec).clamp(0, totalSec);
+    if (remainingSec <= 0) return 0;
+    return (remainingSec / 60).ceil();
   }
 }
 

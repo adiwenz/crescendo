@@ -9,6 +9,8 @@ class Exercise {
   final bool isBreathingExercise;
   final List<BreathingPhase>? breathingPhases;
   final int? breathingRepeatCount; // null = 1, 0 = infinite
+  /// Estimated duration in seconds. Used for "minutes to complete" and time-based progress.
+  final int estimatedDurationSec;
 
   const Exercise({
     required this.id,
@@ -19,5 +21,6 @@ class Exercise {
     this.isBreathingExercise = false,
     this.breathingPhases,
     this.breathingRepeatCount,
+    this.estimatedDurationSec = 60,
   });
 }

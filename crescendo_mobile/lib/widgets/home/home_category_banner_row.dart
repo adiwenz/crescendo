@@ -8,6 +8,8 @@ class HomeCategoryBannerRow extends StatelessWidget {
   final String subtitle;
   final int bannerStyleId;
   final VoidCallback? onTap;
+  /// Optional duration in seconds; shown as "0:30" or "2:00".
+  final int? durationSec;
 
   const HomeCategoryBannerRow({
     super.key,
@@ -15,7 +17,15 @@ class HomeCategoryBannerRow extends StatelessWidget {
     required this.subtitle,
     required this.bannerStyleId,
     this.onTap,
+    this.durationSec,
   });
+
+  static String formatDuration(int sec) {
+    if (sec < 60) return '0:${sec.toString().padLeft(2, '0')}';
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,11 +68,27 @@ class HomeCategoryBannerRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                     ],
-                    Text(
-                      title,
-                      style: HomeScreenStyles.categoryTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: HomeScreenStyles.categoryTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (durationSec != null && durationSec! > 0) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            formatDuration(durationSec!),
+                            style: HomeScreenStyles.cardSubtitle.copyWith(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),

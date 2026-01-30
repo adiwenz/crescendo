@@ -54,5 +54,6 @@ Exercise _toExercise(VocalExercise ex) {
     title: ex.name,
     subtitle: ex.description,
     bannerStyleId: ex.categoryId.hashCode % 5,
+    estimatedDurationSec: ex.estimatedDurationSec,
   );
 }
