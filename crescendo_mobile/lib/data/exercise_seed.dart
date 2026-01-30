@@ -1,3 +1,4 @@
+import '../models/breathing_phase.dart';
 import '../models/exercise_category.dart';
 import '../models/pitch_highway_spec.dart';
 import '../models/pitch_segment.dart';
@@ -257,6 +258,8 @@ List<VocalExercise> seedVocalExercises() {
       iconKey: 'breath',
       estimatedMinutes: _minutesFromSeconds(30),
       createdAt: createdAt,
+      breathingPhases: BreathingPatterns.appoggio,
+      breathingRepeatCount: 0, // Infinite cycles
     ),
     VocalExercise(
       id: 'sustained_s_z',

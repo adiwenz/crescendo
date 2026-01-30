@@ -1,3 +1,4 @@
+import 'breathing_phase.dart';
 import 'exercise_note_segment.dart';
 import 'pitch_highway_spec.dart';
 import 'pitch_segment.dart';
@@ -31,6 +32,8 @@ class VocalExercise {
   final String iconKey;
   final int estimatedMinutes;
   final bool isGlide; // True if exercise uses continuous pitch movement (sirens, slides, etc.)
+  final List<BreathingPhase>? breathingPhases; // For breathing exercises
+  final int? breathingRepeatCount; // null = 1, 0 = infinite
 
   VocalExercise({
     required this.id,
@@ -48,6 +51,8 @@ class VocalExercise {
     this.reps,
     this.highwaySpec,
     bool? isGlide,
+    this.breathingPhases,
+    this.breathingRepeatCount,
   })  : iconKey = iconKey ?? _defaultIconKey(type),
         estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds),
         isGlide = isGlide ?? _defaultIsGlide(type, highwaySpec);
@@ -83,6 +88,8 @@ class VocalExercise {
       reps: reps,
       highwaySpec: PitchHighwaySpec(segments: segments),
       isGlide: isGlide,
+      breathingPhases: breathingPhases,
+      breathingRepeatCount: breathingRepeatCount,
     );
   }
 
@@ -157,4 +164,5 @@ class VocalExercise {
   }
 
   bool get usesPitchHighway => type == ExerciseType.pitchHighway;
+  bool get isBreathingExercise => breathingPhases != null && breathingPhases!.isNotEmpty;
 }

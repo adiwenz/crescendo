@@ -19,6 +19,8 @@ import '../../models/siren_exercise_result.dart';
 import '../../models/vocal_exercise.dart';
 import '../../models/last_take.dart';
 import '../../models/exercise_level_progress.dart';
+import '../../models/breathing_phase.dart';
+import '../../design/app_text.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/last_take_store.dart';
 import '../../services/progress_service.dart';
@@ -28,6 +30,8 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
 import '../../services/exercise_cache_service.dart';
+import '../../controllers/breathing_controller.dart';
+import '../widgets/breathing_animation_widget.dart';
 import '../../services/reference_audio_generator.dart';
 import '../../services/audio_clock.dart';
 import 'package:path_provider/path_provider.dart';
@@ -2493,121 +2497,131 @@ class BreathTimerPlayer extends StatefulWidget {
 
 class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     with SingleTickerProviderStateMixin {
-  final AudioSynthService _synth = AudioSynthService();
   final ProgressService _progress = ProgressService();
-  Ticker? _ticker;
-  Duration? _lastTick;
-  bool _running = false;
-  bool _preparing = false;
-  int _prepRemaining = 0;
-  Timer? _prepTimer;
-  int _prepRunId = 0;
-  double _elapsed = 0;
-  double? _scorePct;
+  BreathingController? _breathingController;
   DateTime? _startedAt;
   bool _attemptSaved = false;
-  final _phases = const [
-    _BreathPhase('Inhale', 4),
-    _BreathPhase('Hold', 4),
-    _BreathPhase('Exhale', 6),
-  ];
+  bool _isStarted = false;
+  Timer? _totalCountdownTimer;
 
   @override
   void initState() {
     super.initState();
-    _ticker = createTicker(_onTick);
+    _initializeController();
+    // Auto-start breathing animation after a brief delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _start();
+      }
+    });
+  }
+
+  void _initializeController() {
+    final phases = widget.exercise.breathingPhases;
+    if (phases == null || phases.isEmpty) {
+      // Fallback to default Appoggio pattern if no phases defined
+      _breathingController = BreathingController(
+        phases: BreathingPatterns.appoggio,
+        vsync: this,
+        repeatCount: widget.exercise.breathingRepeatCount ?? 0,
+        onComplete: _onBreathingComplete,
+      );
+    } else {
+      _breathingController = BreathingController(
+        phases: phases,
+        vsync: this,
+        repeatCount: widget.exercise.breathingRepeatCount ?? 0,
+        onComplete: _onBreathingComplete,
+      );
+    }
+  }
+
+  void _onBreathingComplete() {
+    // Save attempt with 100% completion
+    _saveAttempt(score: 100.0, subScores: {'completion': 100.0});
+    
+    // Pop with score
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(100.0);
+    }
   }
 
   @override
   void dispose() {
-    _ticker?.dispose();
-    _prepTimer?.cancel();
-    _synth.stop();
+    _totalCountdownTimer?.cancel();
+    _breathingController?.dispose();
     super.dispose();
   }
 
-  void _onTick(Duration elapsed) {
-    if (!_running) return;
-    final dt = elapsed - (_lastTick ?? elapsed);
-    _lastTick = elapsed;
-    final next = _elapsed + dt.inMicroseconds / 1e6;
-    final target =
-        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
-    if (next >= target) {
-      _elapsed = target;
-      _finish();
-      return;
-    }
-    setState(() => _elapsed = next);
-  }
-
   Future<void> _start() async {
-    if (_running || _preparing) return;
-    _prepRunId += 1;
-    final runId = _prepRunId;
-    _beginPrepCountdown();
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted || !_preparing || runId != _prepRunId) return;
-    _endPrepCountdown();
-    await _playCueTone();
-    _elapsed = 0;
-    _scorePct = null;
-    _attemptSaved = false;
+    if (_isStarted) return;
+    
+    setState(() {
+      _isStarted = true;
+    });
+    
+    _breathingController?.start();
+    
+    // Wait for pre-roll to complete (3 seconds) before starting total countdown
+    await Future.delayed(const Duration(seconds: 3));
+    
+    if (!mounted || !_isStarted) return;
+    
+    // Now start the actual exercise timer
     _startedAt = DateTime.now();
-    _running = true;
-    _lastTick = null;
-    _ticker?.start();
-    setState(() {});
+    
+    // Start timer to update total countdown every second
+    _totalCountdownTimer?.cancel();
+    _totalCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_isStarted) {
+        timer.cancel();
+        return;
+      }
+      
+      // Check if total duration has been reached
+      final targetDuration = widget.exercise.durationSeconds ?? 30;
+      final elapsed = _startedAt != null 
+          ? DateTime.now().difference(_startedAt!).inSeconds 
+          : 0;
+      
+      if (elapsed >= targetDuration) {
+        timer.cancel();
+        _totalCountdownTimer = null;
+        _breathingController?.stop();
+        _onBreathingComplete();
+        return;
+      }
+      
+      setState(() {}); // Trigger rebuild to update countdown
+    });
   }
 
   void _stop() {
-    if (!_running && !_preparing) return;
-    _endPrepCountdown();
-    _running = false;
-    _ticker?.stop();
-    _lastTick = null;
-    final target =
-        (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
-    _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
+    if (!_isStarted) return;
+    
+    _totalCountdownTimer?.cancel();
+    _breathingController?.stop();
+    
+    // Calculate completion percentage based on elapsed time
+    final targetDuration = widget.exercise.durationSeconds ?? 30;
+    final elapsed = _startedAt != null 
+        ? DateTime.now().difference(_startedAt!).inSeconds 
+        : 0;
+    final completionPct = (elapsed / targetDuration * 100).clamp(0.0, 100.0);
+    
+    _saveAttempt(score: completionPct, subScores: {'completion': completionPct});
+    
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(completionPct);
+    }
   }
 
-  void _finish() {
-    _running = false;
-    _ticker?.stop();
-    _lastTick = null;
-    _scorePct = 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
-  }
-
-  void _beginPrepCountdown() {
-    _preparing = true;
-    _prepRemaining = 2;
-    _prepTimer?.cancel();
-    _prepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      setState(() => _prepRemaining = math.max(0, _prepRemaining - 1));
-      if (_prepRemaining <= 0) timer.cancel();
-    });
-    setState(() {});
-  }
-
-  void _endPrepCountdown() {
-    _preparing = false;
-    _prepTimer?.cancel();
-    _prepTimer = null;
-    _prepRemaining = 0;
-  }
-
-  Future<void> _playCueTone() async {
-    final notes = [const ReferenceNote(startSec: 0, endSec: 0.8, midi: 60)];
-    final path = await _synth.renderReferenceNotes(notes);
-    await _synth.playFile(path);
-  }
-
-  Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
-    if (_attemptSaved || score == null || _startedAt == null) return;
+  Future<void> _saveAttempt({
+    required double score,
+    required Map<String, double> subScores,
+  }) async {
+    if (_attemptSaved || _startedAt == null) return;
+    
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -2617,57 +2631,71 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
       recorderStartSec: 0.0,
       subScores: subScores,
     );
+    
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
-  Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
-    if (!mounted) return;
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop(score);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final total = _phases.fold<double>(0, (a, b) => a + b.durationSec);
-    var remaining = _elapsed % total;
-    _BreathPhase current = _phases.first;
-    for (final phase in _phases) {
-      if (remaining <= phase.durationSec) {
-        current = phase;
-        break;
-      }
-      remaining -= phase.durationSec;
+    final controller = _breathingController;
+    if (controller == null) {
+      return const Center(child: CircularProgressIndicator());
     }
-    final phaseProgress = remaining / current.durationSec;
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(widget.exercise.description),
-          const SizedBox(height: 16),
-          if (_preparing) Text('Starting in $_prepRemaining...'),
-          Text(current.label,
-              style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(value: phaseProgress),
-          if (_scorePct != null) ...[
-            const SizedBox(height: 8),
-            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
-                style: Theme.of(context).textTheme.titleMedium),
+
+    // Calculate total elapsed time for exercise countdown
+    final totalElapsed = _startedAt != null && _isStarted
+        ? DateTime.now().difference(_startedAt!).inSeconds
+        : 0;
+    final targetDuration = widget.exercise.durationSeconds ?? 30;
+    final totalRemaining = (targetDuration - totalElapsed).clamp(0, targetDuration);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenHeight = constraints.maxHeight;
+        final circleSize = 200.0;
+        // Position circle center at 50% of screen height
+        final circleTop = (screenHeight * 0.5) - (circleSize * 2 / 2); // Account for expanded size
+        
+        return Stack(
+          children: [
+            // Total exercise countdown (top)
+            Positioned(
+              top: 24,
+              left: 0,
+              right: 0,
+              child: Column(
+                children: [
+                  Text(
+                    'Total Time Remaining',
+                    style: AppText.metaLabel,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${totalRemaining}s',
+                    style: AppText.metaValue,
+                  ),
+                ],
+              ),
+            ),
+
+            // Breathing animation (positioned at 50% screen height)
+            Positioned(
+              top: circleTop,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: BreathingAnimationWidget(
+                  controller: controller,
+                  baseSize: circleSize,
+                  primaryColor: const Color(0xFF895BF2), // Purple #895bf2
+                  secondaryColor: const Color(0xFF895BF2),
+                ),
+              ),
+            ),
           ],
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _running ? _stop : _start,
-            icon: Icon(_running ? Icons.stop : Icons.play_arrow),
-            label: Text(_running ? 'Stop' : 'Start'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -4028,12 +4056,6 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
   }
 }
 
-class _BreathPhase {
-  final String label;
-  final double durationSec;
-
-  const _BreathPhase(this.label, this.durationSec);
-}
 
 List<ReferenceNote> _buildNotesInBackground(Map<String, dynamic> params) {
   return PatternVisualNoteBuilder.buildVisualNotesFromPattern(
