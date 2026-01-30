@@ -65,7 +65,7 @@ enum AudioIsolationMode { both, recordOnly, playOnly }
 // const AudioIsolationMode kAudioIsolationMode = AudioIsolationMode.both;
 const AudioIsolationMode kAudioIsolationMode = AudioIsolationMode.both;
 
-const bool kAudioDebug = kDebugMode; // Gate audio focus debug logging
+const bool kAudioDebug = false; // Set to true to enable audio focus debug logging
 
 /// Single source of truth for exercise start state
 enum StartPhase { idle, starting, waitingAudio, running, stopping, done }
