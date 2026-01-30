@@ -2568,11 +2568,12 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
     if (!mounted || !_isStarted) return;
     
     // Now start the actual exercise timer
-    _startedAt = DateTime.now();
-    
-    // Start timer to update total countdown every second
-    _totalCountdownTimer?.cancel();
-    _totalCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    setState(() {
+      _startedAt = DateTime.now();
+    });
+
+    // Start periodic timer for smooth progress bar updates (20 FPS)
+    _totalCountdownTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (!mounted || !_isStarted) {
         timer.cancel();
         return;
@@ -2592,7 +2593,9 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
         return;
       }
       
-      setState(() {}); // Trigger rebuild to update countdown
+      setState(() {
+        // Trigger rebuild for smooth progress bar animation
+      });
     });
   }
 
@@ -2643,60 +2646,131 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Calculate total elapsed time for exercise countdown
+    // Calculate total elapsed time for smooth progress bar
     final totalElapsed = _startedAt != null && _isStarted
-        ? DateTime.now().difference(_startedAt!).inSeconds
-        : 0;
-    final targetDuration = widget.exercise.durationSeconds ?? 30;
-    final totalRemaining = (targetDuration - totalElapsed).clamp(0, targetDuration);
+        ? DateTime.now().difference(_startedAt!).inMilliseconds / 1000.0
+        : 0.0;
+    final targetDuration = (widget.exercise.durationSeconds ?? 30).toDouble();
+    final progress = (totalElapsed / targetDuration).clamp(0.0, 1.0);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenHeight = constraints.maxHeight;
-        final circleSize = 200.0;
-        // Position circle center at 50% of screen height
-        final circleTop = (screenHeight * 0.5) - (circleSize * 2 / 2); // Account for expanded size
-        
-        return Stack(
-          children: [
-            // Total exercise countdown (top)
-            Positioned(
-              top: 24,
-              left: 0,
-              right: 0,
-              child: Column(
+    return Stack(
+      children: [
+        // Top section: Phase Label only
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: ValueListenableBuilder<String>(
+                valueListenable: controller.currentPhaseName,
+                builder: (context, phaseName, _) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: controller.isPreRoll,
+                    builder: (context, isPreRoll, _) {
+                      return ValueListenableBuilder<int>(
+                        valueListenable: controller.countdown,
+                        builder: (context, count, _) {
+                          // During pre-roll: show countdown number
+                          if (isPreRoll) {
+                            return Text(
+                              count.toString(),
+                              textAlign: TextAlign.center,
+                              style: AppText.phaseLabel,
+                            );
+                          }
+                          
+                          // During exercise: show phase name
+                          return Text(
+                            phaseName,
+                            textAlign: TextAlign.center,
+                            style: AppText.phaseLabel,
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+
+        // Middle section: Breathing circle at 30% of screen height
+        Align(
+          alignment: const Alignment(0, -0.4), // ~30% from top
+          child: BreathingAnimationWidget(
+            controller: controller,
+            baseSize: 200,
+            primaryColor: const Color(0xFF895BF2),
+            secondaryColor: const Color(0xFF895BF2),
+            showPhaseLabel: false, // Don't show label below circle
+          ),
+        ),
+
+        // Bottom section: Progress bar
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
                   Text(
-                    'Total Time Remaining',
-                    style: AppText.metaLabel,
+                    _formatTime(totalElapsed),
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontFamily: 'Manrope',
+                      fontSize: 14,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: progress,
+                          child: Container(
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF895BF2),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   Text(
-                    '${totalRemaining}s',
-                    style: AppText.metaValue,
+                    _formatTime(targetDuration),
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontFamily: 'Manrope',
+                      fontSize: 14,
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // Breathing animation (positioned at 50% screen height)
-            Positioned(
-              top: circleTop,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: BreathingAnimationWidget(
-                  controller: controller,
-                  baseSize: circleSize,
-                  primaryColor: const Color(0xFF895BF2), // Purple #895bf2
-                  secondaryColor: const Color(0xFF895BF2),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
+  }
+
+  String _formatTime(double seconds) {
+    final mins = (seconds / 60).floor();
+    final secs = (seconds % 60).floor();
+    return '${mins}:${secs.toString().padLeft(2, '0')}';
   }
 }
 

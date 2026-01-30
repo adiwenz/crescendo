@@ -10,6 +10,7 @@ class BreathingAnimationWidget extends StatefulWidget {
   final Color secondaryColor;
   final TextStyle? countdownTextStyle;
   final TextStyle? phaseTextStyle;
+  final bool showPhaseLabel;
 
   const BreathingAnimationWidget({
     super.key,
@@ -19,6 +20,7 @@ class BreathingAnimationWidget extends StatefulWidget {
     this.secondaryColor = Colors.purple,
     this.countdownTextStyle,
     this.phaseTextStyle,
+    this.showPhaseLabel = true,
   });
 
   @override
@@ -109,42 +111,43 @@ class _BreathingAnimationWidgetState extends State<BreathingAnimationWidget> {
             ),
           ),
 
-          // Gap between circle and label
-          const SizedBox(height: 24),
+          // Gap between circle and label (only if showing label)
+          if (widget.showPhaseLabel) const SizedBox(height: 24),
 
-          // Phase label OR pre-roll countdown (below circle)
-          ValueListenableBuilder<String>(
-            valueListenable: widget.controller.currentPhaseName,
-            builder: (context, phaseName, child) {
-              return ValueListenableBuilder<bool>(
-                valueListenable: widget.controller.isPreRoll,
-                builder: (context, isPreRoll, _) {
-                  return ValueListenableBuilder<int>(
-                    valueListenable: widget.controller.countdown,
-                    builder: (context, count, _) {
-                      // During pre-roll: show countdown number below circle
-                      if (isPreRoll) {
+          // Phase label OR pre-roll countdown (below circle) - only if enabled
+          if (widget.showPhaseLabel)
+            ValueListenableBuilder<String>(
+              valueListenable: widget.controller.currentPhaseName,
+              builder: (context, phaseName, child) {
+                return ValueListenableBuilder<bool>(
+                  valueListenable: widget.controller.isPreRoll,
+                  builder: (context, isPreRoll, _) {
+                    return ValueListenableBuilder<int>(
+                      valueListenable: widget.controller.countdown,
+                      builder: (context, count, _) {
+                        // During pre-roll: show countdown number below circle
+                        if (isPreRoll) {
+                          return Text(
+                            count.toString(),
+                            style: widget.phaseTextStyle ?? AppText.phaseLabel,
+                          );
+                        }
+                        
+                        // During exercise: show phase name below circle
+                        if (phaseName.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
                         return Text(
-                          count.toString(),
+                          phaseName,
                           style: widget.phaseTextStyle ?? AppText.phaseLabel,
                         );
-                      }
-                      
-                      // During exercise: show phase name below circle
-                      if (phaseName.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-
-                      return Text(
-                        phaseName,
-                        style: widget.phaseTextStyle ?? AppText.phaseLabel,
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
+                      },
+                    );
+                  },
+                );
+              },
+            ),
         ],
       ),
     );
