@@ -107,6 +107,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Daily plan slot labels (order must match Daily Plan: Warmup, Technique, Main Work, Finisher).
+const List<String> _dailyPlanSlotLabels = ['Warmup', 'Technique', 'Main Work', 'Finisher'];
+
 class _ExercisesWithProgressIndicator extends StatelessWidget {
   final List<Exercise>? exercises;
   final bool isLoading;
@@ -115,6 +118,13 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
     required this.exercises,
     required this.isLoading,
   });
+
+  static String _slotLabelForIndex(int index) {
+    if (index >= 0 && index < _dailyPlanSlotLabels.length) {
+      return _dailyPlanSlotLabels[index];
+    }
+    return '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,11 +196,11 @@ class _ExercisesWithProgressIndicator extends StatelessWidget {
                         child: TimelineIcon(isCompleted: isCompleted),
                       ),
                     ),
-                    // Right: Exercise card
+                    // Right: Exercise card with slot label (Warmup, Technique, Main Work, Finisher)
                     Expanded(
                       child: HomeCategoryBannerRow(
                         title: exercise.title,
-                        subtitle: '',
+                        subtitle: _slotLabelForIndex(index),
                         bannerStyleId: exercise.bannerStyleId,
                         onTap: () {
                           final trace = NavigationTrace.start('Exercise Navigation: ${exercise.id}');

@@ -38,10 +38,13 @@ class ProgressService {
     await _repo.persistAttempt(attempt: attempt, level: level, score: score);
     
     // 2. Update simple library store (for tick marks etc)
-    libraryStore.markCompleted(
-      attempt.exerciseId,
-      score: score ?? attempt.overallScore.round(),
-    );
+    // Only mark completed today if it counts for daily effort
+    if (attempt.countsForDailyEffort) {
+      libraryStore.markCompletedToday(
+        attempt.exerciseId,
+        score: score ?? attempt.overallScore.round(),
+      );
+    }
 
     // 3. Force refresh AttemptRepository cache (for Progress screen)
     // This ensures UI rebuilt immediately with new data
@@ -107,6 +110,9 @@ class ProgressService {
     String? referenceWavPath,
     int? referenceSampleRate,
     String? referenceWavSha1,
+    String? dateKey,
+    bool countsForDailyEffort = false,
+    double? completionPercent,
   }) {
     final id =
         '${completedAt.microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
@@ -130,6 +136,9 @@ class ProgressService {
       referenceWavPath: referenceWavPath,
       referenceSampleRate: referenceSampleRate,
       referenceWavSha1: referenceWavSha1,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDailyEffort,
+      completionPercent: completionPercent,
     );
   }
 }

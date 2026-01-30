@@ -4,12 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/seed_library.dart';
 import '../models/category.dart';
 import '../models/exercise.dart';
+import '../services/attempt_repository.dart';
+import '../utils/daily_completion_utils.dart';
 
 class LibraryStore extends ChangeNotifier {
   final List<Category> _categories = seedLibraryCategories();
   final Map<String, List<Exercise>> _exercises = {};
-  final Set<String> _completed = <String>{};
-  static const _completedKey = 'completed_exercises';
+  final Map<String, Set<String>> _completedByDate = {}; // dateKey -> exerciseIds
+  static const _completedTodayKeyPrefix = 'completed_today_v2';
+  static const _completedKey = 'completed_exercises'; // Keep for historical stats
   static const _bestScoresKey = 'best_scores';
   static const _lastCompletedKey = 'last_completed';
   static const _lastScoresKey = 'last_scores';
@@ -31,14 +34,23 @@ class LibraryStore extends ChangeNotifier {
     return List.unmodifiable(_exercises[categoryId] ?? const []);
   }
 
-  Set<String> get completedExerciseIds => Set.unmodifiable(_completed);
+  /// Returns exercise IDs that earned daily effort credit TODAY only (date-scoped).
+  /// Source of truth: DB sessions with countedForDailyEffort; synced on load and when attempts persist.
+  Set<String> get completedExerciseIds {
+    final today = DailyCompletionUtils.getTodayDateKey();
+    return Set.unmodifiable(_completedByDate[today] ?? {});
+  }
+
   Map<String, int> get bestScores => Map.unmodifiable(_bestScores);
   Map<String, int> get lastScores => Map.unmodifiable(_lastScores);
   Map<String, DateTime> get lastCompletedAt => Map.unmodifiable(_lastCompletedAt);
   Map<String, int> get timesCompleted => Map.unmodifiable(_timesCompleted);
 
-  void markCompleted(String exerciseId, {int? score}) {
-    _completed.add(exerciseId);
+  /// Mark an exercise as completed for TODAY (daily effort credit)
+  void markCompletedToday(String exerciseId, {int? score}) {
+    final today = DailyCompletionUtils.getTodayDateKey();
+    _completedByDate.putIfAbsent(today, () => {}).add(exerciseId);
+    
     if (score != null) {
       final current = _bestScores[exerciseId] ?? 0;
       if (score > current) _bestScores[exerciseId] = score;
@@ -50,14 +62,27 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Legacy method - redirects to markCompletedToday
+  void markCompleted(String exerciseId, {int? score}) {
+    markCompletedToday(exerciseId, score: score);
+  }
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList(_completedKey);
-    if (saved != null) {
-      _completed
-        ..clear()
-        ..addAll(saved);
+    final today = DailyCompletionUtils.getTodayDateKey();
+
+    // Source of truth for daily checklist: DB sessions with countedForDailyEffort for today
+    await AttemptRepository.instance.ensureLoaded();
+    final creditedToday = await AttemptRepository.instance.getTodayCompletedExercises();
+    _completedByDate[today] = creditedToday;
+
+    // Fallback: also apply any from prefs (e.g. same-session before DB write)
+    final savedToday = prefs.getStringList('$_completedTodayKeyPrefix:$today');
+    if (savedToday != null) {
+      _completedByDate[today] = Set.from(_completedByDate[today] ?? {})..addAll(savedToday);
     }
+    
+    // Load best scores
     final best = prefs.getStringList(_bestScoresKey);
     if (best != null) {
       _bestScores
@@ -120,7 +145,13 @@ class LibraryStore extends ChangeNotifier {
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_completedKey, _completed.toList());
+    final today = DailyCompletionUtils.getTodayDateKey();
+    
+    // Save today's completions
+    final todayCompleted = _completedByDate[today]?.toList() ?? [];
+    await prefs.setStringList('$_completedTodayKeyPrefix:$today', todayCompleted);
+    
+    // Save other stats
     await prefs.setStringList(
       _bestScoresKey,
       _bestScores.entries.map((e) => '${e.key}:${e.value}').toList(),
@@ -140,7 +171,7 @@ class LibraryStore extends ChangeNotifier {
   }
 
   Future<void> reset() async {
-    _completed.clear();
+    _completedByDate.clear();
     _bestScores.clear();
     _lastScores.clear();
     _lastCompletedAt.clear();
@@ -148,6 +179,7 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
     await save();
   }
+
 }
 
 /// Global instance you can reuse across the app.

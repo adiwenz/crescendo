@@ -18,7 +18,7 @@ class AppDatabase {
     final start = DateTime.now();
     
     final path = p.join(await getDatabasesPath(), 'crescendo.db');
-    final realDb = await openDatabase(path, version: 13, onCreate: _onCreate, onUpgrade: _onUpgrade);
+    final realDb = await openDatabase(path, version: 15, onCreate: _onCreate, onUpgrade: _onUpgrade);
     
     debugPrint('[DB_TRACE] AppDatabase opened in ${DateTime.now().difference(start).inMilliseconds}ms');
 
@@ -51,7 +51,10 @@ class AppDatabase {
         categoryId TEXT,
         createdAt INTEGER,
         score REAL,
-        durationMs INTEGER
+        durationMs INTEGER,
+        dateKey TEXT,
+        countsForDailyEffort INTEGER,
+        completionPercent REAL
       )
     ''');
     await db.execute('''
@@ -98,7 +101,10 @@ class AppDatabase {
         targetNotesJson TEXT,
         segmentsJson TEXT,
         recorderStartSec REAL,
-        version INTEGER
+        version INTEGER,
+        dateKey TEXT,
+        countsForDailyEffort INTEGER,
+        completionPercent REAL
       )
     ''');
     await db.execute('''
@@ -261,6 +267,19 @@ class AppDatabase {
       await _addColumnIfMissing(db, 'last_take', 'minMidi', 'INTEGER');
       await _addColumnIfMissing(db, 'last_take', 'maxMidi', 'INTEGER');
       await _addColumnIfMissing(db, 'last_take', 'pitchDifficulty', 'TEXT');
+    }
+    if (oldVersion < 14) {
+      // Add daily completion tracking fields
+      await _addColumnIfMissing(db, 'exercise_attempts', 'dateKey', 'TEXT');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'countsForDailyEffort', 'INTEGER');
+      await _addColumnIfMissing(db, 'exercise_attempts', 'completionPercent', 'REAL');
+    }
+    if (oldVersion < 15) {
+      // Add daily completion tracking to take_scores (source of truth for daily checklist)
+      await _addColumnIfMissing(db, 'take_scores', 'dateKey', 'TEXT');
+      await _addColumnIfMissing(db, 'take_scores', 'countsForDailyEffort', 'INTEGER');
+      await _addColumnIfMissing(db, 'take_scores', 'completionPercent', 'REAL');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_take_scores_dateKey ON take_scores(dateKey)');
     }
   }
 

@@ -44,7 +44,6 @@ class _CategoryProgressDetailScreenState extends State<CategoryProgressDetailScr
     final best = libraryStore.bestScores;
     final last = libraryStore.lastScores;
     final lastCompleted = libraryStore.lastCompletedAt;
-    final times = libraryStore.timesCompleted;
 
     return Scaffold(
       appBar: AppBar(title: Text(category.title)),
@@ -52,7 +51,8 @@ class _CategoryProgressDetailScreenState extends State<CategoryProgressDetailScr
         padding: const EdgeInsets.all(16),
         itemBuilder: (context, index) {
           final ex = exercises[index];
-          final completed = (times[ex.id] ?? 0) > 0 || libraryStore.completedExerciseIds.contains(ex.id);
+          // Checkmark = daily effort credit today only (not lifetime)
+          final completed = libraryStore.completedExerciseIds.contains(ex.id);
           final bestScore = best[ex.id];
           final lastScore = last[ex.id];
           final lastDate = lastCompleted[ex.id];

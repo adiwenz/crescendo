@@ -2,8 +2,13 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/daily_plan.dart';
 import '../models/exercise.dart';
+import '../models/vocal_exercise.dart';
+import '../services/attempt_repository.dart';
+import '../services/daily_plan_builder.dart';
 import '../services/exercise_repository.dart';
+import '../utils/daily_completion_utils.dart';
 
 /// Service for selecting daily exercises deterministically based on the current date.
 ///
@@ -54,9 +59,6 @@ class DailyExerciseService {
   static const String _dailyExercisesDateKey = 'daily_exercises_date';
   static const int _numDailyExercises = 4;
 
-  // Warmup category mapping: 'sovt' category (Lip Trills, Humming) makes excellent warmups
-  static const String _warmupCategoryId = 'sovt';
-
   final ExerciseRepository _exerciseRepo = ExerciseRepository();
 
   /// Debug mode: Offset days for testing (0 = today, 1 = tomorrow, -1 = yesterday)
@@ -66,7 +68,7 @@ class DailyExerciseService {
   /// 2. Hot restart the app (Cmd+Shift+F5 or click restart button)
   /// 3. The app will treat it as a new day and generate new exercises
   /// 4. Set back to 0 when done testing
-  static int debugDayOffset = 0;
+  static int debugDayOffset = 1;
 
   /// Get today's selected exercises. Returns the same exercises for the entire day.
   ///
@@ -101,110 +103,81 @@ class DailyExerciseService {
     return selected;
   }
 
-  /// Select daily exercises: Warmup first, then N-1 random exercises.
+  /// Select daily exercises using Daily Plan: Warmup, Technique, Main Work, Finisher (one per role).
   Future<List<Exercise>> _selectDailyExercises() async {
-    // Get all exercises from the library
-    final allVocalExercises = _exerciseRepo.getExercises();
-    final allExercises =
-        allVocalExercises.map((ve) => _vocalExerciseToExercise(ve)).toList();
+    final today = _getTodayDateString();
+    final adjustedDate = _getAdjustedDate();
 
-    if (allExercises.length < _numDailyExercises) {
-      return allExercises;
+    final history =
+        await AttemptRepository.instance.getLast7DaysCompletedSessions();
+    final plan = buildDailyPlan(
+      date: adjustedDate,
+      history: history,
+      goal: null,
+      fatigue: FatigueLevel.medium,
+      pinnedWarmupCategoryId: null,
+    );
+
+    final allVocalExercises = _exerciseRepo.getExercises();
+    final byCategory = <String, List<VocalExercise>>{};
+    for (final ve in allVocalExercises) {
+      byCategory.putIfAbsent(ve.categoryId, () => []).add(ve);
     }
 
-    // Seed random with today's date for deterministic selection
-    final today = _getTodayDateString();
     final seed = today.hashCode;
     final random = Random(seed);
-
     final selected = <Exercise>[];
 
-    // STEP 1: Always select a Warmup exercise first
-    // Warmup exercises are from 'recovery_therapy' category
-    final warmupExercises =
-        allExercises.where((e) => e.categoryId == _warmupCategoryId).toList();
-
-    if (warmupExercises.isEmpty) {
-      // Debug: Log if no warmup exercises found
-      debugPrint(
-          '[DailyExerciseService] ERROR: No warmup exercises found with categoryId: $_warmupCategoryId');
-      debugPrint(
-          '[DailyExerciseService] Available categories: ${allExercises.map((e) => e.categoryId).toSet().join(", ")}');
-      // Don't add a non-warmup exercise - this is an error condition
-      // Instead, try to find any exercise with 'warmup' in name or tags
-      final fallbackWarmup = allExercises.firstWhere(
-        (e) =>
-            e.title.toLowerCase().contains('warmup') ||
-            e.title.toLowerCase().contains('recovery'),
-        orElse: () => allExercises.first,
-      );
-      selected.add(fallbackWarmup);
-      debugPrint(
-          '[DailyExerciseService] Using fallback warmup: ${fallbackWarmup.title}');
-    } else {
-      // Rotate through warmup exercises based on day
-      // This ensures variety while staying deterministic
-      final warmupIndex = (seed.abs()) % warmupExercises.length;
-      final selectedWarmup = warmupExercises[warmupIndex];
-      selected.add(selectedWarmup);
+    for (var i = 0; i < plan.slots.length && i < _numDailyExercises; i++) {
+      final slot = plan.slots[i];
+      final candidates = byCategory[slot.categoryId] ?? [];
+      if (candidates.isEmpty) {
+        if (kDebugMode) {
+          debugPrint(
+              '[DailyExerciseService] No exercises for category ${slot.categoryId}, slot ${slot.roleLabel}');
+        }
+        final fallback = allVocalExercises
+            .where((e) => !selected.any((s) => s.id == e.id))
+            .toList();
+        if (fallback.isNotEmpty) {
+          selected.add(_vocalExerciseToExercise(
+              fallback[random.nextInt(fallback.length)]));
+        }
+        continue;
+      }
+      final picked = candidates[random.nextInt(candidates.length)];
+      selected.add(_vocalExerciseToExercise(picked));
       if (kDebugMode) {
         debugPrint(
-            '[DailyExerciseService] Selected warmup: ${selectedWarmup.title} (index: $warmupIndex of ${warmupExercises.length})');
-        debugPrint(
-            '[DailyExerciseService] Available warmups: ${warmupExercises.map((e) => e.title).join(", ")}');
+            '[DailyExerciseService] ${slot.roleLabel}: ${slot.categoryId} -> ${picked.name}');
       }
     }
 
-    // STEP 2: Select remaining N-1 exercises randomly with category diversity
-    final selectedIds = selected.map((e) => e.id).toSet();
-    final remainingExercises =
-        allExercises.where((e) => !selectedIds.contains(e.id)).toList();
-
-    if (remainingExercises.length < _numDailyExercises - 1) {
-      // Not enough exercises, just add what we have
-      selected.addAll(remainingExercises);
-      return selected;
-    }
-
-    // Group remaining exercises by category for diversity
-    final byCategory = <String, List<Exercise>>{};
-    for (final ex in remainingExercises) {
-      byCategory.putIfAbsent(ex.categoryId, () => []).add(ex);
-    }
-
-    final usedCategories = <String>{};
-    final shuffledCategories = List<String>.from(byCategory.keys)
-      ..shuffle(random);
-
-    // Try to pick one from each category first for variety
-    for (final categoryId in shuffledCategories) {
-      if (selected.length >= _numDailyExercises) break;
-
-      final categoryExercises = byCategory[categoryId]!;
-      if (categoryExercises.isNotEmpty) {
-        final picked =
-            categoryExercises[random.nextInt(categoryExercises.length)];
-        selected.add(picked);
-        selectedIds.add(picked.id);
-        usedCategories.add(categoryId);
+    if (selected.length < _numDailyExercises) {
+      final remaining = allVocalExercises
+          .where((ve) => !selected.any((s) => s.id == ve.id))
+          .map(_vocalExerciseToExercise)
+          .toList();
+      while (selected.length < _numDailyExercises && remaining.isNotEmpty) {
+        selected.add(remaining.removeAt(random.nextInt(remaining.length)));
       }
-    }
-
-    // Fill remaining slots with any exercises
-    final stillRemaining =
-        remainingExercises.where((e) => !selectedIds.contains(e.id)).toList();
-    stillRemaining.shuffle(random);
-
-    while (selected.length < _numDailyExercises && stillRemaining.isNotEmpty) {
-      selected.add(stillRemaining.removeAt(0));
     }
 
     if (kDebugMode) {
       debugPrint(
-          '[DailyExerciseService] Selected exercises: ${selected.map((e) => e.title).join(", ")}');
+          '[DailyExerciseService] Plan: ${plan.slots.map((s) => '${s.roleLabel}:${s.categoryId}').join(', ')}');
+      debugPrint(
+          '[DailyExerciseService] Selected: ${selected.map((e) => e.title).join(', ')}');
     }
 
     return selected.take(_numDailyExercises).toList();
+  }
+
+  DateTime _getAdjustedDate() {
+    final now = DateTime.now();
+    return kDebugMode && debugDayOffset != 0
+        ? now.add(Duration(days: debugDayOffset))
+        : now;
   }
 
   /// Convert VocalExercise to Exercise model for Home screen display.
@@ -258,15 +231,14 @@ class DailyExerciseService {
     }
   }
 
-  /// Get today's date as YYYY-MM-DD string.
+  /// Get today's date as YYYY-MM-DD string (local timezone, same as daily checklist).
   /// In debug mode, can be offset using debugDayOffset.
   String _getTodayDateString() {
     final now = DateTime.now();
     final adjustedDate = kDebugMode && debugDayOffset != 0
         ? now.add(Duration(days: debugDayOffset))
         : now;
-    final dateString =
-        '${adjustedDate.year}-${adjustedDate.month.toString().padLeft(2, '0')}-${adjustedDate.day.toString().padLeft(2, '0')}';
+    final dateString = DailyCompletionUtils.generateDateKey(adjustedDate);
     if (kDebugMode && debugDayOffset != 0) {
       debugPrint(
           '[DailyExerciseService] Using debug date offset: $debugDayOffset days (date: $dateString)');

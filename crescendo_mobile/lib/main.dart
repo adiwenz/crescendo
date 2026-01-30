@@ -9,6 +9,7 @@ import 'state/library_store.dart';
 import 'services/exercise_cache_service.dart';
 import 'services/audio_session_service.dart';
 import 'services/storage/db.dart';
+import 'utils/daily_completion_utils.dart';
 
 import 'core/locator.dart';
 
@@ -33,7 +34,10 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Preload library completion state.
+  // Initialize timezone for date-scoped daily completion (local dateKey)
+  DailyCompletionUtils.initialize();
+
+  // Preload library completion state (syncs today's checklist from DB)
   await libraryStore.load();
 
   // Pre-generate exercise cache for current range (if set)

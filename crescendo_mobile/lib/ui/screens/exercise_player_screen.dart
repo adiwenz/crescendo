@@ -44,6 +44,7 @@ import 'exercise_review_summary_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_highway_painter.dart';
+import '../../utils/daily_completion_utils.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../utils/performance_clock.dart';
@@ -389,7 +390,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     _playbackCompleteSub = _synth.onComplete.listen((_) {
       if (mounted && isRunning) {
         debugPrint('[ExercisePlayerScreen] Audio complete event received -> stopping');
-        _stop();
+        _stop(sessionEndedNormally: true);
       }
     });
 
@@ -1541,7 +1542,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
   }
 
 
-  Future<void> _stop() async {
+  Future<void> _stop({bool sessionEndedNormally = false}) async {
     if (_phase == StartPhase.stopping ||
         _phase == StartPhase.done ||
         (_phase == StartPhase.idle && !isStarting)) return;
@@ -1625,7 +1626,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       }
 
       // Fire persistence - AWAITED
-      await _persistAttempt(draft, subScores, wavPath);
+      await _persistAttempt(draft, subScores, wavPath, sessionEndedNormally: sessionEndedNormally);
     }
 
     setState(() {
@@ -1654,9 +1655,24 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
     }
   }
 
-  Future<void> _persistAttempt(LastTakeDraft draft, Map<String, double> subScores, String wavPath) async {
+  Future<void> _persistAttempt(LastTakeDraft draft, Map<String, double> subScores, String wavPath,
+      {bool sessionEndedNormally = false}) async {
     // 1. Build ExerciseAttempt
     if (_startedAt == null) return;
+
+    // Use scaled spec total duration (the timeline the user actually saw) for completion %.
+    final totalDurationMs = _scaledSpec?.totalMs ?? widget.exercise.highwaySpec?.totalMs ?? 30000;
+    final completedMs = draft.durationMs;
+    final completionPercent = totalDurationMs > 0
+        ? (completedMs / totalDurationMs).clamp(0.0, 1.0)
+        : 0.0;
+
+    // PitchHighway: only counts for daily effort when the user played through the whole exercise
+    // (playback completed), not by percentage.
+    final countsForDaily = sessionEndedNormally;
+    
+    // Date key from session start (local timezone)
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
 
     final attempt = _progress.buildAttempt(
       exerciseId: draft.exerciseId,
@@ -1676,6 +1692,9 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       referenceWavPath: draft.referenceWavPath,
       referenceSampleRate: draft.referenceSampleRate,
       referenceWavSha1: draft.referenceWavSha1,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     
@@ -1689,6 +1708,7 @@ class _PitchHighwayPlayerState extends State<PitchHighwayPlayer>
       score: draft.score,
     );
   }
+
 
   void _navigateToReview(LastTakeDraft? draft) async {
     if (!mounted) return;
@@ -2537,8 +2557,8 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
   }
 
   void _onBreathingComplete() {
-    // Save attempt with 100% completion
-    _saveAttempt(score: 100.0, subScores: {'completion': 100.0});
+    // Save attempt with 100% completion (session ended normally → counts for daily effort)
+    _saveAttempt(score: 100.0, subScores: {'completion': 100.0}, sessionEndedNormally: true);
     
     // Pop with score
     if (mounted && Navigator.of(context).canPop()) {
@@ -2612,7 +2632,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
         : 0;
     final completionPct = (elapsed / targetDuration * 100).clamp(0.0, 100.0);
     
-    _saveAttempt(score: completionPct, subScores: {'completion': completionPct});
+    _saveAttempt(score: completionPct, subScores: {'completion': completionPct}, sessionEndedNormally: false);
     
     if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop(completionPct);
@@ -2622,8 +2642,23 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
   Future<void> _saveAttempt({
     required double score,
     required Map<String, double> subScores,
+    bool sessionEndedNormally = false,
   }) async {
     if (_attemptSaved || _startedAt == null) return;
+    
+    final targetDuration = widget.exercise.durationSeconds ?? 30;
+    final elapsed = DateTime.now().difference(_startedAt!).inSeconds;
+    final completionPercent = (elapsed / targetDuration).clamp(0.0, 1.0);
+    
+    // Countdown: only counts for daily effort if session ended normally AND reached end
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsed,
+      requiredSec: targetDuration,
+    );
+    
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
@@ -2633,11 +2668,15 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -2856,7 +2895,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     final target =
         (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}, sessionEndedNormally: false));
   }
 
   void _finish() {
@@ -2864,7 +2903,7 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}, sessionEndedNormally: true));
   }
 
   void _beginPrepCountdown() {
@@ -2893,8 +2932,18 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final targetSec = (widget.exercise.durationSeconds ?? 30).clamp(1, 999);
+    final elapsedSec = _elapsed.round();
+    final completionPercent = (elapsedSec / targetSec).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsedSec,
+      requiredSec: targetSec,
+    );
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -2903,14 +2952,17 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
@@ -3085,7 +3137,7 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
     _listening = false;
     final stability = _listeningSec > 0 ? (_onPitchSec / _listeningSec) : 0.0;
     _scorePct = (stability.clamp(0.0, 1.0) * 100.0);
-    await _completeAndPop(_scorePct ?? 0, {'stability': _scorePct ?? 0});
+    await _completeAndPop(_scorePct ?? 0, {'stability': _scorePct ?? 0}, sessionEndedNormally: false);
   }
 
   void _beginPrepCountdown() {
@@ -3114,8 +3166,18 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final requiredSec = _holdGoalSec.round();
+    final elapsedSec = _onPitchSec.round();
+    final completionPercent = requiredSec <= 0 ? 0.0 : (elapsedSec / requiredSec).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsedSec,
+      requiredSec: requiredSec,
+    );
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -3124,14 +3186,17 @@ class _SustainedPitchHoldPlayerState extends State<SustainedPitchHoldPlayer> {
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
@@ -3377,7 +3442,7 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       final mean = _absErrors.reduce((a, b) => a + b) / _absErrors.length;
       _scorePct = (1.0 - math.min(mean / 100.0, 1.0)) * 100.0;
     }
-    await _completeAndPop(_scorePct ?? 0, {'intonation': _scorePct ?? 0});
+    await _completeAndPop(_scorePct ?? 0, {'intonation': _scorePct ?? 0}, sessionEndedNormally: false);
   }
 
   void _beginPrepCountdown() {
@@ -3400,8 +3465,11 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final completionPercent = (score / 100.0).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffort(completionPercent);
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -3410,14 +3478,17 @@ class _PitchMatchListeningPlayerState extends State<PitchMatchListeningPlayer> {
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
@@ -3578,7 +3649,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     final target =
         (widget.exercise.durationSeconds ?? 30).clamp(0, 30).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}, sessionEndedNormally: false));
   }
 
   void _finish() {
@@ -3586,7 +3657,7 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'timing': _scorePct ?? 0}, sessionEndedNormally: true));
   }
 
   void _beginPrepCountdown() {
@@ -3615,8 +3686,18 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final targetSec = (widget.exercise.durationSeconds ?? 30).clamp(1, 999);
+    final elapsedSec = _elapsed.round();
+    final completionPercent = (elapsedSec / targetSec).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsedSec,
+      requiredSec: targetSec,
+    );
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -3625,14 +3706,17 @@ class _ArticulationRhythmPlayerState extends State<ArticulationRhythmPlayer>
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
@@ -3828,7 +3912,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
       // ignore: avoid_print
       print('[DynamicsRampPlayer] Error stopping recording: $e');
     });
-    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}, sessionEndedNormally: false));
   }
 
   void _finish() {
@@ -3851,7 +3935,7 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
       // ignore: avoid_print
       print('[DynamicsRampPlayer] Error stopping recording: $e');
     });
-    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'dynamics': _scorePct ?? 0}, sessionEndedNormally: true));
   }
 
   void _beginPrepCountdown() {
@@ -3896,8 +3980,18 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final targetSec = (widget.exercise.durationSeconds ?? 30).clamp(1, 999);
+    final elapsedSec = _elapsed.round();
+    final completionPercent = (elapsedSec / targetSec).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsedSec,
+      requiredSec: targetSec,
+    );
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -3906,14 +4000,17 @@ class _DynamicsRampPlayerState extends State<DynamicsRampPlayer>
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);
@@ -4038,7 +4135,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _lastTick = null;
     final target = (widget.exercise.durationSeconds ?? 90).toDouble();
     _scorePct = target <= 0 ? 0.0 : (_elapsed / target).clamp(0.0, 1.0) * 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}, sessionEndedNormally: false));
   }
 
   void _finish() {
@@ -4046,7 +4143,7 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
     _ticker?.stop();
     _lastTick = null;
     _scorePct = 100.0;
-    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}));
+    unawaited(_completeAndPop(_scorePct ?? 0, {'completion': _scorePct ?? 0}, sessionEndedNormally: true));
   }
 
   void _beginPrepCountdown() {
@@ -4075,8 +4172,18 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
   }
 
   Future<void> _saveAttempt(
-      {double? score, Map<String, double>? subScores}) async {
+      {double? score, Map<String, double>? subScores, bool sessionEndedNormally = false}) async {
     if (_attemptSaved || score == null || _startedAt == null) return;
+    final targetSec = (widget.exercise.durationSeconds ?? 90).clamp(1, 999);
+    final elapsedSec = _elapsed.round();
+    final completionPercent = (elapsedSec / targetSec).clamp(0.0, 1.0);
+    final countsForDaily = DailyCompletionUtils.countsForDailyEffortCountdown(
+      sessionEndedNormally: sessionEndedNormally,
+      completionPercent: completionPercent,
+      elapsedSec: elapsedSec,
+      requiredSec: targetSec,
+    );
+    final dateKey = DailyCompletionUtils.generateDateKey(_startedAt!);
     final attempt = _progress.buildAttempt(
       exerciseId: widget.exercise.id,
       categoryId: widget.exercise.categoryId,
@@ -4085,14 +4192,17 @@ class _CooldownRecoveryPlayerState extends State<CooldownRecoveryPlayer>
       overallScore: score.clamp(0.0, 100.0),
       recorderStartSec: 0.0,
       subScores: subScores,
+      dateKey: dateKey,
+      countsForDailyEffort: countsForDaily,
+      completionPercent: completionPercent,
     );
     _attemptSaved = true;
     await _progress.saveAttempt(attempt);
   }
 
   Future<void> _completeAndPop(
-      double score, Map<String, double>? subScores) async {
-    await _saveAttempt(score: score, subScores: subScores);
+      double score, Map<String, double>? subScores, {bool sessionEndedNormally = false}) async {
+    await _saveAttempt(score: score, subScores: subScores, sessionEndedNormally: sessionEndedNormally);
     if (!mounted) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(score);

@@ -46,6 +46,18 @@ class HomeCategoryBannerRow extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (subtitle.isNotEmpty) ...[
+                      Text(
+                        subtitle,
+                        style: HomeScreenStyles.categoryTitle.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     Text(
                       title,
                       style: HomeScreenStyles.categoryTitle,

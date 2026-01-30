@@ -54,7 +54,7 @@ class ProgressRepository {
       final db = overrideDb ?? await _db.database;
       
       await db.transaction((txn) async {
-        // 2. Insert into take_scores (History)
+        // 2. Insert into take_scores (History) with daily completion fields
         final scoreObj = ExerciseScore(
           id: attempt.id,
           exerciseId: attempt.exerciseId,
@@ -65,7 +65,13 @@ class ProgressRepository {
               ? attempt.completedAt!.difference(attempt.startedAt!).inMilliseconds
               : 0,
         );
-        await txn.insert('take_scores', scoreObj.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        final takeScoresRow = {
+          ...scoreObj.toMap(),
+          'dateKey': attempt.dateKey,
+          'countsForDailyEffort': attempt.countsForDailyEffort ? 1 : 0,
+          'completionPercent': attempt.completionPercent,
+        };
+        await txn.insert('take_scores', takeScoresRow, conflictAlgorithm: ConflictAlgorithm.replace);
 
         // 3. Upsert last_take
         if (lastTake != null) {
@@ -303,6 +309,31 @@ class ProgressRepository {
       score: row['score'] as double,
       durationMs: 0,
     );
+  }
+
+  /// Fetch attempts for a specific date (for daily completion tracking)
+  Future<List<ExerciseAttempt>> fetchAttemptsForDate(String dateKey) async {
+    final db = overrideDb ?? await _db.database;
+    final rows = await db.query(
+      'take_scores',
+      where: 'dateKey = ?',
+      whereArgs: [dateKey],
+      orderBy: 'createdAt DESC',
+    );
+    return rows.map((r) {
+      final score = ExerciseScore.fromMap(r);
+      return ExerciseAttempt(
+        id: score.id,
+        exerciseId: score.exerciseId,
+        categoryId: score.categoryId,
+        startedAt: score.createdAt.subtract(Duration(milliseconds: score.durationMs)),
+        completedAt: score.createdAt,
+        overallScore: score.score,
+        dateKey: dateKey,
+        countsForDailyEffort: (r['countsForDailyEffort'] == 1 || r['countsForDailyEffort'] == true),
+        completionPercent: (r['completionPercent'] as num?)?.toDouble(),
+      );
+    }).toList();
   }
 
   Future<void> _ensureMigrated(Database db) async {

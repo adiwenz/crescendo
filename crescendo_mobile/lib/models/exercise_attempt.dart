@@ -23,6 +23,9 @@ class ExerciseAttempt {
   final int? referenceSampleRate;
   final String? referenceWavSha1;
   final int version;
+  final String? dateKey; // YYYY-MM-DD in America/New_York timezone
+  final bool countsForDailyEffort; // Whether this attempt counts for daily credit
+  final double? completionPercent; // 0.0 to 1.0
 
   const ExerciseAttempt({
     required this.id,
@@ -45,6 +48,9 @@ class ExerciseAttempt {
     this.referenceSampleRate,
     this.referenceWavSha1,
     this.version = 1,
+    this.dateKey,
+    this.countsForDailyEffort = false,
+    this.completionPercent,
   });
 
   Map<String, dynamic> toMap() => {
@@ -67,6 +73,9 @@ class ExerciseAttempt {
         'referenceSampleRate': referenceSampleRate,
         'referenceWavSha1': referenceWavSha1,
         'version': version,
+        'dateKey': dateKey,
+        'countsForDailyEffort': countsForDailyEffort ? 1 : 0,
+        'completionPercent': completionPercent,
       };
 
   /// Legacy simple parser (kept for compatibility).
@@ -173,6 +182,9 @@ class ExerciseAttempt {
       referenceSampleRate: (m['referenceSampleRate'] as num?)?.toInt(),
       referenceWavSha1: m['referenceWavSha1'] as String?,
       version: (m['version'] is num) ? (m['version'] as num).toInt() : 1,
+      dateKey: m['dateKey']?.toString(),
+      countsForDailyEffort: (m['countsForDailyEffort'] == 1 || m['countsForDailyEffort'] == true),
+      completionPercent: (m['completionPercent'] as num?)?.toDouble(),
     );
 
     if (attempt.id.isEmpty && onWarning != null) {

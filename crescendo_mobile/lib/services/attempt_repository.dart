@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 
 import '../data/progress_repository.dart';
+import '../models/daily_plan.dart';
 import '../models/exercise_attempt.dart';
 import '../models/exercise_take.dart';
 import '../models/exercise_score.dart';
+import '../utils/daily_completion_utils.dart';
 
 /// Thin wrapper over ProgressRepository to expose latest attempts.
 class AttemptRepository extends ChangeNotifier {
@@ -96,5 +98,43 @@ class AttemptRepository extends ChangeNotifier {
   /// Fetches the most recent score for an exercise without loading global history.
   Future<ExerciseScore?> fetchLastScore(String exerciseId) async {
     return _repo.fetchLastScore(exerciseId);
+  }
+
+  /// Get completed exercise IDs for a specific date
+  Future<Set<String>> getCompletedExercisesForDate(String dateKey) async {
+    final attempts = await _repo.fetchAttemptsForDate(dateKey);
+    return attempts
+        .where((a) => a.countsForDailyEffort)
+        .map((a) => a.exerciseId)
+        .toSet();
+  }
+
+  /// Get today's completed exercises (date-scoped: only sessions with countedForDailyEffort today)
+  Future<Set<String>> getTodayCompletedExercises() async {
+    final today = DailyCompletionUtils.getTodayDateKey();
+    return getCompletedExercisesForDate(today);
+  }
+
+  /// Get completed sessions for the last N days (for daily plan anti-repetition / weekly balance).
+  /// Returns one [CompletedSession] per attempt that has dateKey and categoryId.
+  Future<List<CompletedSession>> getLast7DaysCompletedSessions() async {
+    await ensureLoaded();
+    final now = DateTime.now();
+    final sessions = <CompletedSession>[];
+    for (var i = 0; i < 7; i++) {
+      final d = now.subtract(Duration(days: i));
+      final dateKey = DailyCompletionUtils.generateDateKey(d);
+      final attempts = await _repo.fetchAttemptsForDate(dateKey);
+      for (final a in attempts) {
+        if (a.categoryId.isNotEmpty) {
+          sessions.add(CompletedSession(
+            dateKey: dateKey,
+            categoryId: a.categoryId,
+            exerciseId: a.exerciseId,
+          ));
+        }
+      }
+    }
+    return sessions;
   }
 }
