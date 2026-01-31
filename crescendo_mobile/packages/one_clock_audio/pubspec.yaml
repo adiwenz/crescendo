@@ -1,0 +1,23 @@
+name: one_clock_audio
+description: A unified iOS/Android audio engine plugin with one master clock.
+version: 0.0.1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.crescendo.one_clock_audio
+        pluginClass: OneClockAudioPlugin
+      ios:
+        pluginClass: OneClockAudioPlugin
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

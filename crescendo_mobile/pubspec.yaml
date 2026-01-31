@@ -32,6 +32,10 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  flutter_midi_pro: ^1.0.6
+  
+  one_clock_audio:
+    path: packages/one_clock_audio
   flutter_lints: ^3.0.0
   sqflite_common_ffi: ^2.3.0
   flutter_launcher_icons: ^0.13.1

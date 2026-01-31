@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:crescendo_mobile/duplex_audio.dart';
+import 'package:one_clock_audio/one_clock_audio.dart'; // Unified plugin
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:permission_handler/permission_handler.dart';
 
 class DuplexAudioTestScreen extends StatefulWidget {
   const DuplexAudioTestScreen({super.key});
@@ -18,7 +19,7 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   StreamSubscription? _sub;
   bool _running = false;
   int _eventCount = 0;
-  DuplexCapture? _lastCapture;
+  OneClockCapture? _lastCapture;
   String _status = "Ready";
   
   // Recording
@@ -73,8 +74,15 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         _recordedFilePath = null;
       });
 
+      // Request permission
+      final status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        setState(() => _status = "Mic permission denied");
+        return;
+      }
+
       // Listen first
-      _sub = DuplexAudio.stream.listen((event) {
+      _sub = OneClockAudio.captureStream.listen((event) {
         // Accumulate bytes for file saving
         _recordedBytes.addAll(event.pcm16);
         
@@ -91,12 +99,26 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         });
       });
 
+      // PREPARE ASSETS
+      String playbackPath = "assets/audio/backing.wav"; // Default for Android
+      
+      if (Platform.isIOS) {
+        // iOS needs a file path
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/backing_temp.wav');
+        if (!await file.exists()) {
+             final data = await rootBundle.load("assets/audio/backing.wav");
+             await file.writeAsBytes(data.buffer.asUint8List());
+        }
+        playbackPath = file.path;
+      }
+
       // Start engine
-      await DuplexAudio.start(
-        wavAssetPath: "assets/audio/backing.wav",
+      await OneClockAudio.start(OneClockStartConfig(
+        playbackWavAssetOrPath: playbackPath,
         sampleRate: 48000,
         channels: 1,
-      );
+      ));
 
       setState(() => _running = true);
     } catch (e) {
@@ -106,18 +128,34 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
   Future<void> _stop() async {
     if (!_running) return;
-    await DuplexAudio.stop();
+    await OneClockAudio.stop();
     _sub?.cancel();
     _sub = null;
     
-    // Save file
-    final path = await _saveWav(_recordedBytes);
+    // Save file with gain
+    final boostedBytes = _applyDigitalGain(_recordedBytes, 4.0);
+    final path = await _saveWav(boostedBytes);
     
     setState(() {
       _running = false;
-      _status = "Stopped. Recorded ${_recordedBytes.length} bytes.";
+      _status = "Stopped. Recorded ${_recordedBytes.length} bytes (Boosted 4x).";
       _recordedFilePath = path;
     });
+  }
+
+  List<int> _applyDigitalGain(List<int> input, double gain) {
+    if (gain == 1.0) return input;
+    final data = Uint8List.fromList(input); // Copy
+    final view = ByteData.sublistView(data);
+    
+    for (int i = 0; i < data.length - 1; i += 2) {
+      int sample = view.getInt16(i, Endian.little);
+      int boosted = (sample * gain).round();
+      if (boosted > 32767) boosted = 32767;
+      if (boosted < -32768) boosted = -32768;
+      view.setInt16(i, boosted, Endian.little);
+    }
+    return data.toList();
   }
   
   Future<void> _playRecording() async {
@@ -127,7 +165,7 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   
   Future<String> _saveWav(List<int> pcmData) async {
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/android_duplex_rec.wav');
+    final file = File('${dir.path}/duplex_rec_${DateTime.now().millisecondsSinceEpoch}.wav');
     
     final int sampleRate = 48000;
     final int channels = 1;
@@ -177,7 +215,7 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Android Duplex Test")),
+      appBar: AppBar(title: const Text("Unified OneClock Test")),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -263,12 +301,6 @@ class _WaveformPainter extends CustomPainter {
     if (reference != null) {
       final paint = Paint()..color = Colors.blue.withOpacity(0.5)..style = PaintingStyle.stroke..strokeWidth = 1;
       final path = Path();
-      // Only draw what fits
-      // Width = pixels. Each pixel = some number of samples?
-      // Let's say we fit 5 seconds? 5s * 48000 = 240,000 samples.
-      // If width is 400px, that's 600 samples per pixel.
-      // Let's just map index to X simply: 1 point (downsampled) = 1 pixel width?
-      // We have downsample=100. So 1 point = 100 samples.
       
       for (int i = 0; i < reference!.length ~/ downsample; i++) {
         final x = i.toDouble();

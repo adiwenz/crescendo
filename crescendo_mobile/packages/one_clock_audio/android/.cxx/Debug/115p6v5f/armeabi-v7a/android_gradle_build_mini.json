@@ -1,0 +1,34 @@
+{
+  "buildFiles": [
+    "/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/.cxx/Debug/115p6v5f/armeabi-v7a/_deps/oboe-src/CMakeLists.txt",
+    "/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/adriannawenz/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/.cxx/Debug/115p6v5f/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/adriannawenz/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/.cxx/Debug/115p6v5f/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "oboe::@34d0455163043826f65a": {
+      "artifactName": "oboe",
+      "abi": "armeabi-v7a",
+      "output": "/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/.cxx/Debug/115p6v5f/armeabi-v7a/_deps/oboe-build/liboboe.a",
+      "runtimeFiles": []
+    },
+    "one_clock_engine::@6890427a1f51a3e7e1df": {
+      "artifactName": "one_clock_engine",
+      "abi": "armeabi-v7a",
+      "output": "/Users/adriannawenz/code/crescendo/crescendo_mobile/build/one_clock_audio/intermediates/cxx/Debug/115p6v5f/obj/armeabi-v7a/libone_clock_engine.so",
+      "runtimeFiles": []
+    }
+  }
+}
