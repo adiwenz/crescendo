@@ -8,6 +8,8 @@ class OneClockCapture {
   final int inputFramePos;
   final int outputFramePos;
   final int timestampNanos;
+  final int outputFramePosRel;
+  final int sessionId;
 
   OneClockCapture({
     required this.pcm16,
@@ -17,6 +19,8 @@ class OneClockCapture {
     required this.inputFramePos,
     required this.outputFramePos,
     required this.timestampNanos,
+    required this.outputFramePosRel,
+    required this.sessionId,
   });
 
   factory OneClockCapture.fromMap(Map<dynamic, dynamic> m) {
@@ -28,6 +32,8 @@ class OneClockCapture {
       inputFramePos: (m['inputFramePos'] as int),
       outputFramePos: (m['outputFramePos'] as int),
       timestampNanos: (m['timestampNanos'] as int),
+      outputFramePosRel: (m['outputFramePosRel'] as int?) ?? 0,
+      sessionId: (m['sessionId'] as int?) ?? 0,
     );
   }
 }
@@ -51,4 +57,39 @@ class OneClockStartConfig {
         'channels': channels,
         'framesPerCallback': framesPerCallback,
       };
+}
+
+class NativeSessionSnapshot {
+  final int sessionId;
+  final int sessionStartFrame;
+  final int firstCaptureOutputFrame;
+  final int lastOutputFrame;
+  final int computedVocOffsetFrames;
+  final bool hasFirstCapture;
+
+  NativeSessionSnapshot({
+    required this.sessionId,
+    required this.sessionStartFrame,
+    required this.firstCaptureOutputFrame,
+    required this.lastOutputFrame,
+    required this.computedVocOffsetFrames,
+    required this.hasFirstCapture,
+  });
+
+  factory NativeSessionSnapshot.fromList(List<int> list) {
+      if (list.length < 6) return NativeSessionSnapshot(sessionId: -1, sessionStartFrame: 0, firstCaptureOutputFrame: 0, lastOutputFrame: 0, computedVocOffsetFrames: 0, hasFirstCapture: false);
+      return NativeSessionSnapshot(
+          sessionId: list[0],
+          sessionStartFrame: list[1],
+          firstCaptureOutputFrame: list[2],
+          lastOutputFrame: list[3],
+          computedVocOffsetFrames: list[4],
+          hasFirstCapture: list[5] == 1,
+      );
+  }
+
+  @override
+  String toString() {
+    return 'SID=$sessionId Start=$sessionStartFrame FirstCap=$firstCaptureOutputFrame Offset=$computedVocOffsetFrames HasCap=$hasFirstCapture';
+  }
 }

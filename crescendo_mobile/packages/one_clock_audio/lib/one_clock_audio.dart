@@ -48,4 +48,10 @@ class OneClockAudio {
   static Future<bool> startPlaybackTwoTrack() async {
     return await _m.invokeMethod('startPlaybackTwoTrack') ?? false;
   }
+  
+  static Future<NativeSessionSnapshot?> getSessionSnapshot() async {
+    final List<dynamic>? res = await _m.invokeMethod('getSessionSnapshot');
+    if (res == null) return null;
+    return NativeSessionSnapshot.fromList(res.cast<int>());
+  }
 }

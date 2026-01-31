@@ -65,6 +65,11 @@ public:
     return n;
   }
 
+  void clear() {
+      head_.store(0, std::memory_order_release);
+      tail_.store(0, std::memory_order_release);
+  }
+
 private:
   std::vector<uint8_t> buf_;
   const size_t cap_;

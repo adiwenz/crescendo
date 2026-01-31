@@ -29,11 +29,23 @@ struct CaptureMeta {
   int64_t inputFramePos;
   int64_t outputFramePos;
   int64_t timestampNanos;
+  int64_t outputFramePosRel;
+  int32_t sessionId;
+};
+
+
+struct SessionSnapshot {
+  int32_t sessionId;
+  int64_t sessionStartFrame;
+  int64_t firstCaptureOutputFrame;
+  int64_t lastOutputFrame;
+  int32_t computedVocOffsetFrames;
+  bool hasFirstCapture;
 };
 
 enum class EngineMode { kDuplexRecord, kPlaybackReview };
 
-class DuplexEngine : public oboe::AudioStreamCallback {
+class DuplexEngine : public oboe::AudioStreamDataCallback {
 public:
   DuplexEngine()
     : pcmRing_(1 << 20),  // 1MB
@@ -55,68 +67,46 @@ public:
     cbGlobal_ = env->NewGlobalRef(callbackObj);
 
     jclass cls = env->GetObjectClass(callbackObj);
-    onCaptured_ = env->GetMethodID(cls, "onCaptured", "([BIIIJJJ)V");
-    if (!onCaptured_) LOGE("Failed to find onCaptured([BIIIJJJ)V");
+    // Updated signature: +long(relPos) +int(sessionId)
+    onCaptured_ = env->GetMethodID(cls, "onCaptured", "([BIIIJJJJI)V");
+    if (!onCaptured_) LOGE("Failed to find onCaptured([BIIIJJJJI)V");
+    if (!onCaptured_) LOGE("Failed to find onCaptured([BIIIJJJJI)V");
   }
 
-  // --- Loaders ---
-  
-  bool loadRefFromAsset(JNIEnv* env, jobject assetMgrObj, const char* path) {
-      std::vector<float> tmp;
-      int32_t ch = 1;
-      int32_t sr = 0;
-      if (!loadWavAsset(env, assetMgrObj, path, tmp, ch, sr)) return false;
-      
-      std::lock_guard<std::mutex> lk(trackMu_);
-      trackRef_ = std::move(tmp);
-      playCh_ = ch; 
-      LOGI("Loaded Ref Asset: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
-      if(trackRef_.size() > 8) {
-         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
+  // --- Session State ---
+  SessionSnapshot getSessionSnapshot() const {
+      SessionSnapshot s;
+      s.sessionId = sessionId_.load();
+      s.sessionStartFrame = sessionStartFrame_.load();
+      s.firstCaptureOutputFrame = firstCaptureOutputFrame_.load();
+      s.lastOutputFrame = playFrame_.load();
+      s.computedVocOffsetFrames = computedVocOffsetFrames_.load();
+      s.hasFirstCapture = hasFirstCapture_.load();
+      return s;
+  }
+
+  void resetSessionStateForStart(int64_t startFrame) {
+      sessionId_.fetch_add(1);
+      sessionStartFrame_.store(startFrame);
+      firstCaptureOutputFrame_.store(-1);
+      hasFirstCapture_.store(false);
+      computedVocOffsetFrames_.store(0);
+      LOGI("Session Reset: ID=%d StartFrame=%lld", sessionId_.load(), (long long)startFrame);
+  }
+
+  void onFirstCaptureIfNeeded(int64_t captureBase) {
+      bool expected = false;
+      if (hasFirstCapture_.compare_exchange_strong(expected, true)) {
+          firstCaptureOutputFrame_.store(captureBase);
+          
+          int64_t start = sessionStartFrame_.load();
+          int64_t diff = captureBase - start;
+          computedVocOffsetFrames_.store((int32_t)diff);
+          
+          LOGI("First Capture: Base=%lld, StartFrame=%lld, Diff=%lld (SessionID=%d)", 
+               (long long)captureBase, (long long)start, (long long)diff, sessionId_.load());
       }
-      return true;
   }
-  
-  bool loadRefFromFile(const char* path) {
-      std::vector<float> tmp;
-      int32_t ch = 1;
-      int32_t sr = 0;
-      if (!loadWavFile(path, tmp, ch, sr)) return false;
-
-      std::lock_guard<std::mutex> lk(trackMu_);
-      trackRef_ = std::move(tmp);
-      playCh_ = ch; 
-      LOGI("Loaded Ref File: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
-      if(trackRef_.size() > 8) {
-         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
-      }
-      return true;
-  }
-
-  bool loadVocFromFile(const char* path) {
-      std::vector<float> tmp;
-      int32_t ch = 1;
-      int32_t sr = 0;
-      if (!loadWavFile(path, tmp, ch, sr)) return false;
-
-      // Downmix to mono if stereo? simpler mixing
-      if (ch > 1) {
-          std::vector<float> mono(tmp.size() / ch);
-          for (size_t i=0; i<mono.size(); i++) {
-              float sum = 0;
-              for(int c=0; c<ch; c++) sum += tmp[i*ch+c];
-              mono[i] = sum / ch;
-          }
-          tmp = std::move(mono);
-          ch = 1;
-      }
-
-      std::lock_guard<std::mutex> lk(trackMu_);
-      trackVoc_ = std::move(tmp);
-      LOGI("Loaded Voc File: %zu frames, ch=%d, sr=%d", trackVoc_.size(), ch, sr);
-      return true;
-  }
-
   // --- Helpers for parsing ---
   bool parseWav(const uint8_t* data, size_t size, std::vector<float>& outFloats, int32_t& outCh, int32_t& outSr) {
      if (size < 44) return false;
@@ -200,7 +190,63 @@ public:
       return parseWav(buf.data(), sz, out, ch, sr);
   }
 
-  // --- Start / Stop / Control ---
+  bool loadRefFromFile(const char* path) {
+      std::vector<float> tmp;
+      int32_t ch = 1;
+      int32_t sr = 0;
+      if (!loadWavFile(path, tmp, ch, sr)) return false;
+
+      std::lock_guard<std::mutex> lk(trackMu_);
+      trackRef_ = std::move(tmp);
+      playCh_ = ch; 
+      LOGI("Loaded Ref File: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
+      if(trackRef_.size() > 8) {
+         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
+      }
+      return true;
+  }
+
+  bool loadVocFromFile(const char* path) {
+      std::vector<float> tmp;
+      int32_t ch = 1;
+      int32_t sr = 0;
+      if (!loadWavFile(path, tmp, ch, sr)) return false;
+
+      // Downmix to mono if stereo? simpler mixing
+      if (ch > 1) {
+          std::vector<float> mono(tmp.size() / ch);
+          for (size_t i=0; i<mono.size(); i++) {
+              float sum = 0;
+              for(int c=0; c<ch; c++) sum += tmp[i*ch+c];
+              mono[i] = sum / ch;
+          }
+          tmp = std::move(mono);
+          ch = 1;
+      }
+
+      std::lock_guard<std::mutex> lk(trackMu_);
+      trackVoc_ = std::move(tmp);
+      LOGI("Loaded Voc File: %zu frames, ch=%d, sr=%d", trackVoc_.size(), ch, sr);
+      return true;
+  }
+
+  void stop() {
+    running_.store(false);
+    if (in_) in_->close(); 
+    if (out_) out_->close();
+    in_.reset();
+    out_.reset();
+    
+    cv_.notify_all();
+    if(worker_.joinable()) worker_.join();
+    
+    // Clear rings to prevent stale data on next run
+    pcmRing_.clear();
+    metaRing_.clear();
+    
+    playFrame_.store(0);
+    LOGI("Stopped. Rings cleared.");
+  }
 
   void prepareForRecord() {
       stop();
@@ -211,8 +257,9 @@ public:
       gainVoc_.store(0.0f); // Mute Vocal
       vocOffset_.store(0);
       playFrame_.store(0);
+      // rings cleared in stop()
       
-      LOGI("prepareForRecord: mode=kDuplexRecord gains=%.2f/%.2f offset=%d", 
+      LOGI("prepareForRecord: mode=kDuplexRecord gains=%.2f/%.2f offset=%d (Rings Cleared)", 
            gainRef_.load(), gainVoc_.load(), vocOffset_.load());
            
       firstCaptureLog_ = true;
@@ -249,51 +296,6 @@ public:
       return true;
   }
   
-  bool startDuplex(int32_t sampleRate, int32_t channels) {
-      // Assumes prepareForRecord called previously
-      
-      oboe::AudioStreamBuilder outB;
-      outB.setDirection(oboe::Direction::Output)
-        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-        ->setSharingMode(oboe::SharingMode::Shared)
-        ->setFormat(oboe::AudioFormat::Float)
-        ->setChannelCount(channels)
-        ->setSampleRate(sampleRate)
-        ->setDataCallback(this);
-      if(outB.openStream(out_) != oboe::Result::OK) return false;
-
-      oboe::AudioStreamBuilder inB;
-      inB.setDirection(oboe::Direction::Input)
-        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-        ->setSharingMode(oboe::SharingMode::Shared)
-        ->setFormat(oboe::AudioFormat::Float)
-        ->setChannelCount(channels)
-        ->setSampleRate(sampleRate)
-        ->setInputPreset(oboe::InputPreset::Generic);
-      if(inB.openStream(in_) != oboe::Result::OK) { out_.reset(); return false; }
-      
-      running_.store(true);
-      worker_ = std::thread([this]{ workerLoop(); });
-      
-      in_->requestStart();
-      out_->requestStart();
-      LOGI("Started Duplex mode");
-      return true;
-  }
-
-  void stop() {
-    running_.store(false);
-    if (in_) in_->close(); 
-    if (out_) out_->close();
-    in_.reset();
-    out_.reset();
-    
-    cv_.notify_all();
-    if(worker_.joinable()) worker_.join();
-    
-    playFrame_.store(0);
-  }
-  
   void setGains(float ref, float voc) {
       gainRef_.store(ref);
       gainVoc_.store(voc);
@@ -301,6 +303,21 @@ public:
   
   void setVocOffset(int32_t frames) {
       vocOffset_.store(frames);
+  }  
+  bool loadRefFromAsset(JNIEnv* env, jobject assetMgrObj, const char* path) {
+      std::vector<float> tmp;
+      int32_t ch = 1;
+      int32_t sr = 0;
+      if (!loadWavAsset(env, assetMgrObj, path, tmp, ch, sr)) return false;
+      
+      std::lock_guard<std::mutex> lk(trackMu_);
+      trackRef_ = std::move(tmp);
+      playCh_ = ch; 
+      LOGI("Loaded Ref Asset: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
+      if(trackRef_.size() > 8) {
+         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
+      }
+      return true;
   }
 
   // --- AUDIO CALLBACK ---
@@ -374,7 +391,10 @@ public:
        pcm16_.resize(totalSamples);
        for(int i=0; i<totalSamples; i++) pcm16_[i] = (int16_t)lrintf(clampf(inBuf_[i], -1.f, 1.f) * 32767.f);
        
-       CaptureMeta meta = { gotFrames, 48000, outCh, captureBase, captureBase, 0 };
+       int64_t relPos = captureBase - sessionStartFrame_.load();
+       onFirstCaptureIfNeeded(captureBase);
+       
+       CaptureMeta meta = { gotFrames, 48000, outCh, captureBase, captureBase, 0, relPos, sessionId_.load() };
        
        metaRing_.push((uint8_t*)&meta, sizeof(meta));
        pcmRing_.push((uint8_t*)pcm16_.data(), totalSamples * 2);
@@ -422,7 +442,8 @@ public:
                  env->SetByteArrayRegion(arr, 0, bytes, (jbyte*)pcm.data());
                  env->CallVoidMethod(cb_local, mid_local, arr, 
                     (jint)meta.numFrames, (jint)meta.sampleRate, (jint)meta.channels,
-                    (jlong)meta.inputFramePos, (jlong)meta.outputFramePos, (jlong)meta.timestampNanos);
+                    (jlong)meta.inputFramePos, (jlong)meta.outputFramePos, (jlong)meta.timestampNanos,
+                    (jlong)meta.outputFramePosRel, (jint)meta.sessionId);
                  env->DeleteLocalRef(arr);
                  if(att) jvm_local->DetachCurrentThread();
              }
@@ -430,6 +451,43 @@ public:
        }
      }
   }
+
+  // JNI Handlers (StartDuplex update)
+  bool startDuplex(int32_t sampleRate, int32_t channels) {
+      // Assumes prepareForRecord called previously
+      
+      // Update Session Stats
+      resetSessionStateForStart(playFrame_.load());
+      
+      oboe::AudioStreamBuilder outB;
+      outB.setDirection(oboe::Direction::Output)
+        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+        ->setSharingMode(oboe::SharingMode::Shared)
+        ->setFormat(oboe::AudioFormat::Float)
+        ->setChannelCount(channels)
+        ->setSampleRate(sampleRate)
+        ->setDataCallback(this);
+      if(outB.openStream(out_) != oboe::Result::OK) return false;
+
+      oboe::AudioStreamBuilder inB;
+      inB.setDirection(oboe::Direction::Input)
+        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+        ->setSharingMode(oboe::SharingMode::Shared)
+        ->setFormat(oboe::AudioFormat::Float)
+        ->setChannelCount(channels)
+        ->setSampleRate(sampleRate)
+        ->setInputPreset(oboe::InputPreset::Generic);
+      if(inB.openStream(in_) != oboe::Result::OK) { out_.reset(); return false; }
+      
+      running_.store(true);
+      worker_ = std::thread([this]{ workerLoop(); });
+      
+      in_->requestStart();
+      out_->requestStart();
+      LOGI("Started Duplex mode");
+      return true;
+  }
+
 
 private:
   std::atomic<EngineMode> mode_{EngineMode::kDuplexRecord};
@@ -463,6 +521,12 @@ private:
   jmethodID onCaptured_ = nullptr;
   
   bool firstCaptureLog_ = true;
+  
+  std::atomic<int64_t> sessionStartFrame_{0};
+  std::atomic<int32_t> sessionId_{0};
+  std::atomic<int64_t> firstCaptureOutputFrame_{-1};
+  std::atomic<bool> hasFirstCapture_{false};
+  std::atomic<int32_t> computedVocOffsetFrames_{0};
 };
 
 static DuplexEngine* gEngine = nullptr;
@@ -551,6 +615,26 @@ JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlu
     
     // Default 48k mono output for now
     return gEngine->startPlayback(48000, 1) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlongArray JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeGetSessionSnapshot(JNIEnv* env, jobject) {
+    if (!gEngine) return nullptr;
+    
+    SessionSnapshot s = gEngine->getSessionSnapshot();
+    
+    jlongArray arr = env->NewLongArray(6);
+    if (!arr) return nullptr;
+    
+    jlong fill[6];
+    fill[0] = (jlong)s.sessionId;
+    fill[1] = (jlong)s.sessionStartFrame;
+    fill[2] = (jlong)s.firstCaptureOutputFrame;
+    fill[3] = (jlong)s.lastOutputFrame;
+    fill[4] = (jlong)s.computedVocOffsetFrames;
+    fill[5] = (jlong)(s.hasFirstCapture ? 1 : 0);
+    
+    env->SetLongArrayRegion(arr, 0, 6, fill);
+    return arr;
 }
 
 } // extern C

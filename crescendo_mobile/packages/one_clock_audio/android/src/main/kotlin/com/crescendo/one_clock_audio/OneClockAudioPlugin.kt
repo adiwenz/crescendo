@@ -35,7 +35,9 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         channels: Int,
         inputFramePos: Long,
         outputFramePos: Long,
-        timestampNanos: Long
+        timestampNanos: Long,
+        outputFramePosRel: Long,
+        sessionId: Int
       ) {
          Handler(Looper.getMainLooper()).post {
             sink?.success(
@@ -46,7 +48,9 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
                 "channels" to channels,
                 "inputFramePos" to inputFramePos,
                 "outputFramePos" to outputFramePos,
-                "timestampNanos" to timestampNanos
+                "timestampNanos" to timestampNanos,
+                "outputFramePosRel" to outputFramePosRel,
+                "sessionId" to sessionId
               )
             )
         }
@@ -142,6 +146,10 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         val ok = nativeStartPlaybackTwoTrack()
         result.success(ok)
       }
+      "getSessionSnapshot" -> {
+        val arr = nativeGetSessionSnapshot()
+        result.success(arr)
+      }
       else -> result.notImplemented()
     }
   }
@@ -164,6 +172,7 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
   private external fun nativeSetTrackGains(ref: Float, voc: Float)
   private external fun nativeSetVocalOffset(frames: Int)
   private external fun nativeStartPlaybackTwoTrack(): Boolean
+  private external fun nativeGetSessionSnapshot(): LongArray?
 
   interface NativeCb {
     fun onCaptured(
@@ -173,7 +182,9 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
       channels: Int,
       inputFramePos: Long,
       outputFramePos: Long,
-      timestampNanos: Long
+      timestampNanos: Long,
+      outputFramePosRel: Long,
+      sessionId: Int
     )
   }
 }

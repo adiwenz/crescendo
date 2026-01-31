@@ -19,16 +19,19 @@ class DuplexAudioTestScreen extends StatefulWidget {
 class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   String _status = "Ready";
   bool _running = false;
-  
+
+  /// Session ID for the current recording; only captures with this ID are used for offset.
+  int _activeSessionId = -1;
+
   // Recording Data
   final List<OneClockCapture> _captures = [];
   final List<int> _recordedBytes = [];
-  
+
   // Visualization
   Float32List? _referenceSamples;
   final List<double> _captureVisPoints = [];
   int _visDownsample = 100; // rough visual downsampling
-  
+
   OneClockCapture? _lastCapture;
   StreamSubscription? _sub;
 
@@ -43,8 +46,14 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   @override
   void initState() {
     super.initState();
-    super.initState();
     _ensureCleanReference();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _sub = null;
+    super.dispose();
   }
   
   Future<void> _ensureCleanReference() async {
@@ -75,45 +84,31 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
   Future<void> _start() async {
     if (_running) return;
-    
+
     // Stop playback if running
     if (_isPlaying) {
-        await OneClockAudio.stop();
-        setState(() => _isPlaying = false);
+      await OneClockAudio.stop();
+      setState(() => _isPlaying = false);
     }
 
     try {
+      // Cancel any previous subscription and clear state so we never reuse old session data
+      await _sub?.cancel();
+      _sub = null;
       setState(() {
         _status = "Starting Recording...";
         _eventCount = 0;
         _captures.clear();
         _captureVisPoints.clear();
         _recordedBytes.clear();
+        _lastCapture = null;
       });
 
-      _sub = OneClockAudio.captureStream.listen((event) {
-        if (!mounted) return;
-        _captures.add(event); 
-        _recordedBytes.addAll(event.pcm16); // Accumulate Raw
-
-        // Vis logic 
-        final pcm = event.pcm16.buffer.asInt16List();
-         for (int i = 0; i < pcm.length; i += _visDownsample) {
-            _captureVisPoints.add(pcm[i] / 32768.0);
-         }
-
-        setState(() {
-          _eventCount++;
-          _lastCapture = event;
-          _status = "Recording: $_eventCount callbacks";
-        });
-      });
-      
       // Ensure clean reference before recording
       await _ensureCleanReference();
 
       print("[Record] referencePath=$_referencePath recordingPath=$_recordingPath");
-      
+
       // Start DUPLEX (Record)
       final success = await OneClockAudio.start(OneClockStartConfig(
         playbackWavAssetOrPath: _referencePath ?? "assets/audio/backing.wav",
@@ -123,9 +118,44 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
       if (!success) {
         setState(() => _status = "Error: Engine start failed");
-      } else {
-        setState(() => _running = true);
+        return;
       }
+
+      // Store active session ID from snapshot so we only use captures from this session
+      final snap = await OneClockAudio.getSessionSnapshot();
+      if (snap != null) {
+        _activeSessionId = snap.sessionId;
+        print("[DEBUG] Start SNAPSHOT: $snap -> _activeSessionId=$_activeSessionId");
+      } else {
+        _activeSessionId = -1;
+        print("[DEBUG] Start SNAPSHOT: null -> _activeSessionId=-1");
+      }
+      setState(() => _running = true);
+
+      _sub = OneClockAudio.captureStream.listen((event) {
+        if (!mounted) return;
+
+        // Drop events from any other session so we never reuse offsets from a previous recording
+        if (event.sessionId != _activeSessionId) {
+          print("[DuplexUI] Dropping capture from old session: sessionId=${event.sessionId} active=$_activeSessionId");
+          return;
+        }
+
+        _captures.add(event);
+        _recordedBytes.addAll(event.pcm16); // Accumulate Raw
+
+        // Vis logic
+        final pcm = event.pcm16.buffer.asInt16List();
+        for (int i = 0; i < pcm.length; i += _visDownsample) {
+          _captureVisPoints.add(pcm[i] / 32768.0);
+        }
+
+        setState(() {
+          _eventCount++;
+          _lastCapture = event;
+          _status = "Recording: $_eventCount callbacks";
+        });
+      });
     } catch (e) {
       print("Error starting: $e");
     }
@@ -135,41 +165,35 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
   Future<void> _stop() async {
     if (!_running) return;
+    
+    final s = await OneClockAudio.getSessionSnapshot();
+    print("[DEBUG] Stop SNAPSHOT: $s");
+    
     await OneClockAudio.stop();
     _sub?.cancel();
     _sub = null;
 
     setState(() => _status = "Saving...");
 
-    // 1. Pad recording with silence to align with 0
-    int offsetFrames = 0;
-    if (_captures.isNotEmpty) {
-        offsetFrames = _captures.first.outputFramePos;
-        if (offsetFrames < 0) offsetFrames = 0;
-    }
-    
-    // Create padded buffer
-    final rawRecorded = Uint8List.fromList(_recordedBytes).buffer.asInt16List();
-    final totalSamples = offsetFrames + rawRecorded.length;
-    final paddedBuffer = Int16List(totalSamples);
-    
-    // Fill silence (0) for offset loops implicitly 0, but Explicit copy for safety
-    // Dart Int16List initiates to 0, so just copy recorded data after offset
-    for (int i = 0; i < rawRecorded.length; i++) {
-        paddedBuffer[offsetFrames + i] = rawRecorded[i];
-    }
-    
+    // 1. Save Raw Recording (No Padding)
     final dir = await getTemporaryDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final file = File('${dir.path}/vocal_$timestamp.wav');
     
-    await WavUtil.writePcm16MonoWav(file.path, paddedBuffer, 48000);
+    final rawRecorded = Uint8List.fromList(_recordedBytes).buffer.asInt16List();
+    await WavUtil.writePcm16MonoWav(file.path, rawRecorded, 48000);
     _recordingPath = file.path;
-    print("[DuplexUI] Stop: padded with $offsetFrames frames of silence. Total samples=$totalSamples.");
     print("Saved recording to: $_recordingPath");
 
-    // 2. Force offset to 0 since we baked it in
-    _vocOffset = 0;
+    // 2. Set Offset using RELATIVE frame position from first capture of THIS session only
+    final activeCaptures = _captures.where((c) => c.sessionId == _activeSessionId).toList();
+    if (activeCaptures.isNotEmpty) {
+      _vocOffset = activeCaptures.first.outputFramePosRel;
+      print("[DuplexUI] Using Relative Offset: $_vocOffset (SessionID: $_activeSessionId)");
+    } else {
+      _vocOffset = 0;
+      print("[DuplexUI] No captures for active session $_activeSessionId; offset=0");
+    }
 
     setState(() {
         _running = false;
@@ -225,6 +249,9 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   }
 
   Future<void> _startPlayNative() async {
+      final s = await OneClockAudio.getSessionSnapshot();
+      print("[DEBUG] Pre-Play SNAPSHOT: $s");
+      
       await _setupNativeEngine(); // Ensure paths loaded
       await _updateNativeParams(); 
       final ok = await OneClockAudio.startPlaybackTwoTrack();
