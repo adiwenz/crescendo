@@ -205,21 +205,28 @@ public:
   void prepareForRecord() {
       stop();
       mode_.store(EngineMode::kDuplexRecord);
+      
+      // Always reset for recording
       gainRef_.store(1.0f);
       gainVoc_.store(0.0f); // Mute Vocal
       vocOffset_.store(0);
       playFrame_.store(0);
-      LOGI("preparedForRecord: mode=kDuplexRecord gains=1.0/0.0");
+      
+      LOGI("prepareForRecord: mode=kDuplexRecord gains=%.2f/%.2f offset=%d", 
+           gainRef_.load(), gainVoc_.load(), vocOffset_.load());
+           
+      firstCaptureLog_ = true;
   }
   
   void prepareForReview() {
       stop();
       mode_.store(EngineMode::kPlaybackReview);
-      gainRef_.store(1.0f);
-      gainVoc_.store(1.0f); // Enable Vocal
-      vocOffset_.store(0);
+      
+      // PRESERVE GAINS for Review (do not reset)
       playFrame_.store(0);
-      LOGI("prepareForReview: mode=kPlaybackReview gains=1.0/1.0");
+      
+      LOGI("prepareForReview: mode=kPlaybackReview gains=%.2f/%.2f offset=%d (Preserved)", 
+           gainRef_.load(), gainVoc_.load(), vocOffset_.load());
   }
 
   bool startPlayback(int32_t sampleRate, int32_t channels) {
@@ -358,6 +365,11 @@ public:
     
     // --- Process Capture ---
     if (gotFrames > 0 && mode_ == EngineMode::kDuplexRecord) {
+       if (firstCaptureLog_) {
+           LOGI("[REC] firstCapture pf=%lld gotFrames=%d", (long long)captureBase, gotFrames);
+           firstCaptureLog_ = false;
+       }
+       
        const int totalSamples = gotFrames * outCh;
        pcm16_.resize(totalSamples);
        for(int i=0; i<totalSamples; i++) pcm16_[i] = (int16_t)lrintf(clampf(inBuf_[i], -1.f, 1.f) * 32767.f);
@@ -449,6 +461,8 @@ private:
   JavaVM* jvm_ = nullptr;
   jobject cbGlobal_ = nullptr;
   jmethodID onCaptured_ = nullptr;
+  
+  bool firstCaptureLog_ = true;
 };
 
 static DuplexEngine* gEngine = nullptr;
@@ -464,7 +478,7 @@ JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlu
     if(!gEngine) gEngine = new DuplexEngine();
     const char* p = env->GetStringUTFChars(path, 0);
     
-    // START RECORD SESSION (Explicit mode set)
+    // START RECORD SESSION
     gEngine->prepareForRecord();
     
     LOGI("[DuplexEngine] START_SESSION (RECORD) playing reference=%s", p);
@@ -516,16 +530,23 @@ JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlu
 }
 
 JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeSetTrackGains(JNIEnv*, jobject, jfloat ref, jfloat voc) {
-    if(gEngine) gEngine->setGains(ref, voc);
+    if(gEngine) {
+        gEngine->setGains(ref, voc);
+        LOGI("nativeSetTrackGains: ref=%.2f voc=%.2f", ref, voc);
+    }
 }
 
 JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeSetVocalOffset(JNIEnv*, jobject, jint frames) {
-    if(gEngine) gEngine->setVocOffset(frames);
+    if(gEngine) {
+        gEngine->setVocOffset(frames);
+        LOGI("nativeSetVocalOffset: frames=%d", frames);
+    }
 }
 
 JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStartPlaybackTwoTrack(JNIEnv*, jobject) {
     if(!gEngine) gEngine = new DuplexEngine();
     
+    // Use preserved settings
     gEngine->prepareForReview();
     
     // Default 48k mono output for now

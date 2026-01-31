@@ -71,12 +71,15 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         
         // Robust check: Is it a file on disk?
         val f = java.io.File(playbackKey)
-        if (f.exists() && f.isAbsolute) {
+        val exists = f.exists()
+        if (exists && f.isAbsolute) {
              playbackPath = f.absolutePath
         } else if (playbackKey.isNotEmpty()) {
              // It's likely a flutter asset key. Resolve it.
              playbackPath = flutterAssets.getAssetFilePathByName(playbackKey)
         }
+        
+        println("[OneClockAudio] start: key='$playbackKey' resolved='$playbackPath' fileExists=$exists")
         
         val sr = call.argument<Int>("sampleRate") ?: 48000
         val ch = call.argument<Int>("channels") ?: 1
@@ -97,13 +100,16 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         
         // Robust check: Is it a file on disk?
         val f = java.io.File(path)
-        if (f.exists() && f.isAbsolute) {
+        val exists = f.exists()
+        if (exists && f.isAbsolute) {
              // It's a file. Ensure C++ sees it as absolute (starts with /)
              finalPath = f.absolutePath
         } else if (path.isNotEmpty()) {
              // Assume it's an asset key
              finalPath = flutterAssets.getAssetFilePathByName(path)
         }
+        
+        println("[OneClockAudio] loadReference: path='$path' resolved='$finalPath' (exists=$exists)")
         
         val ok = nativeLoadReference(assets, finalPath)
         result.success(ok)
@@ -113,7 +119,10 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         // Vocal is always a file for now (recorded), but for consistency:
         var finalPath = path
         val f = java.io.File(path)
-        if (f.exists()) finalPath = f.absolutePath
+        val exists = f.exists()
+        if (exists) finalPath = f.absolutePath
+        
+        println("[OneClockAudio] loadVocal: path='$path' resolved='$finalPath' exists=$exists")
         
         val ok = nativeLoadVocal(finalPath)
         result.success(ok)

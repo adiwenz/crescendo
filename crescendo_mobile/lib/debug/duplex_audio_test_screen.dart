@@ -141,23 +141,35 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
     setState(() => _status = "Saving...");
 
-    // 1. Save Raw Vocal (Unique)
+    // 1. Pad recording with silence to align with 0
+    int offsetFrames = 0;
+    if (_captures.isNotEmpty) {
+        offsetFrames = _captures.first.outputFramePos;
+        if (offsetFrames < 0) offsetFrames = 0;
+    }
+    
+    // Create padded buffer
+    final rawRecorded = Uint8List.fromList(_recordedBytes).buffer.asInt16List();
+    final totalSamples = offsetFrames + rawRecorded.length;
+    final paddedBuffer = Int16List(totalSamples);
+    
+    // Fill silence (0) for offset loops implicitly 0, but Explicit copy for safety
+    // Dart Int16List initiates to 0, so just copy recorded data after offset
+    for (int i = 0; i < rawRecorded.length; i++) {
+        paddedBuffer[offsetFrames + i] = rawRecorded[i];
+    }
+    
     final dir = await getTemporaryDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final file = File('${dir.path}/vocal_$timestamp.wav');
     
-    // Accumulate raw bytes
-    final rawInt16 = Uint8List.fromList(_recordedBytes).buffer.asInt16List();
-    await WavUtil.writePcm16MonoWav(file.path, rawInt16, 48000);
+    await WavUtil.writePcm16MonoWav(file.path, paddedBuffer, 48000);
     _recordingPath = file.path;
+    print("[DuplexUI] Stop: padded with $offsetFrames frames of silence. Total samples=$totalSamples.");
     print("Saved recording to: $_recordingPath");
 
-    // 2. Determine initial offset (from first capture)
-    if (_captures.isNotEmpty) {
-        _vocOffset = _captures.first.outputFramePos;
-    } else {
-        _vocOffset = 0;
-    }
+    // 2. Force offset to 0 since we baked it in
+    _vocOffset = 0;
 
     setState(() {
         _running = false;
@@ -185,11 +197,21 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   }
 
   Future<void> _playBoth() async {
-      if (_isPlaying) { _cancelPlay(); return; }
-      setState(() { _muteRef = false; _muteVoc = false; });
+      if (_isPlaying) { 
+        await OneClockAudio.stop();
+        setState(() => _isPlaying = false);
+        return; 
+      }
+      
+      // Respect current UI mute toggles
+      print("[DuplexUI] Starting Playback: muteRef=$_muteRef muteVoc=$_muteVoc offset=$_vocOffset");
+      // Explicitly update params before start to ensure sync
+      await _updateNativeParams(); 
+      
       await _startPlayNative();
   }
   
+  // Helpers (Unused by main UI button now, but kept for logic if needed)
   Future<void> _playRefOnly() async {
       if (_isPlaying) { _cancelPlay(); return; }
       setState(() { _muteRef = false; _muteVoc = true; });
@@ -257,14 +279,25 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
                  const SizedBox(height: 10),
                  if (_recordingPath != null) ...[
                       // Playback Controls
-                      SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-                          OutlinedButton(onPressed: _playRefOnly, child: const Text("Ref Only")),
-                          const SizedBox(width: 8),
-                          OutlinedButton(onPressed: _playRecOnly, child: const Text("Rec Only")),
-                          const SizedBox(width: 8),
-                          ElevatedButton(onPressed: _playBoth, child: Text(_isPlaying ? "STOP" : "BOTH")),
-                      ])),
+                      ElevatedButton(
+                          onPressed: _playBoth, 
+                          child: Text(_isPlaying ? "STOP PLAYBACK" : "PLAY (Mute to isolate)")
+                      ),
                       
+                      const SizedBox(height: 10),
+                      
+                      // Mute Toggles
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                          FilterChip(label: const Text("Mute Ref"), selected: _muteRef, onSelected: (v) {
+                              setState(() => _muteRef = v);
+                              _updateNativeParams();
+                          }),
+                          FilterChip(label: const Text("Mute Voc"), selected: _muteVoc, onSelected: (v) {
+                              setState(() => _muteVoc = v);
+                              _updateNativeParams();
+                          }),
+                      ]),
+
                       const SizedBox(height: 10),
                       Row(children: [
                           const Text("Offset: "),
