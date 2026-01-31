@@ -27,4 +27,25 @@ class OneClockAudio {
 
   static Future<void> setPlaybackGain(double gain) =>
       _m.invokeMethod('setGain', {'gain': gain});
+
+  // --- Two Track Playback ---
+  static Future<bool> loadReference(String path) async {
+    return await _m.invokeMethod('loadReference', {'path': path}) ?? false;
+  }
+  
+  static Future<bool> loadVocal(String path) async {
+    return await _m.invokeMethod('loadVocal', {'path': path}) ?? false;
+  }
+  
+  static Future<void> setTrackGains({double ref = 1.0, double voc = 1.0}) async {
+    await _m.invokeMethod('setTrackGains', {'ref': ref, 'voc': voc});
+  }
+  
+  static Future<void> setVocalOffset(int frames) async {
+    await _m.invokeMethod('setVocalOffset', {'frames': frames});
+  }
+  
+  static Future<bool> startPlaybackTwoTrack() async {
+    return await _m.invokeMethod('startPlaybackTwoTrack') ?? false;
+  }
 }

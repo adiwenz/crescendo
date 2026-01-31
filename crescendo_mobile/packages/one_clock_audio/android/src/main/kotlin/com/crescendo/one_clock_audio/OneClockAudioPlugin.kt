@@ -67,7 +67,16 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
     when (call.method) {
       "start" -> {
         val playbackKey = call.argument<String>("playback") ?: ""
-        val playbackPath = if (playbackKey.isNotEmpty()) flutterAssets.getAssetFilePathByName(playbackKey) else ""
+        var playbackPath = playbackKey
+        
+        // Robust check: Is it a file on disk?
+        val f = java.io.File(playbackKey)
+        if (f.exists() && f.isAbsolute) {
+             playbackPath = f.absolutePath
+        } else if (playbackKey.isNotEmpty()) {
+             // It's likely a flutter asset key. Resolve it.
+             playbackPath = flutterAssets.getAssetFilePathByName(playbackKey)
+        }
         
         val sr = call.argument<Int>("sampleRate") ?: 48000
         val ch = call.argument<Int>("channels") ?: 1
@@ -81,6 +90,48 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
         val g = (call.argument<Double>("gain") ?: 1.0).toFloat()
         nativeSetGain(g)
         result.success(true)
+      }
+      "loadReference" -> {
+        val path = call.argument<String>("path") ?: ""
+        var finalPath = path
+        
+        // Robust check: Is it a file on disk?
+        val f = java.io.File(path)
+        if (f.exists() && f.isAbsolute) {
+             // It's a file. Ensure C++ sees it as absolute (starts with /)
+             finalPath = f.absolutePath
+        } else if (path.isNotEmpty()) {
+             // Assume it's an asset key
+             finalPath = flutterAssets.getAssetFilePathByName(path)
+        }
+        
+        val ok = nativeLoadReference(assets, finalPath)
+        result.success(ok)
+      }
+      "loadVocal" -> {
+        val path = call.argument<String>("path") ?: ""
+        // Vocal is always a file for now (recorded), but for consistency:
+        var finalPath = path
+        val f = java.io.File(path)
+        if (f.exists()) finalPath = f.absolutePath
+        
+        val ok = nativeLoadVocal(finalPath)
+        result.success(ok)
+      }
+      "setTrackGains" -> {
+        val ref = (call.argument<Double>("ref") ?: 1.0).toFloat()
+        val voc = (call.argument<Double>("voc") ?: 1.0).toFloat()
+        nativeSetTrackGains(ref, voc)
+        result.success(true)
+      }
+      "setVocalOffset" -> {
+        val frames = call.argument<Int>("frames") ?: 0
+        nativeSetVocalOffset(frames)
+        result.success(true)
+      }
+      "startPlaybackTwoTrack" -> {
+        val ok = nativeStartPlaybackTwoTrack()
+        result.success(ok)
       }
       else -> result.notImplemented()
     }
@@ -97,6 +148,13 @@ class OneClockAudioPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
   private external fun nativeStop()
   private external fun nativeSetGain(gain: Float)
   private external fun nativeSetCallback(cb: Any)
+  
+  // New Methods
+  private external fun nativeLoadReference(assetManager: AssetManager, path: String): Boolean
+  private external fun nativeLoadVocal(path: String): Boolean
+  private external fun nativeSetTrackGains(ref: Float, voc: Float)
+  private external fun nativeSetVocalOffset(frames: Int)
+  private external fun nativeStartPlaybackTwoTrack(): Boolean
 
   interface NativeCb {
     fun onCaptured(
