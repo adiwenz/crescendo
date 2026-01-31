@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:permission_handler/permission_handler.dart';
+import '../audio/wav_util.dart';
 
 class DuplexAudioTestScreen extends StatefulWidget {
   const DuplexAudioTestScreen({super.key});
@@ -22,16 +23,18 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   OneClockCapture? _lastCapture;
   String _status = "Ready";
   
-  // Recording
+  // Stored Data
+  final List<OneClockCapture> _captures = [];
   final List<int> _recordedBytes = [];
+  Int16List? _referencePcmInt16;
+  
+  // State for playback/vis
   String? _recordedFilePath;
   final AudioPlayer _player = AudioPlayer();
-  
-  // Visualization
   Float32List? _referenceSamples;
   final List<double> _captureVisPoints = []; // Normalized -1..1
   final int _visDownsample = 100; // Plot 1 point per N samples
-  
+
   @override
   void initState() {
     super.initState();
@@ -41,9 +44,26 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   Future<void> _loadReference() async {
     try {
       final bytes = await rootBundle.load('assets/audio/backing.wav');
-      // Skip 44 bytes header for visualization (approx)
-      final pcm16 = bytes.buffer.asInt16List(44); 
-      // Convert to float for simpler plotting
+      // IMPORTANT: rootBundle can return a view into a larger buffer.
+      // We must slice it correctly.
+      final data = bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
+      
+      // Parse Header to get Sample Rate
+      final sr = _parseSampleRate(data);
+      print("Reference SR: $sr");
+
+      // Extract PCM
+      Int16List pcm16 = _extractPcm(data);
+      
+      // Resample if needed (Target 48000)
+      if (sr != 48000) {
+        print("Resampling reference from $sr to 48000");
+        pcm16 = _resampleLinear(pcm16, sr, 48000);
+      }
+      
+      _referencePcmInt16 = pcm16;
+
+      // Convert to float for visualization
       final floats = Float32List(pcm16.length);
       for (int i = 0; i < pcm16.length; i++) {
         floats[i] = pcm16[i] / 32768.0;
@@ -52,16 +72,45 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         _referenceSamples = floats;
       });
     } catch (e) {
-      print("Error loading reference for vis: $e");
+      print("Error loading reference: $e");
     }
   }
 
-  @override
-  void dispose() {
-    _stop();
-    _player.dispose();
-    super.dispose();
+  int _parseSampleRate(Uint8List data) {
+    if (data.length < 44) return 44100; // Fallback
+    final view = ByteData.sublistView(data);
+    return view.getInt32(24, Endian.little);
   }
+  
+  Int16List _extractPcm(Uint8List data) {
+      // Assume 44 byte header for simple WAVs
+      return data.buffer.asInt16List(data.offsetInBytes + 44, (data.length - 44) ~/ 2);
+  }
+
+  Int16List _resampleLinear(Int16List input, int srcRate, int dstRate) {
+    if (srcRate == dstRate) return input;
+    
+    final ratio = srcRate / dstRate;
+    final outputLength = (input.length / ratio).ceil();
+    final output = Int16List(outputLength);
+    
+    for (int i = 0; i < outputLength; i++) {
+      final inputIdx = i * ratio;
+      final idx0 = inputIdx.floor();
+      final idx1 = idx0 + 1;
+      final frac = inputIdx - idx0;
+      
+      if (idx0 >= input.length) break;
+      final val0 = input[idx0];
+      final val1 = (idx1 < input.length) ? input[idx1] : val0;
+      
+      final sample = (val0 + (val1 - val0) * frac).round();
+      output[i] = sample;
+    }
+    return output;
+  }
+
+  // ... dispose ...
 
   Future<void> _start() async {
     if (_running) return;
@@ -69,24 +118,19 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
       setState(() {
         _status = "Starting...";
         _eventCount = 0;
-        _recordedBytes.clear();
+        _captures.clear();
         _captureVisPoints.clear();
         _recordedFilePath = null;
       });
+      
+      // ... permission ...
 
-      // Request permission
-      final status = await Permission.microphone.request();
-      if (!status.isGranted) {
-        setState(() => _status = "Mic permission denied");
-        return;
-      }
-
-      // Listen first
       _sub = OneClockAudio.captureStream.listen((event) {
-        // Accumulate bytes for file saving
+        if (!mounted) return;
+        _captures.add(event); // Store full event for timing
         _recordedBytes.addAll(event.pcm16);
-        
-        // Accumulate points for visualization (downsampled)
+
+        // Vis logic (downsample)
         final pcm = event.pcm16.buffer.asInt16List();
         for (int i = 0; i < pcm.length; i += _visDownsample) {
           _captureVisPoints.add(pcm[i] / 32768.0);
@@ -108,21 +152,26 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         final file = File('${dir.path}/backing_temp.wav');
         if (!await file.exists()) {
              final data = await rootBundle.load("assets/audio/backing.wav");
-             await file.writeAsBytes(data.buffer.asUint8List());
+             await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
         }
         playbackPath = file.path;
       }
-
+      
+      // ... start ...
       // Start engine
-      await OneClockAudio.start(OneClockStartConfig(
+      final success = await OneClockAudio.start(OneClockStartConfig(
         playbackWavAssetOrPath: playbackPath,
         sampleRate: 48000,
         channels: 1,
       ));
 
-      setState(() => _running = true);
+      if (!success) {
+        setState(() => _status = "Error: Engine start failed (check logs)");
+      } else {
+        setState(() => _running = true);
+      }
     } catch (e) {
-      setState(() => _status = "Error: $e");
+      // ... error ...
     }
   }
 
@@ -131,41 +180,161 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
     await OneClockAudio.stop();
     _sub?.cancel();
     _sub = null;
+
+    setState(() => _status = "Mixing (Debug Mode)...");
+
+    // Run Debug Mix
+    final paths = await _debugMix();
     
-    // Save file with gain
-    final boostedBytes = _applyDigitalGain(_recordedBytes, 4.0);
-    final path = await _saveWav(boostedBytes);
-    
-    setState(() {
-      _running = false;
-      _status = "Stopped. Recorded ${_recordedBytes.length} bytes (Boosted 4x).";
-      _recordedFilePath = path;
-    });
+    // Play the "Good" mix by default
+    final goodPath = paths['good'];
+
+    if (mounted) {
+      setState(() {
+        _running = false;
+        _status = "Stopped. Debug Mix Complete.";
+        _recordedFilePath = goodPath;
+      });
+      print("DEBUG: Recorded path set to: $goodPath");
+    }
   }
 
-  List<int> _applyDigitalGain(List<int> input, double gain) {
-    if (gain == 1.0) return input;
-    final data = Uint8List.fromList(input); // Copy
-    final view = ByteData.sublistView(data);
-    
-    for (int i = 0; i < data.length - 1; i += 2) {
-      int sample = view.getInt16(i, Endian.little);
-      int boosted = (sample * gain).round();
-      if (boosted > 32767) boosted = 32767;
-      if (boosted < -32768) boosted = -32768;
-      view.setInt16(i, boosted, Endian.little);
+  // --- DEBUG INSTRUMENTATION ---
+
+  Future<Map<String, String>> _debugMix() async {
+    print("\n=== START DEBUG MIX (WavUtil) ===");
+    final dir = await getTemporaryDirectory();
+    final recPath = '${dir.path}/rec_temp.wav';
+    final refPath = '${dir.path}/ref_temp.wav'; // We need ref as file
+    final mixPath = '${dir.path}/MIX_GOOD.wav';
+
+    // 1. Save Recording (Flatten captures)
+    final rawRecBytes = <int>[];
+    for (var c in _captures) rawRecBytes.addAll(c.pcm16);
+    final recInt16 = Uint8List.fromList(rawRecBytes).buffer.asInt16List();
+    await WavUtil.writePcm16MonoWav(recPath, recInt16, 48000); // 48k captured
+
+    // 2. Save Reference (Ensure it's a file for WavUtil)
+    // We loaded it as bytes, let's write it to temp to be safe/uniform
+    if (_referencePcmInt16 != null) {
+       await WavUtil.writePcm16MonoWav(refPath, _referencePcmInt16!, 48000);
     }
-    return data.toList();
+
+    // 3. Compute Offset
+    int offsetFrames = 0;
+    if (_captures.isNotEmpty) {
+      offsetFrames = _captures.first.outputFramePos;
+    }
+    
+    // 4. Mix
+    print("Mixing with Offset: $offsetFrames frames");
+    await WavUtil.mixMonoWithOffsetToWav(
+        referencePath: refPath, 
+        vocalPath: recPath, 
+        offsetFrames: offsetFrames, 
+        outputPath: mixPath
+    );
+
+    // 5. Debug Prints
+    await WavUtil.debugPrintWav(refPath);
+    await WavUtil.debugPrintWav(recPath);
+    await WavUtil.debugPrintWav(mixPath);
+
+    print("=== END DEBUG MIX ===\n");
+    return {'good': mixPath, 'bad': mixPath};
   }
-  
+
+  Uint8List _safeMixMonoPcm16(Int16List ref, List<OneClockCapture> captures, int globalOffsetFrames) {
+      // Create output buffer large enough for both
+      // 1. Calculate max length
+      int refLen = ref.length;
+      int recMaxLen = 0;
+      for(var c in captures) {
+          int end = c.outputFramePos + c.numFrames;
+          if (end > recMaxLen) recMaxLen = end;
+      }
+      int totalLen = (refLen > recMaxLen) ? refLen : recMaxLen;
+      // Handle negative offset shift if needed? 
+      // For simplicity, we assume outputFramePos >= 0 or we clamp to 0.
+      
+      final mixBuffer = Int32List(totalLen);
+      
+      // Accumulate Reference (Headroom 0.5)
+      for (int i = 0; i < refLen; i++) {
+          mixBuffer[i] += (ref[i] * 0.5).round();
+      }
+      
+      // Accumulate Captures (Headroom 0.5)
+      // Captures are disjoint chunks.
+      for (var c in captures) {
+          final pcm = c.pcm16.buffer.asInt16List();
+          int chunkOffset = c.outputFramePos;
+          
+          for (int i = 0; i < pcm.length; i++) {
+              int pos = chunkOffset + i;
+              if (pos >= 0 && pos < totalLen) {
+                  mixBuffer[pos] += (pcm[i] * 0.5).round();
+              }
+          }
+      }
+      
+      // Conversion to Int16
+      final outBytes = ByteData(totalLen * 2);
+      for (int i = 0; i < totalLen; i++) {
+          int s = mixBuffer[i];
+          // Clamp
+          if (s > 32767) s = 32767;
+          if (s < -32768) s = -32768;
+          outBytes.setInt16(i * 2, s, Endian.little);
+      }
+      return outBytes.buffer.asUint8List();
+  }
+
   Future<void> _playRecording() async {
     if (_recordedFilePath == null) return;
+    // Just play recording
     await _player.play(DeviceFileSource(_recordedFilePath!));
   }
-  
-  Future<String> _saveWav(List<int> pcmData) async {
+
+  void _assertOffsetAlignment(int offsetFrames, int channels) {
+      int bytesPerFrame = channels * 2;
+      int offsetBytes = offsetFrames * bytesPerFrame;
+      print("Offset Alignment Check: Frames=$offsetFrames, Bytes=$offsetBytes, BPF=$bytesPerFrame");
+      if (offsetBytes % bytesPerFrame != 0) {
+          print("!!! CRITICAL ALIGNMENT FAILURE !!!");
+      } else {
+          print("Alignment OK.");
+      }
+  }
+
+  void _dumpFirstSamples(String label, Int16List data, int channels) {
+      int count = 16;
+      if (data.length < count) count = data.length;
+      final sb = StringBuffer("$label First $count: ");
+      for (int i = 0; i < count; i++) {
+          sb.write("${data[i]}, ");
+      }
+      print(sb.toString());
+  }
+
+  void _printWavInfo(String path, Uint8List wavBytes) { // Actually passing raw bytes here for header check
+      // Minimal header parse
+      if (wavBytes.length < 44) {
+          print("WAV Info ($path): Too short!");
+          return;
+      }
+      final view = ByteData.sublistView(wavBytes);
+      int riff = view.getUint32(0, Endian.big);
+      int wave = view.getUint32(8, Endian.big);
+      int sr = view.getUint32(24, Endian.little);
+      int channels = view.getUint16(22, Endian.little);
+      
+      print("WAV Info ($path): RIFF=${riff.toRadixString(16)} WAVE=${wave.toRadixString(16)} SR=$sr Ch=$channels Len=${wavBytes.length}");
+  }
+
+  Future<String> _saveWavFile(List<int> pcmData, String filename) async {
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/duplex_rec_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final file = File('${dir.path}/$filename');
     
     final int sampleRate = 48000;
     final int channels = 1;
@@ -174,22 +343,18 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
     final int totalSize = 36 + dataSize;
     
     final header = BytesBuilder();
-    // RIFF
-    header.add([0x52, 0x49, 0x46, 0x46]); 
+    header.add([0x52, 0x49, 0x46, 0x46]); // RIFF 
     header.add(_int32(totalSize));
-    // WAVE
-    header.add([0x57, 0x41, 0x56, 0x45]);
-    // fmt 
-    header.add([0x66, 0x6d, 0x74, 0x20]);
-    header.add(_int32(16)); // Chunk size
-    header.add(_int16(1)); // PCM
+    header.add([0x57, 0x41, 0x56, 0x45]); // WAVE
+    header.add([0x66, 0x6d, 0x74, 0x20]); // fmt 
+    header.add(_int32(16)); 
+    header.add(_int16(1)); 
     header.add(_int16(channels));
     header.add(_int32(sampleRate));
     header.add(_int32(byteRate));
-    header.add(_int16(channels * 2)); // Block align
-    header.add(_int16(16)); // Bits per sample
-    // data
-    header.add([0x64, 0x61, 0x74, 0x61]);
+    header.add(_int16(channels * 2)); 
+    header.add(_int16(16)); 
+    header.add([0x64, 0x61, 0x74, 0x61]); // data
     header.add(_int32(dataSize));
     
     final allBytes = BytesBuilder();
@@ -199,6 +364,8 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
     await file.writeAsBytes(allBytes.toBytes());
     return file.path;
   }
+  
+
   
   List<int> _int32(int v) {
     final b = ByteData(4);
@@ -273,7 +440,7 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
                         ),
-                        child: const Text("REPLAY RECORDING"),
+                        child: const Text("Play mixed recording and reference", textAlign: TextAlign.center),
                       ),
                     ),
                   ),

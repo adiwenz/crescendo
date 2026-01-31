@@ -63,13 +63,13 @@ public:
              int32_t framesPerCallback) {
     stop();
 
-    if (!loadWavPCM16FromAssets(env, assetMgrObj, wavAssetPath)) {
+    if (!loadWavPCM16FromAssets(env, assetMgrObj, wavAssetPath, preferredSampleRate)) {
       LOGE("Failed to load WAV asset");
       return false;
     }
 
-    // Prefer WAV sample rate to avoid resampling in this demo.
-    int32_t targetSR = (wavSampleRate_ > 0) ? wavSampleRate_ : preferredSampleRate;
+    // Since we resampled on load, use the preferred rate.
+    int32_t targetSR = preferredSampleRate;
 
     if (!openStreams(targetSR, channels, framesPerCallback)) {
       LOGE("Failed to open streams");
@@ -217,7 +217,7 @@ private:
       ->setFormat(oboe::AudioFormat::Float)
       ->setChannelCount(channels)
       ->setSampleRate(sampleRate)
-      ->setInputPreset(oboe::InputPreset::Unprocessed);
+      ->setInputPreset(oboe::InputPreset::Generic);
 
     if (inB.openStream(in_) != oboe::Result::OK || !in_) {
       out_.reset();
@@ -231,7 +231,7 @@ private:
     return true;
   }
 
-  bool loadWavPCM16FromAssets(JNIEnv* env, jobject assetMgrObj, const char* path) {
+  bool loadWavPCM16FromAssets(JNIEnv* env, jobject assetMgrObj, const char* path, int32_t targetSampleRate) {
     if (!path || std::strlen(path) == 0) return false;
 
     AAssetManager* mgr = AAssetManager_fromJava(env, assetMgrObj);
@@ -293,18 +293,48 @@ private:
       return false;
     }
 
-    wavSampleRate_ = (int32_t)sr;
+    // Set actual sample rate and channel count if we were to play natively
+    // BUT we will resample to targetSampleRate if needed.
+    wavSampleRate_ = targetSampleRate; // We pretend it's target rate after resampling
     playCh_ = (int32_t)ch;
 
     const int16_t* pcm16 = (const int16_t*)pcm;
-    size_t samples = pcmBytes / sizeof(int16_t);
-    play_.resize(samples);
-    for (size_t i = 0; i < samples; i++) play_[i] = (float)pcm16[i] / 32768.0f;
+    size_t srcSamples = pcmBytes / sizeof(int16_t);
+    std::vector<float> srcData(srcSamples);
+    for (size_t i = 0; i < srcSamples; i++) srcData[i] = (float)pcm16[i] / 32768.0f;
+    
+    AAsset_close(asset);
+
+    // Resample if needed (Linear Interpolation)
+    if ((int32_t)sr != targetSampleRate && targetSampleRate > 0) {
+      double ratio = (double)sr / (double)targetSampleRate;
+      size_t dstFrames = (size_t)((srcSamples / ch) / ratio);
+      size_t dstSamples = dstFrames * ch;
+      play_.resize(dstSamples);
+      
+      LOGI("Resampling WAV %d -> %d Hz (ratio %.3f)", sr, targetSampleRate, ratio);
+
+      for (size_t i = 0; i < dstFrames; i++) {
+        double srcIdx = i * ratio;
+        size_t idx0 = (size_t)srcIdx;
+        size_t idx1 = idx0 + 1;
+        float frac = (float)(srcIdx - idx0);
+
+        if (idx1 >= (srcSamples / ch)) idx1 = idx0; // Clamp
+
+        for (int c = 0; c < ch; c++) {
+          float s0 = srcData[idx0 * ch + c];
+          float s1 = srcData[idx1 * ch + c];
+          play_[i * ch + c] = s0 + (s1 - s0) * frac;
+        }
+      }
+    } else {
+      // No resampling
+      play_ = std::move(srcData);
+      LOGI("Loaded WAV sr=%d (native) ch=%d samples=%zu", sr, playCh_, srcSamples);
+    }
 
     playFrame_.store(0);
-    LOGI("Loaded WAV sr=%d ch=%d samples=%zu", wavSampleRate_, playCh_, samples);
-
-    AAsset_close(asset);
     return true;
   }
 

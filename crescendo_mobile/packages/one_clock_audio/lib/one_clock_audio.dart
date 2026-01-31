@@ -18,8 +18,9 @@ class OneClockAudio {
     return _stream!;
   }
 
-  static Future<void> start(OneClockStartConfig config) async {
-    await _m.invokeMethod('start', config.toMap());
+  static Future<bool> start(OneClockStartConfig config) async {
+    final result = await _m.invokeMethod('start', config.toMap());
+    return result as bool? ?? false;
   }
 
   static Future<void> stop() => _m.invokeMethod('stop');
