@@ -65,9 +65,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => Navigator.pushNamed(context, '/settings/subscription_features'),
       ),
       _SettingsItem(
-        title: 'Debug: Transport Clock',
-        subtitle: 'Test audio transport sync',
+        title: 'Debug: Transport Clock (iOS)',
+        subtitle: 'Test sample-accurate clock',
         onTap: () => Navigator.pushNamed(context, '/debug/transport_clock'),
+      ),
+      const SizedBox(height: 12),
+      _SettingsItem(
+        title: 'Debug: Duplex Audio (Android)',
+        subtitle: 'Test Oboe playback/capture',
+        onTap: () => Navigator.pushNamed(context, '/debug/duplex_audio'),
       ),
     ];
     return Scaffold(
