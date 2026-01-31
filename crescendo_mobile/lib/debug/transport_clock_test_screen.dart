@@ -2,9 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:crescendo_mobile/transport_clock.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:one_clock_audio/one_clock_audio.dart';
 
@@ -18,12 +16,10 @@ class TransportClockTestScreen extends StatefulWidget {
 
 class _TransportClockTestScreenState extends State<TransportClockTestScreen>
     with SingleTickerProviderStateMixin {
-  final TransportClock _clock = TransportClock();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _initialized = false;
   bool _recording = false;
-  bool _playingResult = false;
 
   double _sampleRate = 0.0;
   int? _playbackStartSample;
@@ -65,8 +61,8 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
 
   Future<void> _initialize() async {
     try {
-      await _clock.ensureStarted();
-      final sr = await _clock.getSampleRate();
+      await OneClockAudio.ensureStarted();
+      final sr = await OneClockAudio.getSampleRate();
 
       // Load asset to temp file
       final tempDir = await getTemporaryDirectory();
@@ -99,12 +95,13 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
         await OneClockAudio.stop();
         setState(() => _playingWithOneClock = false);
       }
-      // 1. Start recording
+      // 1. Start recording (build output path)
       final dir = await getTemporaryDirectory();
-      _recordingPath = await _clock.startRecording(dirPath: dir.path);
+      final outputPath = '${dir.path}/crescendo_recording_${DateTime.now().millisecondsSinceEpoch}.wav';
+      _recordingPath = await OneClockAudio.startRecording(outputPath: outputPath);
 
       // 2. Play reference immediately
-      await _clock.startPlayback(path: _referencePath!);
+      await OneClockAudio.startPlayback(referencePath: _referencePath!, gain: 1.0);
 
       setState(() {
         _recording = true;
@@ -123,11 +120,11 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
   }
 
   Future<void> _stopRecording() async {
-    await _clock.stopRecording();
-    await _clock.stopAll(); // Stop playback too
+    await OneClockAudio.stopRecording();
+    await OneClockAudio.stopAll(); // Stop playback too
 
-    final pStart = await _clock.getPlaybackStartSampleTime();
-    final rStart = await _clock.getRecordStartSampleTime();
+    final pStart = await OneClockAudio.getPlaybackStartSampleTime();
+    final rStart = await OneClockAudio.getRecordStartSampleTime();
 
     setState(() {
       _recording = false;
@@ -159,11 +156,11 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
     final offset = useOffset ? _offsetSamples : 0;
 
     try {
-      final res = await _clock.mixWithOffset(
+      final res = await OneClockAudio.mixWithOffset(
         referencePath: _referencePath!,
         vocalPath: _recordingPath!,
+        outPath: outPath,
         vocalOffsetSamples: offset,
-        outputPath: outPath,
       );
 
       setState(() {

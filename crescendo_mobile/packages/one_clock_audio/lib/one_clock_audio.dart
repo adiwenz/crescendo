@@ -54,4 +54,64 @@ class OneClockAudio {
     if (res == null) return null;
     return NativeSessionSnapshot.fromList(res.cast<int>());
   }
+
+  // --- Transport-style API (single engine: ref playback + mic record to file) ---
+  static Future<bool> ensureStarted() async {
+    final result = await _m.invokeMethod<bool>('ensureStarted');
+    return result ?? false;
+  }
+
+  static Future<double> getSampleRate() async {
+    final result = await _m.invokeMethod<double>('getSampleRate');
+    return result ?? 48000.0;
+  }
+
+  static Future<bool> startPlayback({
+    required String referencePath,
+    double gain = 1.0,
+  }) async {
+    final result = await _m.invokeMethod<bool>('startPlayback', {
+      'referencePath': referencePath,
+      'gain': gain,
+    });
+    return result ?? false;
+  }
+
+  static Future<String> startRecording({required String outputPath}) async {
+    final result = await _m.invokeMethod<String>('startRecording', {
+      'outputPath': outputPath,
+    });
+    return result ?? '';
+  }
+
+  static Future<void> stopRecording() => _m.invokeMethod('stopRecording');
+
+  static Future<void> stopAll() => _m.invokeMethod('stopAll');
+
+  static Future<int?> getPlaybackStartSampleTime() async {
+    return await _m.invokeMethod<int>('getPlaybackStartSampleTime');
+  }
+
+  static Future<int?> getRecordStartSampleTime() async {
+    return await _m.invokeMethod<int>('getRecordStartSampleTime');
+  }
+
+  static Future<String> mixWithOffset({
+    required String referencePath,
+    required String vocalPath,
+    required String outPath,
+    required int vocalOffsetSamples,
+    double refGain = 1.0,
+    double vocalGain = 1.0,
+  }) async {
+    final result = await _m.invokeMethod<String>('mixWithOffset', {
+      'referencePath': referencePath,
+      'vocalPath': vocalPath,
+      'outPath': outPath,
+      'vocalOffsetSamples': vocalOffsetSamples,
+      'refGain': refGain,
+      'vocalGain': vocalGain,
+    });
+    return result ?? '';
+  }
 }
