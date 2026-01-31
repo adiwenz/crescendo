@@ -33,20 +33,21 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   StreamSubscription? _sub;
 
   // New Playback State
-  String? _vocalPath; 
-  String? _refPathCache; // path to reference if loaded from assets
+  String? _recordingPath; // Unique per run
+  String? _referencePath; // Stable reference
   int _vocOffset = 0;
   bool _muteRef = false;
   bool _muteVoc = false;
-  bool _isPlaying = false; // Track if playback is active (simple toggle)
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
-    _loadReference();
+    super.initState();
+    _ensureCleanReference();
   }
   
-  Future<void> _loadReference() async {
+  Future<void> _ensureCleanReference() async {
     // Determine path
     String playbackPath = "assets/audio/backing.wav"; 
     if (Platform.isIOS || Platform.isAndroid) {
@@ -56,14 +57,13 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
          final data = await rootBundle.load("assets/audio/backing.wav");
          await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
          
-         print("Restored clean reference to: ${file.path}");
+         // print("Restored clean reference to: ${file.path}");
          playbackPath = file.path;
     }
-    _refPathCache = playbackPath;
+    _referencePath = playbackPath;
     
-    // Load for viz
-    // Simplified viz load for brevity:
-    if (await File(playbackPath).exists()) {
+    // Viz loading omitted for brevity as it's just visual
+    if (await File(playbackPath).exists() && _referenceSamples == null) {
         final bytes = await File(playbackPath).readAsBytes();
         if (bytes.length > 44) {
              final ints = bytes.buffer.asInt16List(44);
@@ -109,9 +109,14 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         });
       });
       
+      // Ensure clean reference before recording
+      await _ensureCleanReference();
+
+      print("[Record] referencePath=$_referencePath recordingPath=$_recordingPath");
+      
       // Start DUPLEX (Record)
       final success = await OneClockAudio.start(OneClockStartConfig(
-        playbackWavAssetOrPath: _refPathCache ?? "assets/audio/backing.wav",
+        playbackWavAssetOrPath: _referencePath ?? "assets/audio/backing.wav",
         sampleRate: 48000,
         channels: 1,
       ));
@@ -136,14 +141,16 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
 
     setState(() => _status = "Saving...");
 
-    // 1. Save Raw Vocal
+    // 1. Save Raw Vocal (Unique)
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/vocal_raw.wav');
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final file = File('${dir.path}/vocal_$timestamp.wav');
     
     // Accumulate raw bytes
     final rawInt16 = Uint8List.fromList(_recordedBytes).buffer.asInt16List();
     await WavUtil.writePcm16MonoWav(file.path, rawInt16, 48000);
-    _vocalPath = file.path;
+    _recordingPath = file.path;
+    print("Saved recording to: $_recordingPath");
 
     // 2. Determine initial offset (from first capture)
     if (_captures.isNotEmpty) {
@@ -162,10 +169,10 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
   }
   
   Future<void> _setupNativeEngine() async {
-      if (_refPathCache == null || _vocalPath == null) return;
+      if (_referencePath == null || _recordingPath == null) return;
       
-      await OneClockAudio.loadReference(_refPathCache!);
-      await OneClockAudio.loadVocal(_vocalPath!);
+      await OneClockAudio.loadReference(_referencePath!);
+      await OneClockAudio.loadVocal(_recordingPath!);
       await _updateNativeParams();
   }
   
@@ -177,20 +184,35 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
       );
   }
 
-  Future<void> _togglePlayback() async {
-      if (_isPlaying) {
-          await OneClockAudio.stop();
-          setState(() => _isPlaying = false);
-      } else {
-          // ensure params are fresh
-          await _updateNativeParams(); 
-          final ok = await OneClockAudio.startPlaybackTwoTrack();
-          if (ok) {
-              setState(() => _isPlaying = true);
-          } else {
-              setState(() => _status = "Playback Start Failed");
-          }
-      }
+  Future<void> _playBoth() async {
+      if (_isPlaying) { _cancelPlay(); return; }
+      setState(() { _muteRef = false; _muteVoc = false; });
+      await _startPlayNative();
+  }
+  
+  Future<void> _playRefOnly() async {
+      if (_isPlaying) { _cancelPlay(); return; }
+      setState(() { _muteRef = false; _muteVoc = true; });
+      await _startPlayNative();
+  }
+  
+  Future<void> _playRecOnly() async {
+      if (_isPlaying) { _cancelPlay(); return; }
+      setState(() { _muteRef = true; _muteVoc = false; });
+      await _startPlayNative();
+  }
+
+  Future<void> _startPlayNative() async {
+      await _setupNativeEngine(); // Ensure paths loaded
+      await _updateNativeParams(); 
+      final ok = await OneClockAudio.startPlaybackTwoTrack();
+      if (ok) setState(() => _isPlaying = true);
+      else setState(() => _status = "Playback Start Failed");
+  }
+
+  Future<void> _cancelPlay() async {
+      await OneClockAudio.stop();
+      setState(() => _isPlaying = false);
   }
 
   @override
@@ -230,36 +252,32 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                            child: const Text("RECORD")
                        ),
-                       ElevatedButton(
-                           onPressed: _vocalPath == null ? null : _togglePlayback, 
-                           child: Text(_isPlaying ? "STOP PLAY" : "PLAY BOTH")
-                       ),
                    ]
                  ),
                  const SizedBox(height: 10),
-                 if (_vocalPath != null) ...[
-                     Row(children: [
-                         const Text("Offset: "),
-                         IconButton(icon: const Icon(Icons.remove), onPressed: () {
-                             setState(() => _vocOffset -= 100);
-                             _updateNativeParams();
-                         }),
-                         Text("$_vocOffset f"),
-                         IconButton(icon: const Icon(Icons.add), onPressed: () {
-                             setState(() => _vocOffset += 100);
-                             _updateNativeParams();
-                         }),
-                     ]),
-                     Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                         FilterChip(label: const Text("Mute Ref"), selected: _muteRef, onSelected: (v) {
-                             setState(() => _muteRef = v);
-                             _updateNativeParams();
-                         }),
-                         FilterChip(label: const Text("Mute Voc"), selected: _muteVoc, onSelected: (v) {
-                             setState(() => _muteVoc = v);
-                             _updateNativeParams();
-                         }),
-                     ]),
+                 if (_recordingPath != null) ...[
+                      // Playback Controls
+                      SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+                          OutlinedButton(onPressed: _playRefOnly, child: const Text("Ref Only")),
+                          const SizedBox(width: 8),
+                          OutlinedButton(onPressed: _playRecOnly, child: const Text("Rec Only")),
+                          const SizedBox(width: 8),
+                          ElevatedButton(onPressed: _playBoth, child: Text(_isPlaying ? "STOP" : "BOTH")),
+                      ])),
+                      
+                      const SizedBox(height: 10),
+                      Row(children: [
+                          const Text("Offset: "),
+                          IconButton(icon: const Icon(Icons.remove), onPressed: () {
+                              setState(() => _vocOffset -= 100);
+                              _updateNativeParams();
+                          }),
+                          Text("$_vocOffset f"),
+                          IconButton(icon: const Icon(Icons.add), onPressed: () {
+                              setState(() => _vocOffset += 100);
+                              _updateNativeParams();
+                          }),
+                      ]),
                  ]
              ] else ...[
                  ElevatedButton(onPressed: _stop, child: const Text("STOP RECORDING"))

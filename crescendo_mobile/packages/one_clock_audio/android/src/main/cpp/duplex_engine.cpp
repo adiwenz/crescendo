@@ -31,6 +31,8 @@ struct CaptureMeta {
   int64_t timestampNanos;
 };
 
+enum class EngineMode { kDuplexRecord, kPlaybackReview };
+
 class DuplexEngine : public oboe::AudioStreamCallback {
 public:
   DuplexEngine()
@@ -65,11 +67,13 @@ public:
       int32_t sr = 0;
       if (!loadWavAsset(env, assetMgrObj, path, tmp, ch, sr)) return false;
       
-      // Store
       std::lock_guard<std::mutex> lk(trackMu_);
       trackRef_ = std::move(tmp);
-      playCh_ = ch; // Reference determines master channels if we want
+      playCh_ = ch; 
       LOGI("Loaded Ref Asset: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
+      if(trackRef_.size() > 8) {
+         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
+      }
       return true;
   }
   
@@ -83,6 +87,9 @@ public:
       trackRef_ = std::move(tmp);
       playCh_ = ch; 
       LOGI("Loaded Ref File: %zu frames, ch=%d, sr=%d", trackRef_.size()/ch, ch, sr);
+      if(trackRef_.size() > 8) {
+         LOGI("[RefPcm] first8=%.4f,%.4f,%.4f,%.4f...", trackRef_[0], trackRef_[1], trackRef_[2], trackRef_[3]);
+      }
       return true;
   }
 
@@ -114,7 +121,6 @@ public:
   bool parseWav(const uint8_t* data, size_t size, std::vector<float>& outFloats, int32_t& outCh, int32_t& outSr) {
      if (size < 44) return false;
      
-     // Simple headers check
      auto u32 = [&](size_t off)->uint32_t {
        return (uint32_t)data[off] | ((uint32_t)data[off+1] << 8) |
               ((uint32_t)data[off+2] << 16) | ((uint32_t)data[off+3] << 24);
@@ -125,7 +131,6 @@ public:
 
      if (memcmp(data, "RIFF", 4) || memcmp(data+8, "WAVE", 4)) return false;
 
-     // Parse chunks
      size_t cur = 12;
      const uint8_t* pcm = nullptr;
      uint32_t pcmBytes = 0;
@@ -163,10 +168,6 @@ public:
      for (size_t i=0; i<numSamples; i++) {
          outFloats[i] = src[i] / 32768.0f;
      }
-
-     // Resample to 48k logic omitted for brevity as usually we get 48k
-     // If needed we can re-add the lerp logic. 
-     // For now assume sources are 48k or we accept drift on playback (review).
      return true;
   }
 
@@ -201,10 +202,28 @@ public:
 
   // --- Start / Stop / Control ---
 
-  bool startPlayback(int32_t sampleRate, int32_t channels) {
+  void prepareForRecord() {
       stop();
-      isDuplex_ = false; // Playback only
-      
+      mode_.store(EngineMode::kDuplexRecord);
+      gainRef_.store(1.0f);
+      gainVoc_.store(0.0f); // Mute Vocal
+      vocOffset_.store(0);
+      playFrame_.store(0);
+      LOGI("preparedForRecord: mode=kDuplexRecord gains=1.0/0.0");
+  }
+  
+  void prepareForReview() {
+      stop();
+      mode_.store(EngineMode::kPlaybackReview);
+      gainRef_.store(1.0f);
+      gainVoc_.store(1.0f); // Enable Vocal
+      vocOffset_.store(0);
+      playFrame_.store(0);
+      LOGI("prepareForReview: mode=kPlaybackReview gains=1.0/1.0");
+  }
+
+  bool startPlayback(int32_t sampleRate, int32_t channels) {
+      // Assumes prepareForReview called previously
       oboe::AudioStreamBuilder outB;
       outB.setDirection(oboe::Direction::Output)
           ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -219,14 +238,12 @@ public:
       running_.store(true);
       if (out_->requestStart() != oboe::Result::OK) { stop(); return false; }
       
-      LOGI("Started playback mode sr=%d ch=%d", out_->getSampleRate(), channels);
+      LOGI("Started PlaybackReview mode [Ref+Voc] sr=%d ch=%d", out_->getSampleRate(), channels);
       return true;
   }
   
-  // Legacy start for Recording
   bool startDuplex(int32_t sampleRate, int32_t channels) {
-      stop();
-      isDuplex_ = true;
+      // Assumes prepareForRecord called previously
       
       oboe::AudioStreamBuilder outB;
       outB.setDirection(oboe::Direction::Output)
@@ -292,43 +309,45 @@ public:
 
     // --- Input Capture (Duplex only) ---
     int32_t gotFrames = 0;
-    if (isDuplex_ && in_) {
+    if (mode_ == EngineMode::kDuplexRecord && in_) {
         inBuf_.resize(numFrames * outCh);
         auto res = in_->read(inBuf_.data(), numFrames, 0);
         if (res) gotFrames = res.value();
     }
     
-    // --- Render Mixing (Two Track) ---
+    // --- Render Mixing ---
     float gRef = gainRef_.load();
     float gVoc = gainVoc_.load();
     int32_t vocOff = vocOffset_.load();
     
-    // No lock on trackMu_ for performance; assumes tracks loaded before start or immutable during play
-    // If dynamic load is needed, minimal lock or double-buffer needed. 
-    // For now we assume load -> start scheme.
+    // Safety check: if in record mode, FORCE ZERO voc gain just in case
+    if (mode_ == EngineMode::kDuplexRecord) {
+        gVoc = 0.0f; 
+    }
     
     size_t refLen = trackRef_.size() / playCh_;
-    size_t vocLen = trackVoc_.size(); // Voc is mono
+    size_t vocLen = trackVoc_.size(); 
     
     const float* refData = trackRef_.data();
     const float* vocData = trackVoc_.data();
 
+    // Fill buffer
     for (int i=0; i<numFrames; i++) {
         for (int c=0; c<outCh; c++) {
             float sum = 0.f;
             
             // 1. Reference
             if (pf < refLen) {
-                // simple mapping if outCh matches playCh_ (usually mono->mono)
-                // if playCh=1, outCh=1: idx = pf
                 int rIdx = pf * playCh_ + (playCh_ > 1 ? c % playCh_ : 0);
                 sum += refData[rIdx] * gRef;
             }
             
-            // 2. Vocal
-            int64_t vPf = pf - vocOff;
-            if (vPf >= 0 && vPf < vocLen) {
-                sum += vocData[vPf] * gVoc;
+            // 2. Vocal (ONLY if Playback Mode)
+            if (mode_ == EngineMode::kPlaybackReview) {
+                int64_t vPf = pf - vocOff;
+                if (vPf >= 0 && vPf < vocLen) {
+                   sum += vocData[vPf] * gVoc;
+                }
             }
             
             out[i*outCh + c] = sum;
@@ -338,9 +357,7 @@ public:
     playFrame_.store(pf);
     
     // --- Process Capture ---
-    if (gotFrames > 0 && isDuplex_) {
-       // ... existing capture logic ...
-       // For brevity, using simplified push
+    if (gotFrames > 0 && mode_ == EngineMode::kDuplexRecord) {
        const int totalSamples = gotFrames * outCh;
        pcm16_.resize(totalSamples);
        for(int i=0; i<totalSamples; i++) pcm16_[i] = (int16_t)lrintf(clampf(inBuf_[i], -1.f, 1.f) * 32767.f);
@@ -357,11 +374,7 @@ public:
     return oboe::DataCallbackResult::Continue;
   }
   
-  // Worker loop for JNI calling (same as before)
   void workerLoop() {
-    // ... same logic implies reusing code ...
-    // Putting abridged version for brevity in replacement but in real usage implies full copy.
-    // I will include the full worker loop logic to ensure it works.
      while (running_.load()) {
        std::unique_lock<std::mutex> lk(cvMu_);
        cv_.wait_for(lk, std::chrono::milliseconds(50));
@@ -407,12 +420,13 @@ public:
   }
 
 private:
+  std::atomic<EngineMode> mode_{EngineMode::kDuplexRecord};
+
   std::shared_ptr<oboe::AudioStream> out_, in_;
-  bool isDuplex_ = false;
   
   std::mutex trackMu_;
-  std::vector<float> trackRef_; // Interleaved
-  std::vector<float> trackVoc_; // Mono
+  std::vector<float> trackRef_; 
+  std::vector<float> trackVoc_; 
   int32_t playCh_ = 1;
   
   std::atomic<float> gainRef_{1.0f};
@@ -446,10 +460,14 @@ JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_
     gEngine->setJavaCallback(env, cb);
 }
 
-// Reuse existing start for Duplex Record
 JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStart(JNIEnv* env, jobject, jobject am, jstring path, jint sr, jint ch, jint fpc) {
     if(!gEngine) gEngine = new DuplexEngine();
     const char* p = env->GetStringUTFChars(path, 0);
+    
+    // START RECORD SESSION (Explicit mode set)
+    gEngine->prepareForRecord();
+    
+    LOGI("[DuplexEngine] START_SESSION (RECORD) playing reference=%s", p);
     
     // Choose loader based on path prefix
     bool loaded = false;
@@ -466,10 +484,6 @@ JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlu
         return JNI_FALSE;
     }
     
-    // Ensure recording gain settings are sane (unmute voc if previously muted?)
-    // Actually, for recording, we usually want to hear the reference.
-    // Gains are persistent in gEngine. Assuming defaults or previous set.
-    
     return gEngine->startDuplex(sr, ch) ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -478,7 +492,6 @@ JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_
 }
 
 JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeSetGain(JNIEnv* env, jobject, jfloat g) {
-   // Legacy method: map to Ref gain? 
    if(gEngine) gEngine->setGains(g, 1.0f);
 }
 
@@ -512,6 +525,9 @@ JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_
 
 JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStartPlaybackTwoTrack(JNIEnv*, jobject) {
     if(!gEngine) gEngine = new DuplexEngine();
+    
+    gEngine->prepareForReview();
+    
     // Default 48k mono output for now
     return gEngine->startPlayback(48000, 1) ? JNI_TRUE : JNI_FALSE;
 }
