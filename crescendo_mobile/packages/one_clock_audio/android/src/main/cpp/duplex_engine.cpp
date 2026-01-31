@@ -116,30 +116,28 @@ public:
     float* out = reinterpret_cast<float*>(audioData);
     const int outCh = out_->getChannelCount();
 
+    // Capture precise start frame of this callback (Logical Clock)
+    // This aligns the Input timestamp exactly to the Output playback position
+    // for this block, effectively resetting the offset to 0 (logical sync).
+    int64_t captureBaseFrame = playFrame_.load();
+
     // (1) Pull mic frames INSIDE output callback (ties capture cadence to output callback)
+    // We assume inCh == outCh for this duplex engine
     inBuf_.resize((size_t)numFrames * outCh);
     auto readRes = in_->read(inBuf_.data(), numFrames, 0 /*timeout*/);
     int32_t gotFrames = readRes ? readRes.value() : 0;
 
-    // (2) Timestamp output (clock)
-    int64_t outFramePos = 0;
-    int64_t outNanos = 0;
-    if (out_->getTimestamp(CLOCK_MONOTONIC, &outFramePos, &outNanos) == oboe::Result::OK) {
-      lastOutFramePos_.store(outFramePos);
-      lastTimestampNanos_.store(outNanos);
-    }
+    // (2) Timestamping:
+    // We intentionally IGNORE hardware timestamps (getTimestamp) here because
+    // they can be erratic or have large offsets (e.g. counting from boot).
+    // Using the logical `playFrame_` ensures robust alignment relative to the file start.
 
-    // (3) Timestamp input frame pos (best effort)
-    int64_t inFramePos = 0;
-    int64_t inNanos = 0;
-    if (in_->getTimestamp(CLOCK_MONOTONIC, &inFramePos, &inNanos) == oboe::Result::OK) {
-      lastInFramePos_.store(inFramePos);
-    }
-
-    // (4) Render playback from float buffer
+    // (3) Render playback from float buffer
     const float g = gain_.load();
     const int framesInPlay = (int)(play_.size() / (size_t)playCh_);
-    int64_t pf = playFrame_.load();
+    
+    // Initialize local counter from our captured start frame
+    int64_t pf = captureBaseFrame;
 
     for (int i = 0; i < numFrames; i++) {
       for (int c = 0; c < outCh; c++) {
@@ -153,14 +151,16 @@ public:
       }
       pf++;
     }
+    // Update atomic only once per callback
     playFrame_.store(pf);
 
-    // (5) Convert captured float->PCM16 and push to rings (NO JNI here)
+    // (4) Convert captured float->PCM16 and push to rings (NO JNI here)
     if (gotFrames > 0) {
       const int totalSamples = gotFrames * outCh;
       pcm16_.resize((size_t)totalSamples);
 
       for (int i = 0; i < totalSamples; i++) {
+        // Simple clamp and convert
         float x = clampf(inBuf_[i], -1.f, 1.f);
         pcm16_[(size_t)i] = (int16_t)lrintf(x * 32767.f);
       }
@@ -169,9 +169,10 @@ public:
       meta.numFrames = gotFrames;
       meta.sampleRate = sr_;
       meta.channels = outCh;
-      meta.inputFramePos = lastInFramePos_.load();
-      meta.outputFramePos = lastOutFramePos_.load();
-      meta.timestampNanos = lastTimestampNanos_.load();
+      // Use the LOGICAL timestamps for perfect alignment
+      meta.inputFramePos = captureBaseFrame;
+      meta.outputFramePos = captureBaseFrame; 
+      meta.timestampNanos = 0; // Unused
 
       const uint8_t* metaBytes = reinterpret_cast<const uint8_t*>(&meta);
       const uint8_t* pcmBytes  = reinterpret_cast<const uint8_t*>(pcm16_.data());

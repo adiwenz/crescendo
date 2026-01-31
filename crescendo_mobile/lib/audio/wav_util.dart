@@ -107,7 +107,8 @@ class WavUtil {
     required String referencePath, 
     required String vocalPath, 
     required int offsetFrames, 
-    required String outputPath
+    required String outputPath,
+    double vocalGain = 1.0, 
   }) async {
     
     final ref = await readPcm16Wav(referencePath);
@@ -131,7 +132,7 @@ class WavUtil {
     int totalFrames = maxEnd;
     final outBuffer = Int32List(totalFrames); // Mono accumulation
     
-    // Mix Reference (Headroom 0.5)
+    // Mix Reference (Limit to 0.5 to leave room for vocal)
     for (int i = 0; i < refFrames; i++) {
         // Downmix if stereo
         int val = 0;
@@ -143,7 +144,7 @@ class WavUtil {
         outBuffer[i] += (val * 0.5).round();
     }
     
-    // Mix Vocal (Headroom 0.5)
+    // Mix Vocal (Apply requested gain)
     for (int i = 0; i < vocFrames; i++) {
         int pos = offsetFrames + i;
         if (pos >= 0 && pos < totalFrames) {
@@ -154,7 +155,7 @@ class WavUtil {
             }
             val ~/= voc.channels;
             
-            outBuffer[pos] += (val * 0.5).round();
+            outBuffer[pos] += (val * vocalGain).round();
         }
     }
     

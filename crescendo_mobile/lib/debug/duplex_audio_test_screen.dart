@@ -212,6 +212,28 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
     final rawRecBytes = <int>[];
     for (var c in _captures) rawRecBytes.addAll(c.pcm16);
     final recInt16 = Uint8List.fromList(rawRecBytes).buffer.asInt16List();
+    
+    // APPLY GAIN BOOST (8.0x) manually before save/mix
+    // This addresses "make recorded audio gain louder on wav encoding"
+    const double preGain = 8.0;
+    print("Applying Pre-Gain: ${preGain}x");
+    
+    int maxBefore = 0;
+    int maxAfter = 0;
+    
+    for (int i = 0; i < recInt16.length; i++) {
+        final original = recInt16[i];
+        if (original.abs() > maxBefore) maxBefore = original.abs();
+        
+        int val = (original * preGain).round();
+        if (val > 32767) val = 32767;
+        if (val < -32768) val = -32768;
+        
+        recInt16[i] = val;
+        if (val.abs() > maxAfter) maxAfter = val.abs();
+    }
+    print("GAIN STATS: Max Amp Before=$maxBefore, Max Amp After=$maxAfter");
+    
     await WavUtil.writePcm16MonoWav(recPath, recInt16, 48000); // 48k captured
 
     // 2. Save Reference (Ensure it's a file for WavUtil)
@@ -232,7 +254,8 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
         referencePath: refPath, 
         vocalPath: recPath, 
         offsetFrames: offsetFrames, 
-        outputPath: mixPath
+        outputPath: mixPath,
+        vocalGain: 1.0, // Pre-gain already applied
     );
 
     // 5. Debug Prints
