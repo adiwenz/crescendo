@@ -311,19 +311,31 @@ class _DuplexAudioTestScreenState extends State<DuplexAudioTestScreen> {
                           child: Text(_isPlaying ? "STOP PLAYBACK" : "PLAY (Mute to isolate)")
                       ),
                       
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 14),
                       
-                      // Mute Toggles
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                          FilterChip(label: const Text("Mute Ref"), selected: _muteRef, onSelected: (v) {
-                              setState(() => _muteRef = v);
+                      // Mute buttons: Reference and Recorded (Vocal)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _MuteButton(
+                            label: 'Ref',
+                            muted: _muteRef,
+                            onPressed: () {
+                              setState(() => _muteRef = !_muteRef);
                               _updateNativeParams();
-                          }),
-                          FilterChip(label: const Text("Mute Voc"), selected: _muteVoc, onSelected: (v) {
-                              setState(() => _muteVoc = v);
+                            },
+                          ),
+                          const SizedBox(width: 16),
+                          _MuteButton(
+                            label: 'Voc',
+                            muted: _muteVoc,
+                            onPressed: () {
+                              setState(() => _muteVoc = !_muteVoc);
                               _updateNativeParams();
-                          }),
-                      ]),
+                            },
+                          ),
+                        ],
+                      ),
 
                       const SizedBox(height: 10),
                       Row(children: [
@@ -397,4 +409,50 @@ class _WaveformPainter extends CustomPainter {
   
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+/// Mute button for ref or vocal: icon + label, toggles muted state.
+class _MuteButton extends StatelessWidget {
+  final String label;
+  final bool muted;
+  final VoidCallback onPressed;
+
+  const _MuteButton({
+    required this.label,
+    required this.muted,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: muted ? Theme.of(context).colorScheme.primaryContainer : null,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                muted ? Icons.volume_off : Icons.volume_up,
+                size: 22,
+                color: muted ? Theme.of(context).colorScheme.onPrimaryContainer : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Mute $label',
+                style: TextStyle(
+                  fontWeight: muted ? FontWeight.bold : FontWeight.normal,
+                  color: muted ? Theme.of(context).colorScheme.onPrimaryContainer : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

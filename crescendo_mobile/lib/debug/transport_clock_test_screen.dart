@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:crescendo_mobile/transport_clock.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:one_clock_audio/one_clock_audio.dart';
 
 class TransportClockTestScreen extends StatefulWidget {
   const TransportClockTestScreen({super.key});
@@ -34,6 +35,10 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
   String? _badMixPath;
 
   int _offsetSamples = 0;
+
+  bool _muteRef = false;
+  bool _muteVoc = false;
+  bool _playingWithOneClock = false;
 
   Timer? _recordTimer;
 
@@ -90,6 +95,10 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
     if (_referencePath == null) return;
 
     try {
+      if (Platform.isIOS && _playingWithOneClock) {
+        await OneClockAudio.stop();
+        setState(() => _playingWithOneClock = false);
+      }
       // 1. Start recording
       final dir = await getTemporaryDirectory();
       _recordingPath = await _clock.startRecording(dirPath: dir.path);
@@ -171,11 +180,43 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
 
   Future<void> _playMix(String? path) async {
     if (path == null) return;
-    await _audioPlayer.play(DeviceFileSource(path));
-    
+    if (_referencePath == null || _recordingPath == null) return;
+
+    // On iOS use one_clock_audio for two-track playback so mute ref/voc works
+    if (Platform.isIOS) {
+      if (_playingWithOneClock) await OneClockAudio.stop();
+      setState(() => _playingWithOneClock = true);
+      await OneClockAudio.loadReference(_referencePath!);
+      await OneClockAudio.loadVocal(_recordingPath!);
+      final useGoodOffset = path == _goodMixPath;
+      await OneClockAudio.setVocalOffset(useGoodOffset ? _offsetSamples : 0);
+      await OneClockAudio.setTrackGains(
+        ref: _muteRef ? 0.0 : 1.0,
+        voc: _muteVoc ? 0.0 : 1.0,
+      );
+      final ok = await OneClockAudio.startPlaybackTwoTrack();
+      if (!ok && mounted) {
+        setState(() => _playingWithOneClock = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Two-track playback failed")),
+        );
+        return;
+      }
+    } else {
+      await _audioPlayer.play(DeviceFileSource(path));
+    }
+
     // Simulate timeline playback
     _animController.reset();
     _animController.forward();
+  }
+
+  Future<void> _updateTwoTrackGains() async {
+    if (!_playingWithOneClock) return;
+    await OneClockAudio.setTrackGains(
+      ref: _muteRef ? 0.0 : 1.0,
+      voc: _muteVoc ? 0.0 : 1.0,
+    );
   }
 
   @override
@@ -229,6 +270,32 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
                   ElevatedButton(onPressed: _badMixPath == null ? null : () => _playMix(_badMixPath), child: const Text("Play BAD")),
                 ],
               ),
+              // iOS: mute ref/voc during two-track playback
+              if (Platform.isIOS && (_goodMixPath != null || _badMixPath != null)) ...[
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _MuteButton(
+                      label: 'Ref',
+                      muted: _muteRef,
+                      onPressed: () {
+                        setState(() => _muteRef = !_muteRef);
+                        _updateTwoTrackGains();
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    _MuteButton(
+                      label: 'Voc',
+                      muted: _muteVoc,
+                      onPressed: () {
+                        setState(() => _muteVoc = !_muteVoc);
+                        _updateTwoTrackGains();
+                      },
+                    ),
+                  ],
+                ),
+              ],
 
               const Divider(),
               const Text("Visualization", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -286,6 +353,52 @@ class _TransportClockTestScreenState extends State<TransportClockTestScreen>
              child: Container(width: 2, color: Colors.red),
           )
         ],
+      ),
+    );
+  }
+}
+
+/// Mute button for ref or vocal: icon + label, toggles muted state.
+class _MuteButton extends StatelessWidget {
+  final String label;
+  final bool muted;
+  final VoidCallback onPressed;
+
+  const _MuteButton({
+    required this.label,
+    required this.muted,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: muted ? Theme.of(context).colorScheme.primaryContainer : null,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                muted ? Icons.volume_off : Icons.volume_up,
+                size: 22,
+                color: muted ? Theme.of(context).colorScheme.onPrimaryContainer : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Mute $label',
+                style: TextStyle(
+                  fontWeight: muted ? FontWeight.bold : FontWeight.normal,
+                  color: muted ? Theme.of(context).colorScheme.onPrimaryContainer : null,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
