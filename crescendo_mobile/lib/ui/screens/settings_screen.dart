@@ -64,6 +64,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: 'What you get with premium',
         onTap: () => Navigator.pushNamed(context, '/settings/subscription_features'),
       ),
+      _SettingsItem(
+        title: 'Debug: Transport Clock',
+        subtitle: 'Test audio transport sync',
+        onTap: () => Navigator.pushNamed(context, '/debug/transport_clock'),
+      ),
     ];
     return Scaffold(
       extendBodyBehindAppBar: true,

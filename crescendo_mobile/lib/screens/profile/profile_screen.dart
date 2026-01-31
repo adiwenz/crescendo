@@ -107,8 +107,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            _settingsRow(context, 'Subscription', () {}),
-            _settingsRow(context, 'Preferences', () {}),
+            _settingsRow(context, 'Subscription', () => Navigator.pushNamed(context, '/settings/subscription')),
+            _settingsRow(context, 'Preferences', () => Navigator.pushNamed(context, '/settings')),
             const SizedBox(height: 24),
             ElevatedButton(
               style: ElevatedButton.styleFrom(

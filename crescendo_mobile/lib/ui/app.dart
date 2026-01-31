@@ -16,6 +16,7 @@ import 'theme/app_theme.dart';
 import 'route_observer.dart';
 import 'widgets/app_background.dart';
 import 'widgets/lazy_indexed_stack.dart';
+import '../debug/transport_clock_test_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
   const CrescendoApp({super.key});
@@ -86,6 +87,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 '/settings/subscription': (_) => const SubscriptionScreen(),
                 '/settings/subscription_features': (_) =>
                     const SubscriptionFeaturesScreen(),
+                '/debug/transport_clock': (_) => const TransportClockTestScreen(),
               },
             );
           },

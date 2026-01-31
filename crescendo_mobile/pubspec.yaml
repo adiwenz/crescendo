@@ -45,6 +45,7 @@ flutter:
     - assets/audio/previews/
     - assets/audio/exercises/
     - assets/generated/exercise_xmap/
+    - assets/audio/reference.wav
 
 flutter_launcher_icons:
   image_path: "assets/purple_logo.png"

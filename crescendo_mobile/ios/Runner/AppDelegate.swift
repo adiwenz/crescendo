@@ -10,6 +10,7 @@ import AudioToolbox
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
+    SwiftTransportClockPlugin.register(with: self.registrar(forPlugin: "SwiftTransportClockPlugin")!)
     
     // Set up method channel for audio session control
     print("[AppDelegate] Setting up audioSession method channel")
