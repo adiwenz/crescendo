@@ -65,6 +65,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => Navigator.pushNamed(context, '/settings/subscription_features'),
       ),
       _SettingsItem(
+        title: 'Debug: OneClock Audio (iOS + Android)',
+        subtitle: 'Ref playback, mic record, timestamps, mix',
+        onTap: () => Navigator.pushNamed(context, '/debug/one_clock'),
+      ),
+      _SettingsItem(
         title: 'Debug: Transport Clock (iOS)',
         subtitle: 'Test sample-accurate clock',
         onTap: () => Navigator.pushNamed(context, '/debug/transport_clock'),

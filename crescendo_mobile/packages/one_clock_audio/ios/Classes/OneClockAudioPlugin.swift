@@ -244,6 +244,9 @@ public class OneClockAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler 
     stopCaptureTap()
     engine.inputNode.removeTap(onBus: 0)
     let url = URL(fileURLWithPath: outputPath)
+    if FileManager.default.fileExists(atPath: url.path) {
+      try? FileManager.default.removeItem(at: url)
+    }
     let settings: [String: Any] = [
       AVFormatIDKey: kAudioFormatLinearPCM,
       AVSampleRateKey: format.sampleRate,
@@ -346,6 +349,9 @@ public class OneClockAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler 
       outSamples[i] = max(-1.0, min(1.0, outSamples[i]))
     }
     let url = URL(fileURLWithPath: outPath)
+    if FileManager.default.fileExists(atPath: url.path) {
+      try? FileManager.default.removeItem(at: url)
+    }
     let settings: [String: Any] = [
       AVFormatIDKey: kAudioFormatLinearPCM,
       AVSampleRateKey: refSR,
