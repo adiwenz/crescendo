@@ -7,7 +7,6 @@ import 'package:crescendo_mobile/core/interfaces/i_file_system.dart';
 import 'package:crescendo_mobile/core/interfaces/i_midi_synth.dart';
 import 'package:crescendo_mobile/core/interfaces/i_take_repository.dart';
 import 'package:crescendo_mobile/core/interfaces/i_preferences.dart';
-import 'package:crescendo_mobile/core/interfaces/i_pitch_detector.dart';
 import 'package:crescendo_mobile/core/wrappers/real_audio_player.dart';
 // Import other real implementations... 
 
@@ -15,7 +14,6 @@ import 'package:crescendo_mobile/core/wrappers/real_audio_session.dart';
 import 'package:crescendo_mobile/core/wrappers/real_clock.dart';
 import 'package:crescendo_mobile/core/wrappers/real_file_system.dart';
 import 'package:crescendo_mobile/core/wrappers/real_preferences.dart';
-import 'package:crescendo_mobile/core/wrappers/real_pitch_detector.dart';
 import 'package:crescendo_mobile/core/wrappers/real_recorder.dart';
 import 'package:crescendo_mobile/core/wrappers/real_midi_synth.dart';
 import 'package:crescendo_mobile/services/storage/take_repository.dart';
@@ -35,7 +33,6 @@ void setupLocator() {
   locator.registerLazySingleton<IPreferences>(() => RealPreferences());
   locator.registerLazySingleton<IMidiSynth>(() => RealMidiSynth());
   locator.registerLazySingleton<ITakeRepository>(() => TakeRepository());
-  locator.registerFactory<IPitchDetector>(() => RealPitchDetector());
 }
 
 // Helper for test setup
@@ -46,7 +43,6 @@ void setupTestLocator({
   IClock? clock,
   IFileSystem? fileSystem,
   IPreferences? preferences,
-  IPitchDetector? pitchDetector,
   IMidiSynth? midiSynth,
   ITakeRepository? takeRepository,
 }) {
@@ -61,7 +57,6 @@ void setupTestLocator({
   if (clock != null) locator.registerLazySingleton<IClock>(() => clock);
   if (fileSystem != null) locator.registerLazySingleton<IFileSystem>(() => fileSystem);
   if (preferences != null) locator.registerLazySingleton<IPreferences>(() => preferences);
-  if (pitchDetector != null) locator.registerFactory<IPitchDetector>(() => pitchDetector);
   if (midiSynth != null) locator.registerLazySingleton<IMidiSynth>(() => midiSynth);
   if (takeRepository != null) locator.registerLazySingleton<ITakeRepository>(() => takeRepository);
 }
