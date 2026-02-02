@@ -1,2 +1,0 @@
-/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/.cxx/Debug/115p6v5f/arm64-v8a/_deps/oboe-src/CMakeLists.txt
-/Users/adriannawenz/code/crescendo/crescendo_mobile/packages/one_clock_audio/android/src/main/cpp/CMakeLists.txt

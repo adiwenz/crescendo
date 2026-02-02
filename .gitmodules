@@ -1,0 +1,3 @@
+[submodule "crescendo_mobile/packages/one_clock_audio"]
+	path = crescendo_mobile/packages/one_clock_audio
+	url = https://github.com/adiwenz/one_clock_audio.git
