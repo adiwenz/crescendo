@@ -12,6 +12,7 @@
 #include <vector>
 #include <cstdio>
 #include <string>
+#include <chrono>
 
 #include "ring_buffer.h"
 
@@ -232,21 +233,151 @@ public:
 
   void stop() {
     running_.store(false);
-    if (in_) in_->close(); 
+    stopTransportRecording();
+    {
+      std::lock_guard<std::mutex> lk(transportFileMu_);
+      if (transportRecordFile_) {
+        updateWavDataSize(transportRecordFile_, transportRecordBytes_.load());
+        fclose(transportRecordFile_);
+        transportRecordFile_ = nullptr;
+      }
+    }
+    if (in_) in_->close();
     if (out_) out_->close();
     in_.reset();
     out_.reset();
-    
+
     cv_.notify_all();
     if(worker_.joinable()) worker_.join();
-    
-    // Clear rings to prevent stale data on next run
+
     pcmRing_.clear();
     metaRing_.clear();
-    
     playFrame_.store(0);
     LOGI("Stopped. Rings cleared.");
   }
+
+  // --- Transport: WAV writer + sample-time clock (iOS semantics) ---
+  static void writeWavHeader(FILE* f, int32_t sampleRate, int32_t channels) {
+    if (!f) return;
+    uint8_t hdr[44] = {0};
+    memcpy(hdr, "RIFF", 4);
+    uint32_t riffSize = 36;
+    hdr[4] = (uint8_t)(riffSize); hdr[5] = (uint8_t)(riffSize>>8); hdr[6] = (uint8_t)(riffSize>>16); hdr[7] = (uint8_t)(riffSize>>24);
+    memcpy(hdr+8, "WAVE", 4);
+    memcpy(hdr+12, "fmt ", 4);
+    uint32_t fmtLen = 16;
+    hdr[16]=fmtLen; hdr[17]=fmtLen>>8; hdr[18]=fmtLen>>16; hdr[19]=fmtLen>>24;
+    uint16_t format = 1;
+    hdr[20]=format; hdr[21]=format>>8;
+    hdr[22]=channels; hdr[23]=channels>>8;
+    hdr[24]=(uint8_t)(sampleRate); hdr[25]=(uint8_t)(sampleRate>>8); hdr[26]=(uint8_t)(sampleRate>>16); hdr[27]=(uint8_t)(sampleRate>>24);
+    uint32_t byteRate = sampleRate * channels * 2;
+    hdr[28]=(uint8_t)(byteRate); hdr[29]=(uint8_t)(byteRate>>8); hdr[30]=(uint8_t)(byteRate>>16); hdr[31]=(uint8_t)(byteRate>>24);
+    uint16_t blockAlign = channels * 2;
+    hdr[32]=blockAlign; hdr[33]=blockAlign>>8;
+    uint16_t bits = 16;
+    hdr[34]=bits; hdr[35]=bits>>8;
+    memcpy(hdr+36, "data", 4);
+    uint32_t dataSize = 0;
+    hdr[40]=dataSize; hdr[41]=dataSize>>8; hdr[42]=dataSize>>16; hdr[43]=dataSize>>24;
+    fwrite(hdr, 1, 44, f);
+  }
+
+  static void updateWavDataSize(FILE* f, int64_t dataBytes) {
+    if (!f || dataBytes < 0) return;
+    uint32_t sz = (uint32_t)(dataBytes > 0x7fffffff ? 0x7fffffff : dataBytes);
+    fseek(f, 40, SEEK_SET);
+    uint8_t b[4] = {(uint8_t)(sz), (uint8_t)(sz>>8), (uint8_t)(sz>>16), (uint8_t)(sz>>24)};
+    fwrite(b, 1, 4, f);
+    uint32_t riffSize = 36 + sz;
+    fseek(f, 4, SEEK_SET);
+    uint8_t r[4] = {(uint8_t)(riffSize), (uint8_t)(riffSize>>8), (uint8_t)(riffSize>>16), (uint8_t)(riffSize>>24)};
+    fwrite(r, 1, 4, f);
+  }
+
+  void prepareTransportState() {
+    mode_.store(EngineMode::kDuplexRecord);
+    gainRef_.store(1.0f);
+    gainVoc_.store(0.0f);
+    vocOffset_.store(0);
+    playFrame_.store(0);
+    transportPlaybackStartFrame_.store(0);
+    transportRecordStartFrame_.store(-1);
+    transportRecordBytes_.store(0);
+    firstCaptureLog_ = true;
+    { std::lock_guard<std::mutex> lk(trackMu_); trackRef_.resize(1); trackRef_[0] = 0.f; playCh_ = 1; }
+    LOGI("prepareTransportState (silence ref, no stream teardown)");
+  }
+
+  bool isDuplexRunning() const { return running_.load() && out_ != nullptr && in_ != nullptr; }
+  int64_t getPlayFrame() const { return playFrame_.load(); }
+  void setTransportPlaybackStartFrame(int64_t f) { transportPlaybackStartFrame_.store(f); }
+
+  bool openTransportRecordFile(const char* outputPath, bool hasRecordPermission) {
+    if (!running_.load() || !out_ || !in_) {
+      LOGE("openTransportRecordFile: duplex not running");
+      return false;
+    }
+    std::lock_guard<std::mutex> lk(transportFileMu_);
+    if (transportRecordFile_) {
+      updateWavDataSize(transportRecordFile_, transportRecordBytes_.load());
+      fclose(transportRecordFile_);
+      transportRecordFile_ = nullptr;
+    }
+    FILE* f = fopen(outputPath, "wb");
+    if (!f) { LOGE("openTransportRecordFile: fopen failed %s", outputPath); return false; }
+    writeWavHeader(f, 48000, 1);
+    transportRecordFile_ = f;
+    transportRecordPath_ = outputPath;
+    transportRecordStartFrame_.store(-1);
+    transportRecordBytes_.store(0);
+    recordWriteCalls_.store(0);
+    recordFramesWritten_.store(0);
+    recordNonZeroFrames_.store(0);
+    lastPeakAbs_.store(0.f);
+    inputCallbacksSeen_.store(0);
+    inputFramesSeen_.store(0);
+    firstInputNanos_.store(0);
+    lastInputNanos_.store(0);
+    firstInputAfterRecordStart_.store(true);
+    isTransportRecording_.store(true);
+    LOGI("startRecording: writer opened path=%s running=%d in=%d out=%d isTransportRecording=1 recordPermission=%d",
+         outputPath, running_.load() ? 1 : 0, in_ ? 1 : 0, out_ ? 1 : 0, hasRecordPermission ? 1 : 0);
+    return true;
+  }
+
+  void stopTransportRecording() {
+    isTransportRecording_.store(false);
+    int64_t rwc = recordWriteCalls_.load();
+    int64_t rfw = recordFramesWritten_.load();
+    int64_t rnz = recordNonZeroFrames_.load();
+    float lpa = lastPeakAbs_.load();
+    int64_t ics = inputCallbacksSeen_.load();
+    int64_t ifs = inputFramesSeen_.load();
+    int64_t fin = firstInputNanos_.load();
+    int64_t lin = lastInputNanos_.load();
+    {
+      std::lock_guard<std::mutex> lk(transportFileMu_);
+      if (transportRecordFile_) {
+        updateWavDataSize(transportRecordFile_, transportRecordBytes_.load());
+        fclose(transportRecordFile_);
+        transportRecordFile_ = nullptr;
+      }
+    }
+    LOGI("stopRecording: writer closed inputCallbacksSeen=%lld inputFramesSeen=%lld recordWriteCalls=%lld recordFramesWritten=%lld recordNonZeroFrames=%lld lastPeakAbs=%.4f firstInputNanos=%lld lastInputNanos=%lld",
+         (long long)ics, (long long)ifs, (long long)rwc, (long long)rfw, (long long)rnz, lpa, (long long)fin, (long long)lin);
+    if (rfw == 0) {
+      LOGE("[REC_ERROR] writer opened but ZERO frames written running=%d in=%d out=%d",
+           running_.load() ? 1 : 0, in_ ? 1 : 0, out_ ? 1 : 0);
+    }
+  }
+
+  int64_t getPlaybackStartSampleTime() const { return transportPlaybackStartFrame_.load(); }
+  int64_t getRecordStartSampleTime() const {
+    int64_t v = transportRecordStartFrame_.load();
+    return v >= 0 ? v : 0;
+  }
+  bool hasRecordStartSampleTime() const { return transportRecordStartFrame_.load() >= 0; }
 
   void prepareForRecord() {
       stop();
@@ -338,7 +469,59 @@ public:
         auto res = in_->read(inBuf_.data(), numFrames, 0);
         if (res) gotFrames = res.value();
     }
-    
+
+    // --- Input debug counters + transport record write (single path) ---
+    if (mode_ == EngineMode::kDuplexRecord && in_) {
+        inputCallbacksSeen_++;
+        float peak = 0.f;
+        if (gotFrames > 0) {
+            inputFramesSeen_ += gotFrames;
+            int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (firstInputNanos_.load() == 0) firstInputNanos_.store(nowNs);
+            lastInputNanos_.store(nowNs);
+            int totalSamples = gotFrames * outCh;
+            for (int i = 0; i < totalSamples; i++) {
+                float a = std::fabs(inBuf_[i]);
+                if (a > peak) peak = a;
+            }
+            lastPeakAbs_.store(peak);
+        }
+        if (isTransportRecording_.load() && firstInputAfterRecordStart_.exchange(false)) {
+            LOGI("first input callback after startRecording: numFrames=%d peakAbs=%.4f isTransportRecording=1 writer!=null=%d",
+                 gotFrames, peak, transportRecordFile_ != nullptr ? 1 : 0);
+        }
+        if (transportRecordFile_ != nullptr && isTransportRecording_.load() && gotFrames > 0) {
+            std::lock_guard<std::mutex> lk(transportFileMu_);
+            FILE* f = transportRecordFile_;
+            if (f) {
+                pcm16_.resize(gotFrames);
+                for (int i = 0; i < gotFrames; i++) {
+                    float s = 0;
+                    for (int c = 0; c < outCh; c++) s += inBuf_[i * outCh + c];
+                    s /= outCh;
+                    pcm16_[i] = (int16_t)lrintf(clampf(s, -1.f, 1.f) * 32767.f);
+                }
+                size_t wrote = fwrite(pcm16_.data(), 2, gotFrames, f);
+                if (wrote == (size_t)gotFrames) {
+                    int64_t addBytes = (int64_t)gotFrames * 2;
+                    transportRecordBytes_ += addBytes;
+                    if (transportRecordStartFrame_.load() < 0) transportRecordStartFrame_.store(captureBase);
+                    recordWriteCalls_++;
+                    recordFramesWritten_ += gotFrames;
+                    if (peak > 0.001f) recordNonZeroFrames_ += gotFrames;
+                    lastPeakAbs_.store(peak);
+                    if (recordWriteCalls_.load() <= 5) {
+                        LOGI("[REC_WRITE] frames=%d totalWritten=%lld peak=%.4f fileBytesApprox=%lld",
+                             gotFrames, (long long)recordFramesWritten_.load(), peak, (long long)(44 + transportRecordBytes_.load()));
+                    }
+                    if (recordWriteCalls_.load() % 20 == 0 && recordWriteCalls_.load() > 0 && transportRecordBytes_.load() <= 44) {
+                        LOGE("record: after %lld writes file still <= 44 bytes", (long long)recordWriteCalls_.load());
+                    }
+                }
+            }
+        }
+    }
+
     // --- Render Mixing ---
     float gRef = gainRef_.load();
     float gVoc = gainVoc_.load();
@@ -348,57 +531,50 @@ public:
     if (mode_ == EngineMode::kDuplexRecord) {
         gVoc = 0.0f; 
     }
-    
-    size_t refLen = trackRef_.size() / playCh_;
-    size_t vocLen = trackVoc_.size(); 
-    
-    const float* refData = trackRef_.data();
-    const float* vocData = trackVoc_.data();
 
-    // Fill buffer
-    for (int i=0; i<numFrames; i++) {
-        for (int c=0; c<outCh; c++) {
-            float sum = 0.f;
-            
-            // 1. Reference
-            if (pf < refLen) {
-                int rIdx = pf * playCh_ + (playCh_ > 1 ? c % playCh_ : 0);
-                sum += refData[rIdx] * gRef;
-            }
-            
-            // 2. Vocal (ONLY if Playback Mode)
-            if (mode_ == EngineMode::kPlaybackReview) {
-                int64_t vPf = pf - vocOff;
-                if (vPf >= 0 && vPf < vocLen) {
-                   sum += vocData[vPf] * gVoc;
+    // Hold trackMu_ for entire mix to avoid data race with loadRefFromFile/loadVocFromFile
+    {
+        std::lock_guard<std::mutex> lk(trackMu_);
+        size_t refLen = trackRef_.size() / playCh_;
+        size_t vocLen = trackVoc_.size();
+        const float* refData = trackRef_.data();
+        const float* vocData = trackVoc_.data();
+        int32_t pCh = playCh_;
+
+        for (int i=0; i<numFrames; i++) {
+            for (int c=0; c<outCh; c++) {
+                float sum = 0.f;
+                if (pf < refLen) {
+                    int rIdx = (int)pf * pCh + (pCh > 1 ? c % pCh : 0);
+                    sum += refData[rIdx] * gRef;
                 }
+                if (mode_ == EngineMode::kPlaybackReview) {
+                    int64_t vPf = pf - vocOff;
+                    if (vPf >= 0 && vPf < (int64_t)vocLen) {
+                        sum += vocData[vPf] * gVoc;
+                    }
+                }
+                out[i*outCh + c] = sum;
             }
-            
-            out[i*outCh + c] = sum;
+            pf++;
         }
-        pf++;
     }
     playFrame_.store(pf);
     
-    // --- Process Capture ---
-    if (gotFrames > 0 && mode_ == EngineMode::kDuplexRecord) {
+    // --- Process Capture (push to Java only when NOT recording to transport file) ---
+    if (gotFrames > 0 && mode_ == EngineMode::kDuplexRecord && !transportRecordFile_) {
        if (firstCaptureLog_) {
            LOGI("[REC] firstCapture pf=%lld gotFrames=%d", (long long)captureBase, gotFrames);
            firstCaptureLog_ = false;
        }
-       
        const int totalSamples = gotFrames * outCh;
        pcm16_.resize(totalSamples);
        for(int i=0; i<totalSamples; i++) pcm16_[i] = (int16_t)lrintf(clampf(inBuf_[i], -1.f, 1.f) * 32767.f);
-       
        int64_t relPos = captureBase - sessionStartFrame_.load();
        onFirstCaptureIfNeeded(captureBase);
-       
        CaptureMeta meta = { gotFrames, 48000, outCh, captureBase, captureBase, 0, relPos, sessionId_.load() };
-       
        metaRing_.push((uint8_t*)&meta, sizeof(meta));
        pcmRing_.push((uint8_t*)pcm16_.data(), totalSamples * 2);
-       
        std::lock_guard<std::mutex> lk(cvMu_);
        cv_.notify_one();
     }
@@ -527,6 +703,25 @@ private:
   std::atomic<int64_t> firstCaptureOutputFrame_{-1};
   std::atomic<bool> hasFirstCapture_{false};
   std::atomic<int32_t> computedVocOffsetFrames_{0};
+
+  FILE* transportRecordFile_ = nullptr;
+  std::string transportRecordPath_;
+  std::mutex transportFileMu_;
+  std::atomic<int64_t> transportPlaybackStartFrame_{0};
+  std::atomic<int64_t> transportRecordStartFrame_{-1};
+  std::atomic<int64_t> transportRecordBytes_{0};
+  std::atomic<bool> isTransportRecording_{false};
+  std::atomic<bool> firstInputAfterRecordStart_{false};
+
+  // Debug counters for recording diagnostics
+  std::atomic<int64_t> inputCallbacksSeen_{0};
+  std::atomic<int64_t> inputFramesSeen_{0};
+  std::atomic<int64_t> recordWriteCalls_{0};
+  std::atomic<int64_t> recordFramesWritten_{0};
+  std::atomic<int64_t> recordNonZeroFrames_{0};
+  std::atomic<float> lastPeakAbs_{0.f};
+  std::atomic<int64_t> firstInputNanos_{0};
+  std::atomic<int64_t> lastInputNanos_{0};
 };
 
 static DuplexEngine* gEngine = nullptr;
@@ -637,5 +832,69 @@ JNIEXPORT jlongArray JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioP
     return arr;
 }
 
-} // extern C
+// --- Transport-style JNI (iOS semantics: one duplex, no stream open in startPlayback/startRecording) ---
+JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeEnsureStarted(JNIEnv*, jobject) {
+    if (!gEngine) gEngine = new DuplexEngine();
+    if (gEngine->isDuplexRunning()) {
+        LOGI("ensureStarted: duplex already running");
+        return;
+    }
+    LOGI("ensureStarted: starting full duplex (input+output together)");
+    gEngine->prepareTransportState();
+    if (!gEngine->startDuplex(48000, 1)) {
+        LOGE("ensureStarted: startDuplex failed");
+        return;
+    }
+    LOGI("ensureStarted: duplex running");
+}
+
+JNIEXPORT jdouble JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeGetSampleRate(JNIEnv*, jobject) {
+    return 48000.0;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStartPlayback(JNIEnv* env, jobject, jobject am, jstring path, jfloat gain) {
+    if (!gEngine) gEngine = new DuplexEngine();
+    const char* p = env->GetStringUTFChars(path, 0);
+    bool loaded = (p[0] == '/') ? gEngine->loadRefFromFile(p) : gEngine->loadRefFromAsset(env, am, p);
+    env->ReleaseStringUTFChars(path, p);
+    if (!loaded) {
+        LOGE("startPlayback: failed to load ref");
+        return JNI_FALSE;
+    }
+    gEngine->setGains(gain, 0.0f);
+    int64_t now = gEngine->getPlayFrame();
+    gEngine->setTransportPlaybackStartFrame(now);
+    LOGI("startPlayback: ref loaded ok, playbackStartSampleTime=%lld", (long long)now);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStartRecording(JNIEnv* env, jobject, jstring path, jboolean hasRecordPermission) {
+    if (!gEngine) return JNI_FALSE;
+    const char* p = env->GetStringUTFChars(path, 0);
+    jboolean ok = gEngine->openTransportRecordFile(p, hasRecordPermission == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+    env->ReleaseStringUTFChars(path, p);
+    return ok;
+}
+
+JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStopRecording(JNIEnv*, jobject) {
+    LOGI("nativeStopRecording");
+    if (gEngine) gEngine->stopTransportRecording();
+}
+
+JNIEXPORT void JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeStopAll(JNIEnv*, jobject) {
+    LOGI("nativeStopAll: stopping duplex, closing writer");
+    if (gEngine) gEngine->stop();
+}
+
+JNIEXPORT jlong JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeGetPlaybackStartSampleTime(JNIEnv*, jobject) {
+    return gEngine ? (jlong)gEngine->getPlaybackStartSampleTime() : 0;
+}
+
+JNIEXPORT jlong JNICALL Java_com_crescendo_one_1clock_1audio_OneClockAudioPlugin_nativeGetRecordStartSampleTime(JNIEnv*, jobject) {
+    if (!gEngine) return -1;
+    int64_t v = gEngine->getRecordStartSampleTime();
+    return gEngine->hasRecordStartSampleTime() ? (jlong)v : -1;
+}
+
+}  // extern "C"
 
