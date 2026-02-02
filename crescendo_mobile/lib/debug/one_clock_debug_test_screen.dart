@@ -115,9 +115,9 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
     return (midi - nearest) * 100;
   }
 
-  void _cancelCaptureSubscription() {
-    _captureSub?.cancel();
-    _captureSub = null;
+  /// Clears pitch state and warning timer. Does not cancel the capture subscription
+  /// (subscription is long-lived so native eventSink is set before first recording).
+  void _clearPitchState() {
     _captureWarningTimer?.cancel();
     _captureWarningTimer = null;
     _pitchSampleBuffer.clear();
@@ -125,6 +125,51 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
     _liveHz = null;
     _liveCents = null;
     _liveNoteName = '';
+  }
+
+  void _onCaptureEvent(OneClockCapture cap) async {
+    _captureEventCount++;
+    _captureWarningTimer?.cancel();
+    _captureWarningTimer = null;
+
+    if (cap.pcm16.isEmpty) return;
+    final samples = _pcm16ToDoubles(cap.pcm16);
+    _pitchSampleBuffer.addAll(samples);
+    while (_pitchSampleBuffer.length >= _kPitchBufferSize && _pitchDetector != null) {
+      final window = List<double>.from(_pitchSampleBuffer.sublist(0, _kPitchBufferSize));
+      _pitchSampleBuffer.removeRange(0, _kPitchBufferSize);
+      try {
+        final res = await _pitchDetector!.getPitchFromFloatBuffer(window);
+        _pitchFramesSeen++;
+        if (res.pitched && res.pitch.isFinite && res.pitch > 0) {
+          final hz = res.pitch;
+          _pitchHistory.add(hz);
+          if (_pitchHistory.length > _kPitchHistorySize) _pitchHistory.removeAt(0);
+          final smoothed = _pitchHistory.length == 0
+              ? hz
+              : _pitchHistory.reduce((a, b) => a + b) / _pitchHistory.length;
+          _liveHz = smoothed;
+          _liveCents = _hzToCentsFromA4(smoothed);
+          _liveNoteName = _hzToNoteName(smoothed);
+        } else {
+          _liveHz = null;
+          _liveCents = null;
+          _liveNoteName = '';
+        }
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        if (nowMs - _lastPitchUpdateMs > _kPitchUiThrottleMs) {
+          _lastPitchUpdateMs = nowMs;
+          if (mounted) setState(() {});
+        }
+        if (_pitchFramesSeen % 30 == 0 && _pitchFramesSeen > 0) {
+          _addLog('pitch hz=${_liveHz?.toStringAsFixed(1) ?? "—"} frames=$_pitchFramesSeen');
+        }
+      } catch (_) {
+        _liveHz = null;
+        _liveCents = null;
+        _liveNoteName = '';
+      }
+    }
   }
 
   Future<void> _prepareNewRunPaths() async {
@@ -193,6 +238,9 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
 
       _initialized = true;
       _isArmed = true;
+      // Subscribe once so native eventSink is set before first recording (avoids delay before startRecording).
+      _captureSub?.cancel();
+      _captureSub = OneClockAudio.captureStream.listen(_onCaptureEvent);
       _addLog('Initialized. Ready. Tap "Record + Play Ref".');
     } on PlatformException catch (e, st) {
       _logPlatformException(e, st);
@@ -205,7 +253,7 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
   }
 
   Future<void> _safeStopAll() async {
-    _cancelCaptureSubscription();
+    _clearPitchState();
     try {
       _addLog('stopAll()…');
       await OneClockAudio.stopAll();
@@ -247,8 +295,7 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
       _isArmed = false;
       setState(() {});
 
-      // Subscribe to capture stream BEFORE startRecording so native eventSink is set when the tap starts (iOS).
-      _cancelCaptureSubscription();
+      _clearPitchState();
       _captureEventCount = 0;
       _pitchFramesSeen = 0;
       _captureWarningTimer = Timer(const Duration(seconds: 1), () {
@@ -258,54 +305,7 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
               'WARNING: No capture events after 1s. If captureStream does not emit during startRecording, modify native transport tap to also send events.');
         }
       });
-      _captureSub = OneClockAudio.captureStream.listen((OneClockCapture cap) async {
-        _captureEventCount++;
-        _captureWarningTimer?.cancel();
-        _captureWarningTimer = null;
 
-        if (cap.pcm16.isEmpty) return;
-        final samples = _pcm16ToDoubles(cap.pcm16);
-        _pitchSampleBuffer.addAll(samples);
-        while (_pitchSampleBuffer.length >= _kPitchBufferSize && _pitchDetector != null) {
-          final window = List<double>.from(_pitchSampleBuffer.sublist(0, _kPitchBufferSize));
-          _pitchSampleBuffer.removeRange(0, _kPitchBufferSize);
-          try {
-            final res = await _pitchDetector!.getPitchFromFloatBuffer(window);
-            _pitchFramesSeen++;
-            if (res.pitched && res.pitch.isFinite && res.pitch > 0) {
-              final hz = res.pitch;
-              _pitchHistory.add(hz);
-              if (_pitchHistory.length > _kPitchHistorySize) _pitchHistory.removeAt(0);
-              final smoothed = _pitchHistory.length == 0
-                  ? hz
-                  : _pitchHistory.reduce((a, b) => a + b) / _pitchHistory.length;
-              _liveHz = smoothed;
-              _liveCents = _hzToCentsFromA4(smoothed);
-              _liveNoteName = _hzToNoteName(smoothed);
-            } else {
-              _liveHz = null;
-              _liveCents = null;
-              _liveNoteName = '';
-            }
-            final nowMs = DateTime.now().millisecondsSinceEpoch;
-            if (nowMs - _lastPitchUpdateMs > _kPitchUiThrottleMs) {
-              _lastPitchUpdateMs = nowMs;
-              if (mounted) setState(() {});
-            }
-            if (_pitchFramesSeen % 30 == 0 && _pitchFramesSeen > 0) {
-              _addLog('pitch hz=${_liveHz?.toStringAsFixed(1) ?? "—"} frames=$_pitchFramesSeen');
-            }
-          } catch (_) {
-            _liveHz = null;
-            _liveCents = null;
-            _liveNoteName = '';
-          }
-        }
-      });
-      // Let the event channel register the listener so native eventSink is set before the tap fires (iOS).
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-
-      // Now start recording and playback
       try {
         await OneClockAudio.startRecording(outputPath: _vocalPath!);
       } on PlatformException catch (e, st) {
@@ -337,14 +337,14 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
       _addLog('Recording+Playback running. Press STOP when done.');
     } on PlatformException catch (e, st) {
       _logPlatformException(e, st);
-      _cancelCaptureSubscription();
+      _clearPitchState();
       await _safeStopAll();
       _isRunning = false;
       _isArmed = true;
     } catch (e, st) {
       _addLog('START FLOW ERROR: $e');
       _addLog(st.toString());
-      _cancelCaptureSubscription();
+      _clearPitchState();
       await _safeStopAll();
       _isRunning = false;
       _isArmed = true;
@@ -356,7 +356,7 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
   Future<void> _stopTake() async {
     if (!_initialized || _busy) return;
 
-    _cancelCaptureSubscription();
+    _clearPitchState();
     setState(() => _busy = true);
     try {
       _addLog('STOP: stopRecording() + stopAll()');
@@ -447,7 +447,7 @@ class _OneClockDebugTestScreenState extends State<OneClockDebugTestScreen> {
 
   Future<void> _reset() async {
     if (_busy) return;
-    _cancelCaptureSubscription();
+    _clearPitchState();
     setState(() => _busy = true);
     try {
       await _safeStopAll();
