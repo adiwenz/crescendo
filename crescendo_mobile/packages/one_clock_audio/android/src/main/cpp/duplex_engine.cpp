@@ -520,6 +520,15 @@ public:
                 }
             }
         }
+        // Also push to capture stream when transport recording (so Dart gets live pitch)
+        if (gotFrames > 0 && transportRecordFile_ != nullptr && isTransportRecording_.load()) {
+            int64_t relPos = captureBase - sessionStartFrame_.load();
+            onFirstCaptureIfNeeded(captureBase);
+            CaptureMeta meta = { gotFrames, 48000, 1, captureBase, captureBase, 0, relPos, sessionId_.load() };
+            metaRing_.push((uint8_t*)&meta, sizeof(meta));
+            pcmRing_.push((uint8_t*)pcm16_.data(), gotFrames * 2);
+            { std::lock_guard<std::mutex> lk(cvMu_); cv_.notify_one(); }
+        }
     }
 
     // --- Render Mixing ---

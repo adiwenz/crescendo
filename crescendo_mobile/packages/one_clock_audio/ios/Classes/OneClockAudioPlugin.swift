@@ -258,9 +258,33 @@ public class OneClockAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler 
     transportRecordingFile = try AVAudioFile(forWriting: url, settings: settings)
     recordStartSampleTime = currentOutputSampleTime()
     let desiredBufferSize: AVAudioFrameCount = 1024
-    engine.inputNode.installTap(onBus: 0, bufferSize: desiredBufferSize, format: format) { [weak self] buffer, _ in
+    engine.inputNode.installTap(onBus: 0, bufferSize: desiredBufferSize, format: format) { [weak self] buffer, time in
       guard let self = self, self.isTransportRecording else { return }
       try? self.transportRecordingFile?.write(from: buffer)
+      // Also send to Dart capture stream for live pitch (dispatch to main so eventSink is used on main thread)
+      let (pcmBytes, frames) = self.convertToPCM16Mono(buffer: buffer)
+      if frames <= 0 { return }
+      let captureSampleTime = Int64(time.sampleTime)
+      let outputPos = self.currentOutputSampleTime() ?? 0
+      let relStart = self.recordStartSampleTime ?? 0
+      let outputFramePosRel = max(0, captureSampleTime - relStart)
+      let tsNanos = self.monotonicNanos()
+      let sr = Int(self.engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
+      let event: [String: Any] = [
+        "pcm16": FlutterStandardTypedData(bytes: pcmBytes),
+        "numFrames": frames,
+        "sampleRate": sr,
+        "channels": 1,
+        "inputFramePos": captureSampleTime,
+        "outputFramePos": outputPos,
+        "timestampNanos": tsNanos,
+        "outputFramePosRel": outputFramePosRel,
+        "sessionId": 0
+      ]
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self, let sink = self.eventSink else { return }
+        sink(event)
+      }
     }
     isTransportRecording = true
     if recordStartSampleTime == nil {
