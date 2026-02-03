@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:crescendo_mobile/services/timestamp_sync_service.dart';
 import 'package:flutter/material.dart';
 
@@ -20,7 +22,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
   bool _isArmed = false;
   bool _isRunning = false;
   SyncRunResult? _lastResult;
-  final List<String> _logs = [];
+
 
   final String _assetPath = 'assets/audio/reference.wav';
   // NOTE: If you have 'assets/audio/reference.wav' instead, change the above line.
@@ -41,14 +43,19 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
   }
 
   void _appendLog(String msg) {
-    if (!mounted) return;
-    setState(() {
-      _logs.add(msg);
-    });
+    debugPrint('[SyncScreen] $msg');
   }
+
+  // Pitch State
+  double? _currentHz;
+  String? _currentNote;
+  final List<double?> _pitchHistory = [];
+  StreamSubscription? _pitchSub;
+  bool _livePitchEnabled = true;
 
   @override
   void dispose() {
+    _pitchSub?.cancel();
     _service.dispose();
     super.dispose();
   }
@@ -59,7 +66,9 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       setState(() {
         _isArmed = true;
         _lastResult = null;
-        _logs.clear(); // Clear previous run logs from UI
+        _pitchHistory.clear();
+        _currentHz = null;
+        _currentNote = null;
       });
       _appendLog('Armed.');
     } catch (e) {
@@ -71,14 +80,33 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     if (!_isArmed) return;
     setState(() {
       _isRunning = true;
+      _pitchHistory.clear();
     });
+    
+    // Subscribe to pitch if enabled
+    if (_livePitchEnabled) {
+      _pitchSub?.cancel();
+      _pitchSub = _service.pitchStream.listen((hz) {
+        if (!mounted) return;
+        setState(() {
+          _currentHz = hz;
+          if (hz != null && hz > 0) {
+            _currentNote = _hzToNote(hz);
+          } else {
+             _currentNote = null;
+          }
+          
+          _pitchHistory.add(hz);
+          if (_pitchHistory.length > 100) {
+            _pitchHistory.removeAt(0);
+          }
+        });
+      });
+    }
     
     try {
       final result = await _service.startRun(refAssetPath: _assetPath);
-      // Intermediate update (timestamps captured)
       setState(() {
-        // We can show partial results here if we want, but startRun returns
-        // roughly when recording starts.
         _appendLog('Run started. RecStart: ${result.recStartNs}');
       });
     } catch (e) {
@@ -86,24 +114,22 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       setState(() {
         _isRunning = false;
       });
+      _pitchSub?.cancel();
     }
   }
 
   Future<void> _onStopAndAlign() async {
     if (!_isRunning) return;
+    _pitchSub?.cancel();
     
     try {
       final result = await _service.stopRunAndAlign();
       setState(() {
         _lastResult = result;
         _isRunning = false;
-        _isArmed = false; // Need to re-arm for next time usually
+        _isArmed = false; 
       });
-      
-      // Pull logs from service to show full detail
-      setState(() {
-        _logs.addAll(result.logs.where((l) => !_logs.contains(l)));
-      });
+      _appendLog('Stopped. Pitch frames: ${_pitchHistory.length}');
       
     } catch (e) {
       _appendLog('Stop failed: $e');
@@ -122,6 +148,25 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       _appendLog('Play failed: $e');
     }
   }
+  
+  String _hzToNote(double hz) {
+    // Simple Hz to Note
+    // A4 = 440
+    // n = 12 * log2(hz/440) + 69  (MIDI)
+    // MIDI 69 = A4
+    if (hz <= 0) return '';
+    final midi = 69 + 12 * (log(hz / 440.0) / ln2);
+    final noteIndex = midi.round() % 12;
+    final octave = (midi.round() / 12).floor() - 1;
+    const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    final noteName = notes[noteIndex];
+    
+    // Cents
+    final cents = (midi - midi.round()) * 100;
+    final centsStr = cents >= 0 ? '+${cents.toStringAsFixed(0)}' : cents.toStringAsFixed(0);
+    
+    return '$noteName$octave ($centsStr)';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,27 +177,67 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
           // Controls
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
+            child: Column(
               children: [
-                ElevatedButton(
-                  onPressed: _isRunning ? null : _onArm,
-                  child: const Text('1. Arm'),
+                Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     const Text('Live Pitch Tracking'),
+                     Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
+                   ],
                 ),
-                ElevatedButton(
-                  onPressed: (_isArmed && !_isRunning) ? _onStartRun : null,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade100),
-                  child: const Text('2. Start Run'),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _isRunning ? null : _onArm,
+                      child: const Text('1. Arm'),
+                    ),
+                    ElevatedButton(
+                      onPressed: (_isArmed && !_isRunning) ? _onStartRun : null,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade100),
+                      child: const Text('2. Start Run'),
+                    ),
+                    ElevatedButton(
+                      onPressed: _isRunning ? _onStopAndAlign : null,
+                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade100),
+                      child: const Text('3. Stop & Align'),
+                    ),
+                    ElevatedButton(
+                      onPressed: (!_isRunning && _lastResult != null) ? _onPlayAligned : null,
+                      child: const Text('4. Play Aligned'),
+                    ),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: _isRunning ? _onStopAndAlign : null,
-                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade100),
-                  child: const Text('3. Stop & Align'),
+              ],
+            ),
+          ),
+          
+          // Live Pitch UI
+          if (_isRunning)
+          Container(
+            height: 120,
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(border: Border.all(color: Colors.blueAccent), borderRadius: BorderRadius.circular(8)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _currentHz != null ? '${_currentHz!.toStringAsFixed(1)} Hz' : '—', 
+                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                 ),
-                ElevatedButton(
-                  onPressed: (!_isRunning && _lastResult != null) ? _onPlayAligned : null,
-                  child: const Text('4. Play Aligned'),
+                Text(
+                  _currentNote ?? '', 
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 30,
+                  width: double.infinity,
+                  child: CustomPaint(
+                    painter: PitchHistoryPainter(_pitchHistory),
+                  ),
                 ),
               ],
             ),
@@ -182,27 +267,39 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
             ),
           ),
           
-          const Divider(height: 1),
-          const Text('LOGS', style: TextStyle(fontWeight: FontWeight.bold)),
-          
-          // Logs Area
-          Expanded(
-            flex: 3,
-            child: ListView.builder(
-              itemCount: _logs.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  child: Text(
-                    _logs[index], 
-                    style: const TextStyle(fontFamily: 'Courier', fontSize: 12),
-                  ),
-                );
-              },
-            ),
-          ),
         ],
       ),
     );
   }
+}
+
+class PitchHistoryPainter extends CustomPainter {
+  final List<double?> history;
+  PitchHistoryPainter(this.history);
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.blue..strokeWidth = 2;
+    final w = size.width / 100; // fit 100 samples
+    
+    // Scale usually 0 to 1000hz?
+    // Let's dynamic scale
+    // Or just visible presence
+    
+    for (int i = 0; i < history.length; i++) {
+        final hz = history[i];
+        if (hz != null && hz > 0) {
+            // Log scale for pitch usually better but linear 0-1000 is fine for debug
+            final h = (hz / 1000.0).clamp(0.0, 1.0) * size.height;
+            canvas.drawLine(
+               Offset(i * w, size.height), 
+               Offset(i * w, size.height - h), 
+               paint
+            );
+        }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

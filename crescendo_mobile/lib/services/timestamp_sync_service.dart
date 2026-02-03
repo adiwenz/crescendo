@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-
+import 'dart:convert';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:audioplayers/audioplayers.dart' hide AVAudioSessionCategory;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
 import 'package:record/record.dart';
 
 enum AlignmentStrategy {
@@ -119,12 +120,22 @@ class TimestampSyncService {
     _log('Armed and ready.');
   }
 
+  Stream<double?> get pitchStream => _pitchStreamController.stream;
+  final StreamController<double?> _pitchStreamController = StreamController<double?>.broadcast();
+  
+  // Data for streaming/manual write
+  IOSink? _pcmSink;
+  StreamSubscription? _audioStreamSub;
+  final List<double> _pitchBuffer = [];
+  PitchDetector? _pitchDetector;
+  int _sampleRate = 44100;
+
   Future<SyncRunResult> startRun({required String refAssetPath}) async {
     if (!_isArmed) await arm(refAssetPath: refAssetPath);
-    _log('Starting run...');
+    _log('Starting run (Streaming Mode)...');
 
     final dir = await getTemporaryDirectory();
-    _tempRecordingPath = '${dir.path}/sync_test_raw.wav';
+    _tempRecordingPath = '${dir.path}/sync_test_raw.pcm'; // Note: .pcm now
     
     // Setup Player trigger
     _refStartedCompleter = Completer<void>();
@@ -137,27 +148,41 @@ class TimestampSyncService {
     });
 
     // START PLAYBACK
-    // trigger play
-    // We don't await play() fully because we want to start recording immediately
-    // but setSource was already called in arm()
     final playFuture = _refPlayer.resume();
 
-    // START RECORDING
-    // Using PCM16 WAV 44100Hz mono if possible for easier manual manipulation
-    const config = RecordConfig(
-      encoder: AudioEncoder.wav, 
+    // START RECORDING (STREAM)
+    // Using PCM16 16-bit 1-channel.
+    // NOTE: 'record' package on iOS/Android often defaults to 44100 or 48000.
+    // We try to request 44100.
+    _sampleRate = 44100;
+    final config = RecordConfig(
+      encoder: AudioEncoder.pcm16bits, 
       sampleRate: 44100,
       numChannels: 1,
     );
     
-    // Attempt to start recorder
-    await _recorder.start(config, path: _tempRecordingPath!);
-    _recStartNs = _monoNs();
-    _log('Recorder started at $_recStartNs ns');
+    // Prepare Sink
+    final file = File(_tempRecordingPath!);
+    if (file.existsSync()) await file.delete();
+    _pcmSink = file.openWrite();
+    
+    // Prepare Pitch Detector
+    _pitchDetector = PitchDetector(audioSampleRate: _sampleRate.toDouble(), bufferSize: 2048);
+    _pitchBuffer.clear();
 
-    // Wait for player to actually report playing (with timeout)
-    // Sometimes play() completes before state changes, or vice versa.
-    // We trust the state change listener for the timestamp.
+    final stream = await _recorder.startStream(config);
+    _recStartNs = _monoNs();
+    _log('Recorder stream started at $_recStartNs ns');
+
+    // Listen to stream
+    _audioStreamSub = stream.listen((data) {
+      if (_pcmSink != null) {
+        _pcmSink!.add(data);
+      }
+      _processPitch(data);
+    });
+
+    // Wait for player to actually report playing
     try {
       await playFuture;
       await _refStartedCompleter!.future.timeout(const Duration(milliseconds: 500));
@@ -177,41 +202,72 @@ class TimestampSyncService {
       logs: List.from(_logs),
     );
   }
+  
+  void _processPitch(Uint8List bytes) {
+    // bytes are Int16 Little Endian
+    // Convert to double [-1.0, 1.0]
+    final bd = ByteData.sublistView(bytes);
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      final sample = bd.getInt16(i, Endian.little);
+      _pitchBuffer.add(sample / 32768.0);
+    }
+    
+    // Check if enough data for pitch detection
+    // PitchDetector default buffer might be 2048?
+    // We process whenever we have enough new data?
+    // Actually PitchDetector takes a buffer and returns result.
+    // We'll throttle or process chunks.
+    
+    // Simple sliding window or chunk processing
+    const int processSize = 2048; // Must match detector buffer size ideally
+    if (_pitchDetector != null && _pitchBuffer.length >= processSize) {
+      final bufferToProcess = List<double>.from(_pitchBuffer.take(processSize));
+      _pitchBuffer.removeRange(0, processSize ~/ 2); // Overlap? Or simply drain? Let's drain half for overlap.
+      
+      // Run async to not block stream listener too much (microtask)
+      Future.microtask(() async {
+        try {
+          final result = await _pitchDetector!.getPitchFromFloatBuffer(bufferToProcess);
+          if (result.pitched) {
+            _pitchStreamController.add(result.pitch);
+          } else {
+            _pitchStreamController.add(null);
+          }
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+  }
 
   Future<SyncRunResult> stopRunAndAlign() async {
     _log('Stopping...');
     await _refPlayer.stop();
     await _playerStateSub?.cancel();
-    final micUrl = await _recorder.stop();
-    _log('Stopped. Mic recording saved to: $micUrl');
+    
+    await _audioStreamSub?.cancel();
+    await _recorder.stop(); // Stop the recorder logic
+    
+    // Close Sink
+    await _pcmSink?.flush();
+    await _pcmSink?.close();
+    _pcmSink = null;
+    
+    _log('Stopped. PCM recorded to: $_tempRecordingPath');
 
-    if (micUrl == null) {
+    // Convert PCM to WAV so alignment logic works
+    final wavPath = _tempRecordingPath!.replaceAll('.pcm', '.wav');
+    await _writePcmToWav(_tempRecordingPath!, wavPath, _sampleRate);
+    final micUrl = wavPath;
+    
+    // Update temp path to valid WAV
+    _tempRecordingPath = wavPath;
+
+    if (micUrl.isEmpty) {
       throw Exception('Recording failed, null path returned');
     }
 
     // Calculate Offset
-    // offset = rec - ref
-    // if offset > 0, recording started LATER than playback. To align, we actually need to shift recording EARLIER?
-    // Wait. 
-    // Scenario: 
-    // T=0: Ref Start Requested
-    // T=100: Ref Start Actual (_refStartNs)
-    // T=120: Rec Start Actual (_recStartNs)
-    // Offset = 120 - 100 = 20ms.
-    // Recording contains events starting from T=120.
-    // Reference contains events starting from T=100.
-    // If we want to mix them, we play Ref at T_play.
-    // Rec needs to be played at T_play + 20ms to align relative to their start? 
-    // NO. 
-    // If I clap at T=150.
-    // Ref file (playing) has clap at 50ms (150-100).
-    // Rec file (recording) has clap at 30ms (150-120).
-    // To align them:
-    // If we play Ref at 0s, we hear clap at 0.05s.
-    // If we play Rec at 0s, we hear clap at 0.03s.
-    // We need to DELAY Rec by 20ms (prepend silence) so clap moves to 0.05s.
-    // So: silenceToPrepend = (recStart - refStart).
-    
     final diffNs = _recStartNs - _refStartNs;
     final offsetSec = diffNs / 1e9;
     _log('Offset calculated: $offsetSec sec (${diffNs ~/ 1000} ms)');
@@ -230,15 +286,6 @@ class TimestampSyncService {
           strategy = AlignmentStrategy.prependSilenceToRecordingWav;
           _log('Success. Aligned file: $alignedPath');
         } else {
-           // offset < 0 means Rec started BEFORE Ref. 
-           // If Rec started at T=80 and Ref at T=100.
-           // Clap at T=150.
-           // Rec has clap at 70ms. Ref has clap at 50ms.
-           // Play Ref at 0 -> clap at 0.05.
-           // Play Rec at 0 -> clap at 0.07.
-           // We need to play Rec start at -0.02 (skip first 20ms) OR Delay Ref by 20ms.
-           // Prompt says: "gracefully fall back to ... playback delay strategy".
-           // Strategy: fallbackDelayReferencePlayback
            strategy = AlignmentStrategy.fallbackDelayReferencePlayback;
            _log('Negative offset. Will use playback delay strategy.');
         }
@@ -261,6 +308,56 @@ class TimestampSyncService {
       strategy: strategy,
       logs: List.from(_logs),
     );
+  }
+  
+  Future<void> _writePcmToWav(String pcmPath, String wavPath, int sampleRate) async {
+    final pcmFile = File(pcmPath);
+    if (!await pcmFile.exists()) return;
+    
+    final pcmBytes = await pcmFile.readAsBytes();
+    final wavFile = File(wavPath);
+    final sink = wavFile.openWrite();
+    
+    const int numChannels = 1;
+    const int bitsPerSample = 16;
+    final int byteRate = sampleRate * numChannels * 2;
+    const int blockAlign = numChannels * 2;
+    
+    // RIFF header
+    sink.add(utf8.encode('RIFF'));
+    final fileSize = 36 + pcmBytes.length;
+    _writeInt32(sink, fileSize);
+    sink.add(utf8.encode('WAVE'));
+    
+    // fmt chunk
+    sink.add(utf8.encode('fmt '));
+    _writeInt32(sink, 16); // Subchunk1Size
+    _writeInt16(sink, 1); // AudioFormat 1 = PCM
+    _writeInt16(sink, numChannels);
+    _writeInt32(sink, sampleRate);
+    _writeInt32(sink, byteRate);
+    _writeInt16(sink, blockAlign);
+    _writeInt16(sink, bitsPerSample);
+    
+    // data chunk
+    sink.add(utf8.encode('data'));
+    _writeInt32(sink, pcmBytes.length);
+    sink.add(pcmBytes);
+    
+    await sink.flush();
+    await sink.close();
+  }
+  
+  void _writeInt32(IOSink sink, int value) {
+    final b = Uint8List(4);
+    b.buffer.asByteData().setInt32(0, value, Endian.little);
+    sink.add(b);
+  }
+  
+  void _writeInt16(IOSink sink, int value) {
+    final b = Uint8List(2);
+    b.buffer.asByteData().setInt16(0, value, Endian.little);
+    sink.add(b);
   }
   
   // Minimal manual WAV parser/writer
