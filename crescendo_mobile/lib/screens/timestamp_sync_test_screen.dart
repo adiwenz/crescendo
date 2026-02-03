@@ -46,12 +46,12 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     debugPrint('[SyncScreen] $msg');
   }
 
-  // Pitch State (disabled for now with flutter_sound migration)
+  // Pitch State
   double? _currentHz;
   String? _currentNote;
   final List<double?> _pitchHistory = [];
-  // StreamSubscription? _pitchSub;
-  bool _livePitchEnabled = false; // Disabled until pitch detection is re-implemented
+  StreamSubscription? _pitchSub;
+  bool _livePitchEnabled = true;
   
   // Mute State
   bool _isReferenceMuted = false;
@@ -59,7 +59,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
 
   @override
   void dispose() {
-    // _pitchSub?.cancel(); // Disabled for now
+    _pitchSub?.cancel();
     _service.dispose();
     super.dispose();
   }
@@ -87,26 +87,26 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       _pitchHistory.clear();
     });
     
-    // Pitch tracking disabled until re-implemented with flutter_sound
-    // if (_livePitchEnabled) {
-    //   _pitchSub?.cancel();
-    //   _pitchSub = _service.pitchStream.listen((hz) {
-    //     if (!mounted) return;
-    //     setState(() {
-    //       _currentHz = hz;
-    //       if (hz != null && hz > 0) {
-    //         _currentNote = _hzToNote(hz);
-    //       } else {
-    //          _currentNote = null;
-    //       }
-    //       
-    //       _pitchHistory.add(hz);
-    //       if (_pitchHistory.length > 100) {
-    //         _pitchHistory.removeAt(0);
-    //       }
-    //     });
-    //   });
-    // }
+    // Subscribe to pitch if enabled
+    if (_livePitchEnabled) {
+      _pitchSub?.cancel();
+      _pitchSub = _service.pitchStream.listen((hz) {
+        if (!mounted) return;
+        setState(() {
+          _currentHz = hz;
+          if (hz != null && hz > 0) {
+            _currentNote = _hzToNote(hz);
+          } else {
+             _currentNote = null;
+          }
+          
+          _pitchHistory.add(hz);
+          if (_pitchHistory.length > 100) {
+            _pitchHistory.removeAt(0);
+          }
+        });
+      });
+    }
     
     try {
       final result = await _service.startRun(refAssetPath: _assetPath);
@@ -118,13 +118,13 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       setState(() {
         _isRunning = false;
       });
-      // _pitchSub?.cancel(); // Disabled for now
+      _pitchSub?.cancel();
     }
   }
 
   Future<void> _onStopAndAlign() async {
     if (!_isRunning) return;
-    // _pitchSub?.cancel(); // Disabled for now
+    _pitchSub?.cancel();
     
     try {
       final result = await _service.stopRunAndAlign();
@@ -133,8 +133,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
         _isRunning = false;
         _isArmed = false; 
       });
-      // _appendLog('Stopped. Pitch frames: ${_pitchHistory.length}'); // Disabled for now
-      _appendLog('Stopped.');
+      _appendLog('Stopped. Pitch frames: ${_pitchHistory.length}');
       
     } catch (e) {
       _appendLog('Stop failed: $e');
@@ -200,14 +199,13 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
             padding: const EdgeInsets.all(8.0),
             child: Column(
               children: [
-                // Live pitch tracking disabled until re-implemented with flutter_sound
-                // Row(
-                //    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                //    children: [
-                //      const Text('Live Pitch Tracking'),
-                //      Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
-                //    ],
-                // ),
+                Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     const Text('Live Pitch Tracking'),
+                     Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
+                   ],
+                ),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,

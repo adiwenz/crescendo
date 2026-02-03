@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 // NEW
 import 'package:flutter_sound/flutter_sound.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
 
 enum AlignmentStrategy {
   prependSilenceToRecordingWav,
@@ -74,7 +75,22 @@ class TimestampSyncService {
   StreamSubscription<PlaybackDisposition>? _refProgSub;
 
   // Recorder stream controller for PCM16
-  final StreamController<Food> _recFoodController = StreamController<Food>.broadcast();
+  // flutter_sound startRecorder(toStream:) expects a StreamSink<Uint8List>
+  final StreamController<Uint8List> _audioStreamController = StreamController<Uint8List>.broadcast();
+
+  // Pitch stream
+  Stream<double?> get pitchStream => _pitchStreamController.stream;
+  final StreamController<double?> _pitchStreamController =
+      StreamController<double?>.broadcast();
+  
+  // Pitch processing state
+  final List<double> _pitchBuffer = [];
+  PitchDetector? _pitchDetector;
+  
+  // Manual WAV writing state
+  RandomAccessFile? _wavRAF;
+  int _wavDataLength = 0;
+  File? _wavFile;
 
   // Logs
   final List<String> _logs = [];
@@ -110,21 +126,22 @@ class TimestampSyncService {
   }
 
   Future<void> arm({required String refAssetPath}) async {
-    if (!_isInited) await init();
-
-    _logs.clear();
-    _refStartNs = 0;
-    _recStartNs = 0;
-
     _lastRefAssetPath = refAssetPath;
-    _rawWavPath = null;
-    _alignedWavPath = null;
-
     // Cancel old subs
     await _refProgSub?.cancel();
     _refProgSub = null;
     await _recStreamSub?.cancel();
     _recStreamSub = null;
+    
+    // Close any open wav raf
+    if (_wavRAF != null) {
+      await _wavRAF!.close();
+      _wavRAF = null;
+    }
+    
+    // Pitch detector init
+    _pitchDetector = PitchDetector(audioSampleRate: _sampleRate.toDouble(), bufferSize: 2048);
+    _pitchBuffer.clear();
 
     // Apply mute volumes immediately
     await _applyMuteVolumes();
@@ -154,6 +171,7 @@ class TimestampSyncService {
   }
 
   Future<SyncRunResult> startRun({required String refAssetPath}) async {
+    _lastRefAssetPath = refAssetPath;
     if (!_isArmed) await arm(refAssetPath: refAssetPath);
 
     _log('Starting run...');
@@ -178,25 +196,61 @@ class TimestampSyncService {
       }
     });
 
-    // 2) Start recorder -> toFile WAV PCM16 (stable for trimming/padding)
-    // ALSO record to a stream so we can timestamp first chunk reliably:
-    // flutter_sound streams are delivered as "FoodData" inside "Food".
-    // We set _recStartNs on the first FoodData we see.
+    // 2) Start recorder -> toStream (PCM16)
+    // We will manually write the WAV file to ensure we get the stream data for pitch tracking AND file saving.
+    
+    // Prepare WAV file
+    final tempDir = await getTemporaryDirectory();
+    _rawWavPath = '${tempDir.path}/sync_raw.wav';
+    _wavFile = File(_rawWavPath!);
+    // Open as RandomAccessFile with write mode (truncates)
+    _wavRAF = await _wavFile!.open(mode: FileMode.write);
+    _wavDataLength = 0;
+    
+    // Write placeholder header (44 bytes)
+    await _wavRAF!.writeFrom(Uint8List(44));
+    
+    await _recStreamSub?.cancel();
+    _recStreamSub = _audioStreamController.stream.listen((data) {
+        if (_recStartNs == 0 && data.isNotEmpty) {
+          _recStartNs = _monoNs();
+          _log('Rec FIRST pcm chunk at $_recStartNs ns (bytes=${data.length})');
+        }
+        
+        // Write to file (async fire and forget? No, RAF operations are async futures)
+        // We should chain them? For now, we trust single threaded event loop + await
+        // Actually inside listen callback we can't await properly without pausing stream.
+        // It's better to use a sync write if possible or queue.
+        // RAF has sync methods! use writeFromSync to avoid concurrency issues in stream listener?
+        // Yes, let's use sync for safety and simplicity in listener.
+        
+        if (_wavRAF != null) {
+          try {
+             _wavRAF!.writeFromSync(data);
+             _wavDataLength += data.length;
+          } catch (e) {
+             print('Error writing wav: $e');
+          }
+        }
+        
+        // Process pitch
+        _processPitch(data);
+    });
 
-    // Start recorder: write WAV to file
-    // Codec.pcm16WAV => you get a valid .wav with PCM16 (no manual PCM->WAV step).
+    // Start recorder: PCM16 to Stream
+    // Note: ensure we use Codec.pcm16 to get raw samples, not WAV container
     await _recorder.startRecorder(
-      toFile: _rawWavPath,
-      codec: Codec.pcm16WAV,
+      codec: Codec.pcm16, 
       sampleRate: _sampleRate,
       numChannels: _numChannels,
+      toStream: _audioStreamController.sink,
     );
-    _log('Recorder started (toFile WAV).');
+    _log('Recorder started (Stream -> File + Pitch).');
 
-    // Timestamp immediately since we aren't streaming
+    // Timestamp immediately fallback (if stream didn't fire yet)
     if (_recStartNs == 0) {
       _recStartNs = _monoNs();
-      _log('Rec started at $_recStartNs ns');
+      _log('Rec started at $_recStartNs ns (stream fallback)');
     }
 
     // 3) Start reference playback (from asset)
@@ -230,118 +284,161 @@ class TimestampSyncService {
     );
   }
 
+  void _processPitch(Uint8List bytes) {
+    // bytes are Int16 Little Endian
+    // Convert to double [-1.0, 1.0]
+    final bd = ByteData.sublistView(bytes);
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      final sample = bd.getInt16(i, Endian.little);
+      _pitchBuffer.add(sample / 32768.0);
+    }
+    
+    // Simple sliding window or chunk processing
+    const int processSize = 2048; // Must match detector buffer size ideally
+    if (_pitchDetector != null && _pitchBuffer.length >= processSize) {
+      final bufferToProcess = List<double>.from(_pitchBuffer.take(processSize));
+      _pitchBuffer.removeRange(0, processSize ~/ 2); // Overlap 50%
+      
+      Future.microtask(() async {
+        try {
+          final result = await _pitchDetector!.getPitchFromFloatBuffer(bufferToProcess);
+          if (result.pitched) {
+            _pitchStreamController.add(result.pitch);
+          } else {
+            _pitchStreamController.add(null);
+          }
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+  }
+
   Future<SyncRunResult> stopRunAndAlign() async {
     _log('Stopping...');
 
-    // Stop ref playback
-    if (_playerRef.isPlaying) {
-      await _playerRef.stopPlayer();
-    }
-
-    // Stop recorder
-    if (_recorder.isRecording) {
-      await _recorder.stopRecorder();
-    }
-
-    // Cancel subs
-    await _refProgSub?.cancel();
-    _refProgSub = null;
+    await _recorder.stopRecorder();
+    await _playerRef.stopPlayer();
+    
     await _recStreamSub?.cancel();
-    _recStreamSub = null;
-
-    if (_rawWavPath == null) throw Exception('No recording path.');
-    _log('Stopped. rawWav=$_rawWavPath');
-
-    // Ensure we captured recStartNs
-    if (_recStartNs == 0) {
-      _recStartNs = _monoNs();
-      _log('WARNING: No first-chunk timestamp; fallback recStartNs=$_recStartNs');
-    }
-    if (_refStartNs == 0) {
-      _refStartNs = _monoNs();
-      _log('WARNING: No ref timestamp; fallback refStartNs=$_refStartNs');
-    }
-
-    final diffNs = _recStartNs - _refStartNs;
-    final offsetSec = diffNs / 1e9;
-    _log('Offset calculated: $offsetSec sec (${diffNs / 1e6} ms)');
-
-    final silenceToPrepend = offsetSec > 0 ? offsetSec : 0.0;
-
-    AlignmentStrategy strategy = AlignmentStrategy.noAlignmentPossible;
-    String alignedPath = _rawWavPath!;
-
-    // Prepend silence if offset positive; else we’ll do runtime delay.
-    if (silenceToPrepend > 0) {
+    
+    // Finalize WAV file (update header)
+    if (_wavRAF != null) {
       try {
-        alignedPath = await _prependSilenceToWav(_rawWavPath!, silenceToPrepend);
-        strategy = AlignmentStrategy.prependSilenceToRecordingWav;
-        _alignedWavPath = alignedPath;
-        _log('Aligned wav written: $alignedPath');
+        // Go back to start and write real header
+        _wavRAF!.setPositionSync(0);
+        final header = _buildWavHeader(_wavDataLength, _sampleRate, _numChannels);
+        _wavRAF!.writeFromSync(header);
+        _wavRAF!.closeSync(); // Close sync to ensure it's flushed/closed before we read it
       } catch (e) {
-        _log('WAV prepend failed: $e');
-        strategy = AlignmentStrategy.fallbackDelayReferencePlayback;
+        _log('Error finalizing WAV RAF: $e');
+      }
+      _wavRAF = null;
+      _log('WAV finalized (RAF). len=$_wavDataLength');
+    }
+
+    _log('Stopped. rawWav=$_rawWavPath');
+    
+    // Logic:
+    // Offset = RecStart - RefStart
+    // If Offset > 0: Rec started LATER. We missed the start of the song. 
+    //    Prepend silence of duration `offset`.
+    // If Offset < 0: Rec started EARLIER. 
+    //    Trim the start of duration `-offset`.
+    
+    final offsetNs = _recStartNs - _refStartNs;
+    final offsetSec = offsetNs / 1e9;
+    _log('Offset calculated: $offsetSec sec (${(offsetSec*1000).toStringAsFixed(3)} ms)');
+
+    _alignedWavPath = null;
+    AlignmentStrategy strategy = AlignmentStrategy.noAlignmentPossible;
+    
+    if (_rawWavPath != null) {
+      final dir = await getTemporaryDirectory();
+      _alignedWavPath = '${dir.path}/sync_aligned.wav';
+      
+      try {
+        if (offsetSec > 0) {
+          // Rec started later -> Prepend silence (PAD)
+          await _prependSilenceToWav(
+            _rawWavPath!,
+            offsetSec,
+            outputPath: _alignedWavPath!,
+          );
+          strategy = AlignmentStrategy.prependSilenceToRecordingWav;
+          _log('Aligned by padding ${offsetSec}s silence.');
+        } else {
+          // Rec started earlier -> Trim start
+          final trimSeconds = -offsetSec;
+          await _trimStartOfWav(
+             inputPath: _rawWavPath!,
+             outputPath: _alignedWavPath!,
+             trimSeconds: trimSeconds,
+          );
+          strategy = AlignmentStrategy.prependSilenceToRecordingWav; // Reusing strategy enum
+           _log('Aligned by trimming ${trimSeconds}s from start.');
+        }
+      } catch (e) {
+        _log('Alignment failed: $e');
         _alignedWavPath = null;
       }
-    } else {
-      strategy = AlignmentStrategy.fallbackDelayReferencePlayback;
-      _alignedWavPath = null;
-      _log('Negative/zero offset => runtime delay strategy.');
     }
-
+    
     return SyncRunResult(
-      refStartNs: _refStartNs,
       recStartNs: _recStartNs,
+      refStartNs: _refStartNs,
       offsetSec: offsetSec,
-      silencePrependedSec: silenceToPrepend,
+      silencePrependedSec: offsetSec > 0 ? offsetSec : 0.0,
       rawRecordingPath: _rawWavPath!,
-      alignedRecordingPath: alignedPath,
-      strategy: strategy,
+      alignedRecordingPath: _alignedWavPath ?? '',
+      strategy: strategy, 
       logs: List.from(_logs),
     );
   }
 
   Future<void> playAligned() async {
-    if (_lastRefAssetPath == null || _rawWavPath == null) return;
+    _log('playAligned called.');
+    if (_lastRefAssetPath == null || _rawWavPath == null) {
+      _log('Cannot play: ref or raw path null.');
+      return;
+    }
+    
+    // Check files
+    final rawFile = File(_rawWavPath!);
+    if (rawFile.existsSync()) {
+      _log('Raw WAV exists, size=${rawFile.lengthSync()}');
+    } else {
+      _log('Raw WAV missing!');
+    }
+    
+    if (_alignedWavPath != null) {
+       final alignedFile = File(_alignedWavPath!);
+       if (alignedFile.existsSync()) {
+         _log('Aligned WAV exists, size=${alignedFile.lengthSync()}');
+       } else {
+         _log('Aligned WAV path set but file missing!');
+       }
+    }
+    
+    // Always use the aligned path if available.
+    // If null (failed alignment), fall back to raw (which won't be synced).
+    final recPath = _alignedWavPath ?? _rawWavPath!;
+    final refPath = await _materializeAssetToFile(_lastRefAssetPath!);
+    _log('Playing: Ref=$refPath, Rec=$recPath');
 
     await _applyMuteVolumes();
-
-    // Prepare sources
-    final refPath = await _materializeAssetToFile(_lastRefAssetPath!);
-    final recPath = _alignedWavPath ?? _rawWavPath!;
-
-    final diffNs = _recStartNs - _refStartNs;
-    final offsetSec = diffNs / 1e9;
+    _log('Mute state: Ref=$_muteRef, Rec=$_muteRec');
 
     // Stop any prior playback
     if (_playerRef.isPlaying) await _playerRef.stopPlayer();
     if (_playerRec.isPlaying) await _playerRec.stopPlayer();
 
-    if (_alignedWavPath != null) {
-      // Aligned file exists => start both immediately
-      _log('Playing both immediately (aligned WAV exists).');
-      await _playerRef.startPlayer(fromURI: refPath, whenFinished: () {});
-      await _playerRec.startPlayer(fromURI: recPath, whenFinished: () {});
-      return;
-    }
-
-    // Runtime delay fallback
-    if (offsetSec >= 0) {
-      // recording started later -> delay rec
-      _log('Runtime delay: Ref now, Rec after ${offsetSec.toStringAsFixed(4)}s');
-      await _playerRef.startPlayer(fromURI: refPath, whenFinished: () {});
-      Future.delayed(Duration(milliseconds: (offsetSec * 1000).round()), () async {
-        await _applyMuteVolumes();
-        await _playerRec.startPlayer(fromURI: recPath, whenFinished: () {});
-      });
-    } else {
-      // recording started earlier -> delay ref
-      _log('Runtime delay: Rec now, Ref after ${(-offsetSec).toStringAsFixed(4)}s');
-      await _playerRec.startPlayer(fromURI: recPath, whenFinished: () {});
-      Future.delayed(Duration(milliseconds: ((-offsetSec) * 1000).round()), () async {
-        await _applyMuteVolumes();
-        await _playerRef.startPlayer(fromURI: refPath, whenFinished: () {});
-      });
+    _log('Starting playback...');
+    try {
+      await _playerRef.startPlayer(fromURI: refPath, whenFinished: () { _log('Ref finished'); });
+      await _playerRec.startPlayer(fromURI: recPath, whenFinished: () { _log('Rec finished'); });
+    } catch (e) {
+      _log('Error starting playback: $e');
     }
   }
 
@@ -363,80 +460,112 @@ class TimestampSyncService {
 
   // --- WAV prepend helpers (same logic you already had, slightly cleaned) ---
 
-  Future<String> _prependSilenceToWav(String originalPath, double seconds) async {
-    final bytes = await File(originalPath).readAsBytes();
-    final bd = bytes.buffer.asByteData();
+  // --- WAV Helpers ---
 
-    if (String.fromCharCodes(bytes.sublist(0, 4)) != 'RIFF') {
-      throw Exception('Not a RIFF WAV');
+  Uint8List _buildWavHeader(int dataSize, int sampleRate, int channels) {
+    final fileSize = dataSize + 36;
+    final byteRate = sampleRate * channels * 2; // 16-bit
+    final blockAlign = channels * 2;
+
+    final header = ByteData(44);
+    final view = header.buffer.asUint8List();
+
+    // RIFF
+    view.setRange(0, 4, utf8.encode('RIFF'));
+    header.setUint32(4, fileSize, Endian.little);
+    view.setRange(8, 12, utf8.encode('WAVE'));
+    
+    // fmt (PCM)
+    view.setRange(12, 16, utf8.encode('fmt '));
+    header.setUint32(16, 16, Endian.little); // Subchunk1Size
+    header.setUint16(20, 1, Endian.little); // AudioFormat 1=PCM
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, byteRate, Endian.little);
+    header.setUint16(32, blockAlign, Endian.little);
+    header.setUint16(34, 16, Endian.little); // Bits per sample
+    
+    // data
+    view.setRange(36, 40, utf8.encode('data'));
+    header.setUint32(40, dataSize, Endian.little);
+
+    return view;
+  }
+  
+  Future<void> _trimStartOfWav({required String inputPath, required String outputPath, required double trimSeconds}) async {
+     final inputFile = File(inputPath);
+     final bytes = await inputFile.readAsBytes();
+     
+     // Minimum header size
+     if (bytes.length < 44) return;
+     
+     final sampleRate = _sampleRate; 
+     final channels = _numChannels;
+     final bytesPerSec = sampleRate * channels * 2;
+     final trimBytes = (trimSeconds * bytesPerSec).round();
+     
+     final blockAlign = channels * 2;
+     final alignedTrimBytes = (trimBytes ~/ blockAlign) * blockAlign;
+     
+     // Skip original header
+     if (44 + alignedTrimBytes >= bytes.length) {
+       // Trimmed everything
+       final header = _buildWavHeader(0, sampleRate, channels);
+       await File(outputPath).writeAsBytes(header);
+       return;
+     }
+
+     final newLength = (bytes.length - 44) - alignedTrimBytes;
+     final header = _buildWavHeader(newLength, sampleRate, channels);
+     
+     final outBytes = BytesBuilder();
+     outBytes.add(header);
+     outBytes.add(bytes.sublist(44 + alignedTrimBytes));
+     
+     await File(outputPath).writeAsBytes(outBytes.toBytes());
+  }
+
+  Future<String> _prependSilenceToWav(String inputPath, double silenceSeconds, {String? outputPath}) async {
+    final inFile = File(inputPath);
+    final bytes = await inFile.readAsBytes();
+    
+    final sampleRate = _sampleRate;
+    final channels = _numChannels;
+    final bytesPerSec = sampleRate * channels * 2;
+    final silenceBytesCount = (silenceSeconds * bytesPerSec).round();
+    final blockAlign = channels * 2;
+    final alignedSilenceBytes = (silenceBytesCount ~/ blockAlign) * blockAlign;
+    
+    // Assume 44 byte header for files we created
+    final currentDataLen = bytes.length - 44;
+    final newDataLen = currentDataLen + alignedSilenceBytes;
+    
+    final header = _buildWavHeader(newDataLen, sampleRate, channels);
+    final silence = Uint8List(alignedSilenceBytes); 
+    
+    final outPath = outputPath ?? inputPath; 
+    
+    final bb = BytesBuilder();
+    bb.add(header);
+    bb.add(silence);
+    if (bytes.length > 44) {
+      bb.add(bytes.sublist(44));
     }
-
-    // Find fmt
-    int fmtOffset = 12;
-    while (fmtOffset + 8 < bytes.length &&
-        String.fromCharCodes(bytes.sublist(fmtOffset, fmtOffset + 4)) != 'fmt ') {
-      fmtOffset++;
-      if (fmtOffset > 256) throw Exception('fmt chunk not found');
-    }
-
-    final fmtSize = bd.getUint32(fmtOffset + 4, Endian.little);
-    final audioFormat = bd.getUint16(fmtOffset + 8, Endian.little);
-    final numChannels = bd.getUint16(fmtOffset + 10, Endian.little);
-    final sampleRate = bd.getUint32(fmtOffset + 12, Endian.little);
-    final bitsPerSample = bd.getUint16(fmtOffset + 22, Endian.little);
-
-    if (audioFormat != 1) throw Exception('WAV not PCM16 (format=$audioFormat)');
-
-    // Find data
-    int dataOffset = fmtOffset + 8 + fmtSize;
-    while (dataOffset + 8 < bytes.length &&
-        String.fromCharCodes(bytes.sublist(dataOffset, dataOffset + 4)) != 'data') {
-      final size = bd.getUint32(dataOffset + 4, Endian.little);
-      dataOffset += 8 + size;
-    }
-    if (String.fromCharCodes(bytes.sublist(dataOffset, dataOffset + 4)) != 'data') {
-      throw Exception('data chunk not found');
-    }
-
-    final oldDataSize = bd.getUint32(dataOffset + 4, Endian.little);
-    final bytesPerSample = bitsPerSample ~/ 8;
-    final frameSize = numChannels * bytesPerSample;
-
-    final framesToAdd = (seconds * sampleRate).round();
-    final bytesToAdd = framesToAdd * frameSize;
-
-    final newPath = originalPath.replaceAll('.wav', '_aligned.wav');
-    final out = await File(newPath).open(mode: FileMode.write);
-
-    // RIFF + new size
-    await out.writeFrom(bytes.sublist(0, 4));
-    final oldFileSize = bytes.length - 8;
-    final newFileSize = oldFileSize + bytesToAdd;
-    final sizeBytes = Uint8List(4)
-      ..buffer.asByteData().setUint32(0, newFileSize, Endian.little);
-    await out.writeFrom(sizeBytes);
-
-    // Copy everything up through "data"
-    await out.writeFrom(bytes.sublist(8, dataOffset + 4));
-
-    // New data size
-    final newDataSize = oldDataSize + bytesToAdd;
-    final dataSizeBytes = Uint8List(4)
-      ..buffer.asByteData().setUint32(0, newDataSize, Endian.little);
-    await out.writeFrom(dataSizeBytes);
-
-    // Silence + old PCM
-    await out.writeFrom(Uint8List(bytesToAdd));
-    await out.writeFrom(bytes.sublist(dataOffset + 8));
-
-    await out.close();
-    return newPath;
+    
+    await File(outPath).writeAsBytes(bb.toBytes());
+    return outPath;
   }
 
   Future<void> dispose() async {
     await _refProgSub?.cancel();
     await _recStreamSub?.cancel();
-    await _recFoodController.close();
+    await _audioStreamController.close();
+    await _pitchStreamController.close();
+    
+    if (_wavRAF != null) {
+      try { _wavRAF!.closeSync(); } catch (_) {}
+      _wavRAF = null;
+    }
 
     // flutter_sound doesn't have isOpen() method, just try to close
     try {
