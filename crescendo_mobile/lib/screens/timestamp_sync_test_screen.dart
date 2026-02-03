@@ -46,16 +46,20 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     debugPrint('[SyncScreen] $msg');
   }
 
-  // Pitch State
+  // Pitch State (disabled for now with flutter_sound migration)
   double? _currentHz;
   String? _currentNote;
   final List<double?> _pitchHistory = [];
-  StreamSubscription? _pitchSub;
-  bool _livePitchEnabled = true;
+  // StreamSubscription? _pitchSub;
+  bool _livePitchEnabled = false; // Disabled until pitch detection is re-implemented
+  
+  // Mute State
+  bool _isReferenceMuted = false;
+  bool _isRecordingMuted = false;
 
   @override
   void dispose() {
-    _pitchSub?.cancel();
+    // _pitchSub?.cancel(); // Disabled for now
     _service.dispose();
     super.dispose();
   }
@@ -83,26 +87,26 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       _pitchHistory.clear();
     });
     
-    // Subscribe to pitch if enabled
-    if (_livePitchEnabled) {
-      _pitchSub?.cancel();
-      _pitchSub = _service.pitchStream.listen((hz) {
-        if (!mounted) return;
-        setState(() {
-          _currentHz = hz;
-          if (hz != null && hz > 0) {
-            _currentNote = _hzToNote(hz);
-          } else {
-             _currentNote = null;
-          }
-          
-          _pitchHistory.add(hz);
-          if (_pitchHistory.length > 100) {
-            _pitchHistory.removeAt(0);
-          }
-        });
-      });
-    }
+    // Pitch tracking disabled until re-implemented with flutter_sound
+    // if (_livePitchEnabled) {
+    //   _pitchSub?.cancel();
+    //   _pitchSub = _service.pitchStream.listen((hz) {
+    //     if (!mounted) return;
+    //     setState(() {
+    //       _currentHz = hz;
+    //       if (hz != null && hz > 0) {
+    //         _currentNote = _hzToNote(hz);
+    //       } else {
+    //          _currentNote = null;
+    //       }
+    //       
+    //       _pitchHistory.add(hz);
+    //       if (_pitchHistory.length > 100) {
+    //         _pitchHistory.removeAt(0);
+    //       }
+    //     });
+    //   });
+    // }
     
     try {
       final result = await _service.startRun(refAssetPath: _assetPath);
@@ -114,13 +118,13 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       setState(() {
         _isRunning = false;
       });
-      _pitchSub?.cancel();
+      // _pitchSub?.cancel(); // Disabled for now
     }
   }
 
   Future<void> _onStopAndAlign() async {
     if (!_isRunning) return;
-    _pitchSub?.cancel();
+    // _pitchSub?.cancel(); // Disabled for now
     
     try {
       final result = await _service.stopRunAndAlign();
@@ -129,7 +133,8 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
         _isRunning = false;
         _isArmed = false; 
       });
-      _appendLog('Stopped. Pitch frames: ${_pitchHistory.length}');
+      // _appendLog('Stopped. Pitch frames: ${_pitchHistory.length}'); // Disabled for now
+      _appendLog('Stopped.');
       
     } catch (e) {
       _appendLog('Stop failed: $e');
@@ -147,6 +152,22 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     } catch (e) {
       _appendLog('Play failed: $e');
     }
+  }
+  
+  void _toggleReferenceMute() {
+    setState(() {
+      _isReferenceMuted = !_isReferenceMuted;
+    });
+    _service.setMuteRef(_isReferenceMuted);
+    _appendLog('Reference ${_isReferenceMuted ? "muted" : "unmuted"}');
+  }
+  
+  void _toggleRecordingMute() {
+    setState(() {
+      _isRecordingMuted = !_isRecordingMuted;
+    });
+    _service.setMuteRec(_isRecordingMuted);
+    _appendLog('Recording ${_isRecordingMuted ? "muted" : "unmuted"}');
   }
   
   String _hzToNote(double hz) {
@@ -179,13 +200,14 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
             padding: const EdgeInsets.all(8.0),
             child: Column(
               children: [
-                Row(
-                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                   children: [
-                     const Text('Live Pitch Tracking'),
-                     Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
-                   ],
-                ),
+                // Live pitch tracking disabled until re-implemented with flutter_sound
+                // Row(
+                //    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                //    children: [
+                //      const Text('Live Pitch Tracking'),
+                //      Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
+                //    ],
+                // ),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
@@ -207,6 +229,39 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
                     ElevatedButton(
                       onPressed: (!_isRunning && _lastResult != null) ? _onPlayAligned : null,
                       child: const Text('4. Play Aligned'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Column(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _isReferenceMuted ? Icons.volume_off : Icons.volume_up,
+                            color: _isReferenceMuted ? Colors.red : Colors.blue,
+                          ),
+                          onPressed: _toggleReferenceMute,
+                          tooltip: _isReferenceMuted ? 'Unmute Reference' : 'Mute Reference',
+                        ),
+                        const Text('Reference', style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                    const SizedBox(width: 40),
+                    Column(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _isRecordingMuted ? Icons.volume_off : Icons.volume_up,
+                            color: _isRecordingMuted ? Colors.red : Colors.green,
+                          ),
+                          onPressed: _toggleRecordingMute,
+                          tooltip: _isRecordingMuted ? 'Unmute Recording' : 'Mute Recording',
+                        ),
+                        const Text('Recording', style: TextStyle(fontSize: 12)),
+                      ],
                     ),
                   ],
                 ),

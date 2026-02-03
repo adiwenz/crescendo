@@ -6,6 +6,10 @@ PODS:
   - Flutter (1.0.0)
   - flutter_midi_pro (0.0.1):
     - Flutter
+  - flutter_sound (9.30.0):
+    - Flutter
+    - flutter_sound_core (= 9.30.0)
+  - flutter_sound_core (9.30.0)
   - integration_test (0.0.1):
     - Flutter
   - one_clock_audio (0.0.1):
@@ -33,6 +37,7 @@ DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
   - Flutter (from `Flutter`)
   - flutter_midi_pro (from `.symlinks/plugins/flutter_midi_pro/ios`)
+  - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - one_clock_audio (from `.symlinks/plugins/one_clock_audio/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
@@ -43,6 +48,10 @@ DEPENDENCIES:
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
   - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
+SPEC REPOS:
+  trunk:
+    - flutter_sound_core
+
 EXTERNAL SOURCES:
   audio_session:
     :path: ".symlinks/plugins/audio_session/ios"
@@ -52,6 +61,8 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_midi_pro:
     :path: ".symlinks/plugins/flutter_midi_pro/ios"
+  flutter_sound:
+    :path: ".symlinks/plugins/flutter_sound/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
   one_clock_audio:
@@ -76,6 +87,8 @@ SPEC CHECKSUMS:
   audioplayers_darwin: 877d9a4d06331c5c374595e46e16453ac7eafa40
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_midi_pro: 0a87e01e0bd9695047b0654dcbb61ce6d82621be
+  flutter_sound: 0e2f5015f122fc8be5ab9afd9e4b7f2aefbd65c8
+  flutter_sound_core: 7f2626d249d3a57bfa6da892ef7e22d234482c1a
   integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573
   one_clock_audio: d70c1a925472ec833f597c2f62ef23ec2b4793fd
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
@@ -88,4 +101,4 @@ SPEC CHECKSUMS:
 
 PODFILE CHECKSUM: c60677978593f6d809c36fecb24754252b4e2d68
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2
