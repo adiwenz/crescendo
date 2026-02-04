@@ -10,7 +10,6 @@ import 'package:path_provider/path_provider.dart';
 // NEW
 import 'package:flutter_sound/flutter_sound.dart';
 import 'pitch_isolate_processor.dart';
-import 'ultrasonic_marker.dart';
 
 enum AlignmentStrategy {
   signalAnalysis,
@@ -151,11 +150,10 @@ class TimestampSyncService {
   }
 
   // Marker config
-  static const double _markerStartHz = 19000;
-  static const double _markerEndHz = 21000;
-  static const int _markerDurationMs = 30;
-  static const double _markerAmplitude = 0.15;
-  static const int _markerSilenceAfterMs = 20;
+  // Marker config
+  static const int _clickSamples = 480; // 10ms at 48k
+  static const int _silenceSamples = 2400; // 50ms padding
+  int _refMarkerIndex = 0; // Where the click starts in the reference file
 
   // We track where we *expect* the marker to be in the reference file (usually 0)
   // But since we generate it, we know it starts at 0.
@@ -296,8 +294,11 @@ class TimestampSyncService {
     // 3) Start reference playback (from asset)
     // flutter_sound expects a URI or a path. For assets, the common pattern is:
     // - load asset to a temp file, then play from that file path.
-    // Use ULTRASONIC marker injection
-    final refPath = await _materializeRefWithUltrasonicMarker(refAssetPath);
+    // 3) Start reference playback (from asset)
+    // flutter_sound expects a URI or a path. For assets, the common pattern is:
+    // - load asset to a temp file, then play from that file path.
+    // INJECT AUDIBLE CLICK (Signal Analysis)
+    final refPath = await _materializeAssetToFile(refAssetPath);
     _log('Ref materialized to file: $refPath');
 
     await _playerRef.startPlayer(
@@ -365,94 +366,43 @@ class TimestampSyncService {
 
     _log('Stopped. rawWav=$_rawWavPath');
     
-    // --- SIGNAL ANALYSIS & ALIGNMENT (ULTRASONIC) ---
-    _log('Starting ultrasonic analysis...');
+    // --- SIGNAL ANALYSIS & ALIGNMENT ---
+    _log('Starting signal analysis...');
 
-    int bestLagRef = -1;
-    int bestLagRec = -1;
-    double confidenceRec = 0.0;
-    
+    int recMarkerIndex = -1;
     File? recRawFile;
     if (_rawWavPath != null) {
       recRawFile = File(_rawWavPath!);
+      if (recRawFile.existsSync()) {
+        final bytes = await recRawFile.readAsBytes();
+        // Skip 44 byte header
+        if (bytes.length > 44) {
+          recMarkerIndex = _findMarkerSampleIndex(bytes.sublist(44));
+        }
+      }
     }
-    
-    // We also need the REFERENCE WAV used for playback (which has the marker)
-    // _lastRefAssetPath is the asset... wait, we need the materialized file path?
-    // We returned it in startRun but didn't store it class-level?
-    // Ah, we regenerate the expected marker waveform in memory, we don't need to read the file 
-    // if we trust we generated it at the start.
-    // BUT, for the reference signal "truth", we ideally read the file we played or just assume 
-    // the marker is at sample 0 (since we prepended it).
-    // The prompt says: "detect that chirp in both the reference and the recorded WAV".
-    
-    // So we need to re-materialize or keep the path of the ref file we played? 
-    // Or just look at the asset? No, the asset doesn't have the marker.
-    // We probably regenerated it in _materializeRefWithUltrasonicMarker.
-    // Let's assume marker is at 0 in Ref for simplicity (we prepended it), 
-    // OR scanning the materialized file is safer if we want to be purist.
-    // The prompt explicitly says: "detect that chirp in both ... via cross-correlation".
-    
-    // Let's find the ref file. We don't save the path in class state currently. 
-    // It's in the temp dir as 'ref_with_marker.wav'.
-    final dir = await getTemporaryDirectory();
-    final refFilePath = '${dir.path}/ref_with_marker.wav';
-    final refFile = File(refFilePath);
-    
-    if (recRawFile != null && recRawFile.existsSync() && refFile.existsSync()) {
-        final recBytes = await recRawFile.readAsBytes();
-        final refBytes = await refFile.readAsBytes();
-        
-        // Config for detection
-        final needle = UltrasonicMarker.generateChirpWaveform(
-          sampleRate: _sampleRate, 
-          startHz: _markerStartHz, 
-          endHz: _markerEndHz, 
-          durationMs: _markerDurationMs
-        );
-        
-        // Search Ref (first 0.5s)
-        final resRef = _findMarkerLag(
-           pcmBytes: refBytes.sublist(44), // skip header
-           needle: needle,
-           maxSearchSeconds: 0.5,
-        );
-        bestLagRef = resRef.bestLag;
-        
-        // Search Rec (first 2.0s)
-        final resRec = _findMarkerLag(
-           pcmBytes: recBytes.sublist(44), // skip header
-           needle: needle,
-           maxSearchSeconds: 2.0,
-        );
-        bestLagRec = resRec.bestLag;
-        confidenceRec = resRec.confidence;
-        
-        _log('Correlation Results:');
-        _log('  Ref: lag=$bestLagRef, conf=${resRef.confidence.toStringAsFixed(2)}');
-        _log('  Rec: lag=$bestLagRec, conf=${resRec.confidence.toStringAsFixed(2)}');
-    }
+
+    _log('Marker detection: RefIndex=$_refMarkerIndex, RecIndex=$recMarkerIndex');
 
     _alignedWavPath = null;
     AlignmentStrategy strategy = AlignmentStrategy.noAlignmentPossible;
     double offsetSec = 0.0;
-    
-    // Confidence threshold
-    const double minConfidence = 6.0;
 
-    if (bestLagRef != -1 && bestLagRec != -1 && confidenceRec >= minConfidence) {
-       // Offset: Rec - Ref
-       final diffSamples = bestLagRec - bestLagRef;
+    if (recMarkerIndex != -1 && recRawFile != null) {
+       // Offset: How many samples later did the recorder hear it?
+       // RecIndex is usually > RefIndex because of latency + travel time.
+       // Diff = Rec - Ref
+       final diffSamples = recMarkerIndex - _refMarkerIndex;
        offsetSec = diffSamples / _sampleRate;
        
-       _log('Offset calculated (ultrasonic): $diffSamples samples ($offsetSec sec)');
+       _log('Offset calculated (signal): $diffSamples samples ($offsetSec sec)');
        
        final dir = await getTemporaryDirectory();
        _alignedWavPath = '${dir.path}/sync_aligned.wav';
        
        try {
          if (offsetSec > 0) {
-           // Recorder LATE -> Trim Rec start
+           // Recorder is LATE (lag). We must TRIM the start to align.
            await _trimStartOfWav(
               inputPath: _rawWavPath!,
               outputPath: _alignedWavPath!,
@@ -461,7 +411,7 @@ class TimestampSyncService {
            strategy = AlignmentStrategy.signalAnalysis;
            _log('Aligned by trimming ${offsetSec}s.');
          } else {
-           // Recorder EARLY -> Pad Rec start
+           // Recorder is EARLY. Pad.
            final padSec = -offsetSec;
            await _prependSilenceToWav(
              _rawWavPath!,
@@ -476,7 +426,7 @@ class TimestampSyncService {
           _alignedWavPath = null;
        }
     } else {
-      _log('Marker detection FAILED or LOW CONFIDENCE. (conf=$confidenceRec < $minConfidence)');
+      _log('Marker NOT FOUND in recording. Cannot align.');
     }
     
     return SyncRunResult(
@@ -537,46 +487,39 @@ class TimestampSyncService {
     }
   }
 
-  /// Standard asset materialization (NO MARKER) for playback
+  /// Standard asset materialization with CLICK INJECTION
   Future<String> _materializeAssetToFile(String assetPath) async {
-    final byteData = await rootBundle.load(assetPath);
-    final buffer = byteData.buffer;
-    final tempDir = await getTemporaryDirectory();
-    final tempPath = '${tempDir.path}/${assetPath.split('/').last}';
-    await File(tempPath).writeAsBytes(
-        buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-    return tempPath;
-  }
-
-  /// INJECTS ULTRASONIC MARKER at the start.
-  Future<String> _materializeRefWithUltrasonicMarker(String assetPath) async {
     // 1. Load asset bytes
     final assetByteData = await rootBundle.load(assetPath);
     final assetBytes = assetByteData.buffer.asUint8List();
     
-    // 2. Generate Marker
-    final markerPcm = UltrasonicMarker.buildUltrasonicChirpPcm16(
-      sampleRate: _sampleRate, 
-      startHz: _markerStartHz, 
-      endHz: _markerEndHz, 
-      durationMs: _markerDurationMs, 
-      amplitude: _markerAmplitude,
-      silenceAfterMs: _markerSilenceAfterMs,
-    );
+    // 2. Prepare Marker
+    // [Click (10ms)] [Silence (50ms)] [Asset...]
+    _refMarkerIndex = 0; 
+    
+    final clickBytes = Uint8List(_clickSamples * 2);
+    final bd = ByteData.sublistView(clickBytes);
+    // Square wave click
+    for (int i = 0; i < _clickSamples; i++) {
+       // Full scale is 32767. Let's use 30000.
+       bd.setInt16(i * 2, 30000, Endian.little);
+    }
+    
+    final silenceBytes = Uint8List(_silenceSamples * 2); 
     
     // 3. Assemble
-    // Assume asset has 44 byte header. We strip it.
     int assetHeaderLen = 44;
-    if (assetBytes.length < 44) assetHeaderLen = 0; // fallback
+    if (assetBytes.length < 44) assetHeaderLen = 0; 
     
     final assetPcm = assetBytes.sublist(assetHeaderLen);
     
-    final totalLen = markerPcm.length + assetPcm.length;
+    final totalLen = clickBytes.length + silenceBytes.length + assetPcm.length;
     final header = _buildWavHeader(totalLen, _sampleRate, _numChannels);
     
     final bb = BytesBuilder();
     bb.add(header);
-    bb.add(markerPcm);
+    bb.add(clickBytes);
+    bb.add(silenceBytes);
     bb.add(assetPcm);
     
     // Write to temp
@@ -588,61 +531,20 @@ class TimestampSyncService {
     return tempFile.path;
   }
   
-  // --- Correlation Helper ---
-  
-  _CorrelationResult _findMarkerLag({
-    required Uint8List pcmBytes, 
-    required List<double> needle, 
-    required double maxSearchSeconds
-  }) {
-      final numSamples = pcmBytes.length ~/ 2;
-      final maxSearchSamples = (maxSearchSeconds * _sampleRate).round();
-      final searchLen = (numSamples < maxSearchSamples) ? numSamples : maxSearchSamples;
-      
-      final needleLen = needle.length;
-      if (searchLen < needleLen) return _CorrelationResult(-1, 0.0);
-      
-      // Extract signal to doubles for easier math
-      // (Optimization: only convert what we scan? But we scan sliding window.)
-      // We need signal up to searchLen + needleLen ideally to scan full needle at last position.
-      // Scan limit is start index.
-      final scanLimit = searchLen - needleLen;
-      
-      final signal = List<double>.filled(searchLen, 0.0);
-      final bd = ByteData.sublistView(pcmBytes);
-      for (int i=0; i<searchLen; i++) {
-         signal[i] = bd.getInt16(i*2, Endian.little) / 32768.0;
-      }
-      
-      double bestCorr = -1.0;
-      int bestLag = -1;
-      
-      double sumAbsCorr = 0.0;
-      int countCorr = 0;
-      
-      for (int lag=0; lag < scanLimit; lag++) {
-         double dot = 0.0;
-         for (int j=0; j < needleLen; j++) {
-            dot += signal[lag+j] * needle[j];
-         }
-         final absDot = dot.abs();
-         
-         if (absDot > bestCorr) {
-            bestCorr = absDot;
-            bestLag = lag;
-         }
-         
-         sumAbsCorr += absDot;
-         countCorr++;
-      }
-      
-      double confidence = 0.0;
-      if (countCorr > 0 && sumAbsCorr > 0) {
-         final mean = sumAbsCorr / countCorr;
-         confidence = bestCorr / mean;
-      }
-      
-      return _CorrelationResult(bestLag, confidence);
+  // Scans for first sample > threshold
+  int _findMarkerSampleIndex(Uint8List pcmBytes) {
+     final bd = ByteData.sublistView(pcmBytes);
+     final numSamples = pcmBytes.length ~/ 2;
+     // Threshold: 0.7 of 32768 ~= 22937. Let's say 20000.
+     const threshold = 20000;
+     
+     for (int i=0; i < numSamples; i++) {
+        final val = bd.getInt16(i * 2, Endian.little);
+        if (val.abs() > threshold) {
+           return i;
+        }
+     }
+     return -1;
   }
 
   // --- WAV prepend helpers (same logic you already had, slightly cleaned) ---
@@ -766,9 +668,4 @@ class TimestampSyncService {
 
     _isInited = false;
   }
-}
-class _CorrelationResult {
-  final int bestLag;
-  final double confidence;
-  _CorrelationResult(this.bestLag, this.confidence);
 }
