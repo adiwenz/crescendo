@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 // NEW
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:pitch_detector_dart/pitch_detector.dart';
+import 'pitch_isolate_processor.dart';
 
 enum AlignmentStrategy {
   prependSilenceToRecordingWav,
@@ -84,8 +84,12 @@ class TimestampSyncService {
       StreamController<double?>.broadcast();
   
   // Pitch processing state
-  final List<double> _pitchBuffer = [];
-  PitchDetector? _pitchDetector;
+  final PitchIsolateProcessor _pitchProcessor = PitchIsolateProcessor();
+  bool _livePitchEnabled = true;
+  
+  // Debug stats
+  int _audioChunksSeen = 0;
+  Timer? _debugTimer;
   
   // Manual WAV writing state
   RandomAccessFile? _wavRAF;
@@ -104,8 +108,8 @@ class TimestampSyncService {
   bool _muteRec = false;
 
   // Config
-  int _sampleRate = 48000; // strongly recommended on Android
-  int _numChannels = 1;
+  final int _sampleRate = 48000; // strongly recommended on Android
+  final int _numChannels = 1;
 
   Future<void> init() async {
     if (_isInited) return;
@@ -121,8 +125,34 @@ class TimestampSyncService {
     _playerRec.setSubscriptionDuration(const Duration(milliseconds: 20));
     _recorder.setSubscriptionDuration(const Duration(milliseconds: 20));
 
+    // Init isolate
+    await _pitchProcessor.init();
+    _pitchProcessor.resultStream.listen((hz) {
+      _pitchStreamController.add(hz);
+    });
+    
+    // Start debug timer
+    _debugTimer?.cancel();
+    _debugTimer = Timer.periodic(const Duration(seconds: 2), (t) {
+      if (_isArmed || _recStartNs > 0) { // rough check if active
+         _logStats();
+      }
+    });
+
     _isInited = true;
-    _log('flutter_sound sessions opened.');
+    _log('flutter_sound sessions opened & isolate inited.');
+  }
+  
+  void setLivePitchEnabled(bool enabled) {
+    _livePitchEnabled = enabled;
+  }
+  
+  void _logStats() {
+    _log('Stats: AudioChunks=$_audioChunksSeen, '
+         'PitchSent=${_pitchProcessor.chunksSent}, '
+         'PitchProc=${_pitchProcessor.chunksProcessed}, '
+         'Dropped=${_pitchProcessor.chunksDropped}, '
+         'AvgTime=${_pitchProcessor.avgComputeMs.toStringAsFixed(2)}ms');
   }
 
   Future<void> arm({required String refAssetPath}) async {
@@ -139,9 +169,11 @@ class TimestampSyncService {
       _wavRAF = null;
     }
     
-    // Pitch detector init
-    _pitchDetector = PitchDetector(audioSampleRate: _sampleRate.toDouble(), bufferSize: 2048);
-    _pitchBuffer.clear();
+    // Reset stats
+    _audioChunksSeen = 0;
+    _pitchProcessor.chunksDropped = 0;
+    _pitchProcessor.chunksSent = 0;
+    _pitchProcessor.chunksProcessed = 0;
 
     // Apply mute volumes immediately
     await _applyMuteVolumes();
@@ -229,12 +261,15 @@ class TimestampSyncService {
              _wavRAF!.writeFromSync(data);
              _wavDataLength += data.length;
           } catch (e) {
-             print('Error writing wav: $e');
+             debugPrint('[SyncService] Error writing wav: $e');
           }
         }
         
-        // Process pitch
-        _processPitch(data);
+         // Process pitch (non-blocking isolate mailbox)
+        if (_livePitchEnabled) {
+          _audioChunksSeen++;
+          _pitchProcessor.process(data);
+        }
     });
 
     // Start recorder: PCM16 to Stream
@@ -284,35 +319,7 @@ class TimestampSyncService {
     );
   }
 
-  void _processPitch(Uint8List bytes) {
-    // bytes are Int16 Little Endian
-    // Convert to double [-1.0, 1.0]
-    final bd = ByteData.sublistView(bytes);
-    for (var i = 0; i + 1 < bytes.length; i += 2) {
-      final sample = bd.getInt16(i, Endian.little);
-      _pitchBuffer.add(sample / 32768.0);
-    }
-    
-    // Simple sliding window or chunk processing
-    const int processSize = 2048; // Must match detector buffer size ideally
-    if (_pitchDetector != null && _pitchBuffer.length >= processSize) {
-      final bufferToProcess = List<double>.from(_pitchBuffer.take(processSize));
-      _pitchBuffer.removeRange(0, processSize ~/ 2); // Overlap 50%
-      
-      Future.microtask(() async {
-        try {
-          final result = await _pitchDetector!.getPitchFromFloatBuffer(bufferToProcess);
-          if (result.pitched) {
-            _pitchStreamController.add(result.pitch);
-          } else {
-            _pitchStreamController.add(null);
-          }
-        } catch (e) {
-          // ignore
-        }
-      });
-    }
-  }
+  // _processPitch removed
 
   Future<SyncRunResult> stopRunAndAlign() async {
     _log('Stopping...');
@@ -561,6 +568,8 @@ class TimestampSyncService {
     await _recStreamSub?.cancel();
     await _audioStreamController.close();
     await _pitchStreamController.close();
+    _pitchProcessor.dispose();
+    _debugTimer?.cancel();
     
     if (_wavRAF != null) {
       try { _wavRAF!.closeSync(); } catch (_) {}

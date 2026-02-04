@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:crescendo_mobile/services/timestamp_sync_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 
 // PUBSPEC INSTRUCTIONS:
@@ -15,7 +16,7 @@ class TimestampSyncTestScreen extends StatefulWidget {
   State<TimestampSyncTestScreen> createState() => _TimestampSyncTestScreenState();
 }
 
-class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
+class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> with SingleTickerProviderStateMixin {
   final TimestampSyncService _service = TimestampSyncService();
   
   // State for UI
@@ -30,7 +31,16 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
   @override
   void initState() {
     super.initState();
+    _ticker = createTicker(_onTick);
     _initService();
+  }
+  
+  void _onTick(Duration elapsed) {
+    if (_isRunning && mounted) {
+      setState(() {
+         // This triggers rebuild to repaint the pitch history painter and text
+      });
+    }
   }
 
   Future<void> _initService() async {
@@ -52,6 +62,10 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
   final List<double?> _pitchHistory = [];
   StreamSubscription? _pitchSub;
   bool _livePitchEnabled = true;
+
+  // UI Ticker
+  late Ticker _ticker;
+  // We use this to avoid setState if nothing changed, or just clamp to 60hz
   
   // Mute State
   bool _isReferenceMuted = false;
@@ -59,6 +73,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
 
   @override
   void dispose() {
+    _ticker.dispose();
     _pitchSub?.cancel();
     _service.dispose();
     super.dispose();
@@ -88,23 +103,23 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     });
     
     // Subscribe to pitch if enabled
+    _service.setLivePitchEnabled(_livePitchEnabled);
     if (_livePitchEnabled) {
+      _ticker.start();
       _pitchSub?.cancel();
       _pitchSub = _service.pitchStream.listen((hz) {
-        if (!mounted) return;
-        setState(() {
-          _currentHz = hz;
-          if (hz != null && hz > 0) {
-            _currentNote = _hzToNote(hz);
-          } else {
-             _currentNote = null;
-          }
-          
-          _pitchHistory.add(hz);
-          if (_pitchHistory.length > 100) {
-            _pitchHistory.removeAt(0);
-          }
-        });
+        // Collect data, do NOT setState
+        _currentHz = hz;
+        if (hz != null && hz > 0) {
+           _currentNote = _hzToNote(hz);
+        } else {
+           _currentNote = null;
+        }
+        
+        _pitchHistory.add(hz);
+        if (_pitchHistory.length > 100) {
+           _pitchHistory.removeAt(0);
+        }
       });
     }
     
@@ -128,6 +143,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
     
     try {
       final result = await _service.stopRunAndAlign();
+      _ticker.stop();
       setState(() {
         _lastResult = result;
         _isRunning = false;
@@ -137,6 +153,7 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
       
     } catch (e) {
       _appendLog('Stop failed: $e');
+      _ticker.stop();
       setState(() {
         _isRunning = false;
       });
@@ -203,7 +220,10 @@ class _TimestampSyncTestScreenState extends State<TimestampSyncTestScreen> {
                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                    children: [
                      const Text('Live Pitch Tracking'),
-                     Switch(value: _livePitchEnabled, onChanged: (v) => setState(() => _livePitchEnabled = v)),
+                     Switch(value: _livePitchEnabled, onChanged: (v) {
+                        setState(() => _livePitchEnabled = v);
+                        _service.setLivePitchEnabled(v);
+                     }),
                    ],
                 ),
                 Wrap(
