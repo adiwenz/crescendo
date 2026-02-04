@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 // NEW
 import 'package:flutter_sound/flutter_sound.dart';
 import 'pitch_isolate_processor.dart';
+import 'chirp_marker.dart';
 
 enum AlignmentStrategy {
   signalAnalysis,
@@ -62,9 +63,9 @@ class TimestampSyncService {
   bool _isInited = false;
   bool _isArmed = false;
 
-  String? _lastRefAssetPath;
   String? _rawWavPath;
   String? _alignedWavPath;
+  String? _mixedWavPath; // NEW: Mixed output
 
   // Timestamp capture
   int _refStartNs = 0;
@@ -149,11 +150,10 @@ class TimestampSyncService {
     _livePitchEnabled = enabled;
   }
 
-  // Marker config
-  // Marker config
-  static const int _clickSamples = 480; // 10ms at 48k
-  static const int _silenceSamples = 2400; // 50ms padding
-  int _refMarkerIndex = 0; // Where the click starts in the reference file
+  // Marker config (Chirp)
+  // Configured in ChirpMarker defaults, but we use constants here to be explicit if needed
+  // or just rely on the helper defaults.
+  // We track where we *expect* the marker to be in the reference file (usually 0)
 
   // We track where we *expect* the marker to be in the reference file (usually 0)
   // But since we generate it, we know it starts at 0.
@@ -167,7 +167,6 @@ class TimestampSyncService {
   }
 
   Future<void> arm({required String refAssetPath}) async {
-    _lastRefAssetPath = refAssetPath;
     // Cancel old subs
     await _refProgSub?.cancel();
     _refProgSub = null;
@@ -213,7 +212,6 @@ class TimestampSyncService {
   }
 
   Future<SyncRunResult> startRun({required String refAssetPath}) async {
-    _lastRefAssetPath = refAssetPath;
     if (!_isArmed) await arm(refAssetPath: refAssetPath);
 
     _log('Starting run...');
@@ -297,8 +295,8 @@ class TimestampSyncService {
     // 3) Start reference playback (from asset)
     // flutter_sound expects a URI or a path. For assets, the common pattern is:
     // - load asset to a temp file, then play from that file path.
-    // INJECT AUDIBLE CLICK (Signal Analysis)
-    final refPath = await _materializeAssetToFile(refAssetPath);
+    // INJECT ROBUST CHIRP MARKER
+    final refPath = await _materializeRefWithMarker(refAssetPath);
     _log('Ref materialized to file: $refPath');
 
     await _playerRef.startPlayer(
@@ -366,67 +364,114 @@ class TimestampSyncService {
 
     _log('Stopped. rawWav=$_rawWavPath');
     
-    // --- SIGNAL ANALYSIS & ALIGNMENT ---
-    _log('Starting signal analysis...');
+    // --- SIGNAL ANALYSIS & ALIGNMENT (CHIRP + CORRELATION) ---
+    _log('Starting chirp alignment...');
 
-    int recMarkerIndex = -1;
     File? recRawFile;
     if (_rawWavPath != null) {
       recRawFile = File(_rawWavPath!);
-      if (recRawFile.existsSync()) {
-        final bytes = await recRawFile.readAsBytes();
-        // Skip 44 byte header
-        if (bytes.length > 44) {
-          recMarkerIndex = _findMarkerSampleIndex(bytes.sublist(44));
-        }
-      }
     }
-
-    _log('Marker detection: RefIndex=$_refMarkerIndex, RecIndex=$recMarkerIndex');
+    
+    // We need the reference file we played (which has the marker at the start)
+    // We don't store the path, but we know it's 'ref_with_marker.wav' in temp
+    final dir = await getTemporaryDirectory();
+    final refFilePath = '${dir.path}/ref_with_marker.wav';
+    final refFile = File(refFilePath);
+    
+    int bestLagRef = -1;
+    int bestLagRec = -1;
+    double confidenceRec = 0.0;
+    
+    if (recRawFile != null && recRawFile.existsSync() && refFile.existsSync()) {
+        final recBytes = await recRawFile.readAsBytes();
+        final refBytes = await refFile.readAsBytes();
+        
+        // Generate needle
+        final needle = ChirpMarker.generateChirpWaveform(); // use defaults
+        
+        // Config detection
+        // Ref: search 0.5s
+        final resRef = _detectMarker(
+          wavBytes: refBytes,
+          marker: needle,
+          searchStartSamples: 0,
+          searchLenSamples: (0.5 * _sampleRate).round(),
+        );
+        bestLagRef = resRef.bestLag;
+        
+        // Rec: search 2.0s
+        final resRec = _detectMarker(
+          wavBytes: recBytes,
+          marker: needle,
+          searchStartSamples: 0,
+          searchLenSamples: (2.0 * _sampleRate).round(),
+        );
+        bestLagRec = resRec.bestLag;
+        confidenceRec = resRec.confidence;
+        
+        _log('Correlation Results:');
+        _log('  Ref: lag=$bestLagRef, conf=${resRef.confidence.toStringAsFixed(2)}');
+        _log('  Rec: lag=$bestLagRec, conf=${resRec.confidence.toStringAsFixed(2)}');
+    }
 
     _alignedWavPath = null;
     AlignmentStrategy strategy = AlignmentStrategy.noAlignmentPossible;
+    int offsetSamples = 0;
     double offsetSec = 0.0;
+    const double minConfidence = 6.0;
 
-    if (recMarkerIndex != -1 && recRawFile != null) {
-       // Offset: How many samples later did the recorder hear it?
-       // RecIndex is usually > RefIndex because of latency + travel time.
-       // Diff = Rec - Ref
-       final diffSamples = recMarkerIndex - _refMarkerIndex;
-       offsetSec = diffSamples / _sampleRate;
+    if (bestLagRef != -1 && bestLagRec != -1 && confidenceRec >= minConfidence) {
+       offsetSamples = bestLagRec - bestLagRef;
+       offsetSec = offsetSamples / _sampleRate;
        
-       _log('Offset calculated (signal): $diffSamples samples ($offsetSec sec)');
+       _log('Offset: $offsetSamples samples ($offsetSec sec)');
        
        final dir = await getTemporaryDirectory();
        _alignedWavPath = '${dir.path}/sync_aligned.wav';
        
        try {
-         if (offsetSec > 0) {
-           // Recorder is LATE (lag). We must TRIM the start to align.
-           await _trimStartOfWav(
-              inputPath: _rawWavPath!,
-              outputPath: _alignedWavPath!,
-              trimSeconds: offsetSec, 
+         if (offsetSamples > 0) {
+           // Recorder LATE -> Trim start
+           await _trimStartOfWavSamples(
+             inputPath: _rawWavPath!, 
+             outputPath: _alignedWavPath!, 
+             trimSamples: offsetSamples
            );
            strategy = AlignmentStrategy.signalAnalysis;
-           _log('Aligned by trimming ${offsetSec}s.');
+           _log('Aligned by trimming $offsetSamples samples.');
          } else {
-           // Recorder is EARLY. Pad.
-           final padSec = -offsetSec;
-           await _prependSilenceToWav(
-             _rawWavPath!,
-             padSec,
-             outputPath: _alignedWavPath!,
+           // Recorder EARLY -> Pad start
+           final padSamples = -offsetSamples;
+           await _prependSilenceToWavSamples(
+             _rawWavPath!, 
+             _alignedWavPath!, 
+             padSamples
            );
            strategy = AlignmentStrategy.signalAnalysis;
-           _log('Aligned by padding ${padSec}s.');
+           _log('Aligned by padding $padSamples samples.');
          }
        } catch (e) {
           _log('Alignment failed: $e');
           _alignedWavPath = null;
        }
     } else {
-      _log('Marker NOT FOUND in recording. Cannot align.');
+      _log('Marker detection FAILED or LOW CONFIDENCE. (conf=$confidenceRec < $minConfidence)');
+    }
+    
+    // MIXING
+    // We mix the REF (with marker, as played) + ALIGNED REC (which has marker captured)
+    // This allows audible verification of alignment.
+    _mixedWavPath = null;
+    if (_alignedWavPath != null && refFile.existsSync()) {
+      try {
+         _mixedWavPath = await _mixAlignedWavs(
+            refWavPath: refFile.path, 
+            recAlignedWavPath: _alignedWavPath!
+         );
+         _log('Mixed WAV created: $_mixedWavPath');
+      } catch (e) {
+         _log('Mixing failed: $e');
+      }
     }
     
     return SyncRunResult(
@@ -443,69 +488,45 @@ class TimestampSyncService {
 
   Future<void> playAligned() async {
     _log('playAligned called.');
-    if (_lastRefAssetPath == null || _rawWavPath == null) {
-      _log('Cannot play: ref or raw path null.');
-      return;
+    
+    // Prefer mixed, then aligned, then raw
+    String? path = _mixedWavPath ?? _alignedWavPath ?? _rawWavPath;
+    
+    if (path == null) {
+       _log('No file to play.');
+       return;
     }
     
-    // Check files
-    final rawFile = File(_rawWavPath!);
-    if (rawFile.existsSync()) {
-      _log('Raw WAV exists, size=${rawFile.lengthSync()}');
-    } else {
-      _log('Raw WAV missing!');
+    if (!File(path).existsSync()) {
+       _log('File missing: $path');
+       return;
     }
-    
-    if (_alignedWavPath != null) {
-       final alignedFile = File(_alignedWavPath!);
-       if (alignedFile.existsSync()) {
-         _log('Aligned WAV exists, size=${alignedFile.lengthSync()}');
-       } else {
-         _log('Aligned WAV path set but file missing!');
-       }
-    }
-    
-    // Always use the aligned path if available.
-    // If null (failed alignment), fall back to raw (which won't be synced).
-    final recPath = _alignedWavPath ?? _rawWavPath!;
-    final refPath = await _materializeAssetToFile(_lastRefAssetPath!);
-    _log('Playing: Ref=$refPath, Rec=$recPath');
-
-    await _applyMuteVolumes();
-    _log('Mute state: Ref=$_muteRef, Rec=$_muteRec');
 
     // Stop any prior playback
     if (_playerRef.isPlaying) await _playerRef.stopPlayer();
     if (_playerRec.isPlaying) await _playerRec.stopPlayer();
-
-    _log('Starting playback...');
+    
+    // Single player playback
+    _log('Playing mixed/monolithic file: $path');
     try {
-      await _playerRef.startPlayer(fromURI: refPath, whenFinished: () { _log('Ref finished'); });
-      await _playerRec.startPlayer(fromURI: recPath, whenFinished: () { _log('Rec finished'); });
+      // Use playerRef as the main player
+      await _playerRef.startPlayer(
+         fromURI: path,
+         whenFinished: () => _log('Playback finished.'),
+      );
     } catch (e) {
       _log('Error starting playback: $e');
     }
   }
 
-  /// Standard asset materialization with CLICK INJECTION
-  Future<String> _materializeAssetToFile(String assetPath) async {
+  /// INJECTS CHIRP MARKER at the start.
+  Future<String> _materializeRefWithMarker(String assetPath) async {
     // 1. Load asset bytes
     final assetByteData = await rootBundle.load(assetPath);
     final assetBytes = assetByteData.buffer.asUint8List();
     
-    // 2. Prepare Marker
-    // [Click (10ms)] [Silence (50ms)] [Asset...]
-    _refMarkerIndex = 0; 
-    
-    final clickBytes = Uint8List(_clickSamples * 2);
-    final bd = ByteData.sublistView(clickBytes);
-    // Square wave click
-    for (int i = 0; i < _clickSamples; i++) {
-       // Full scale is 32767. Let's use 30000.
-       bd.setInt16(i * 2, 30000, Endian.little);
-    }
-    
-    final silenceBytes = Uint8List(_silenceSamples * 2); 
+    // 2. Generate Marker
+    final markerPcm = ChirpMarker.buildChirpPcm16(); // defaults
     
     // 3. Assemble
     int assetHeaderLen = 44;
@@ -513,13 +534,12 @@ class TimestampSyncService {
     
     final assetPcm = assetBytes.sublist(assetHeaderLen);
     
-    final totalLen = clickBytes.length + silenceBytes.length + assetPcm.length;
+    final totalLen = markerPcm.length + assetPcm.length;
     final header = _buildWavHeader(totalLen, _sampleRate, _numChannels);
     
     final bb = BytesBuilder();
     bb.add(header);
-    bb.add(clickBytes);
-    bb.add(silenceBytes);
+    bb.add(markerPcm);
     bb.add(assetPcm);
     
     // Write to temp
@@ -531,20 +551,91 @@ class TimestampSyncService {
     return tempFile.path;
   }
   
-  // Scans for first sample > threshold
-  int _findMarkerSampleIndex(Uint8List pcmBytes) {
-     final bd = ByteData.sublistView(pcmBytes);
-     final numSamples = pcmBytes.length ~/ 2;
-     // Threshold: 0.7 of 32768 ~= 22937. Let's say 20000.
-     const threshold = 20000;
+  // Scans using cross-correlation (matched filter)
+  _CorrelationResult _detectMarker({
+    required Uint8List wavBytes,
+    required Float32List marker,
+    required int searchStartSamples,
+    required int searchLenSamples,
+  }) {
+    // Skip 44 byte header
+    const pcmOffset = 44;
+     if (wavBytes.length < pcmOffset) return const _CorrelationResult(-1, 0.0);
      
-     for (int i=0; i < numSamples; i++) {
-        final val = bd.getInt16(i * 2, Endian.little);
-        if (val.abs() > threshold) {
-           return i;
-        }
-     }
-     return -1;
+     final numTotalSamples = (wavBytes.length - pcmOffset) ~/ 2;
+     if (numTotalSamples <= 0) return const _CorrelationResult(-1, 0.0);
+ 
+     // Bounds
+     int start = searchStartSamples;
+     if (start >= numTotalSamples) start = numTotalSamples - 1;
+     
+     int end = start + searchLenSamples;
+     if (end > numTotalSamples) end = numTotalSamples;
+     
+     final markerLen = marker.length;
+     final scanLimit = end - markerLen;
+     
+     if (scanLimit <= start) return const _CorrelationResult(-1, 0.0);
+    
+    // Just loop and compute dot product
+    // Optimization: could normalize signal window, but dot product is sufficient for peak finding usually?
+    // User requested: "confidence = bestCorr / (meanAbsCorr + 1e-9)"
+    // So we track abs corr.
+    
+    final bd = ByteData.sublistView(wavBytes);
+    
+    double bestCorr = -1.0;
+    int bestLag = -1;
+    double sumAbsCorr = 0.0;
+    int count = 0;
+    
+    // Pre-convert signal window to float to avoid doing it inside inner loop repeatedly?
+    // Or just do it on the fly window sliding?
+    // "Convert a sliding window of signal to float on the fly"
+    // To do efficiently: 
+    // Actually, we can just convert the search region to float[] once.
+    // Search region size ~ 2s * 48k = 96k samples. Cheap.
+    final regionLen = end - start;
+    final signalRegion = Float32List(regionLen);
+    
+    for (int i=0; i<regionLen; i++) {
+       final sampIndex = start + i;
+       final s16 = bd.getInt16(pcmOffset + sampIndex*2, Endian.little);
+       signalRegion[i] = s16 / 32767.0; // normalize roughly
+    }
+    
+    // Now scan signalRegion
+    final loopLimit = regionLen - markerLen;
+    
+    for (int lag=0; lag < loopLimit; lag++) {
+       double dot = 0.0;
+       for (int m=0; m < markerLen; m++) {
+          dot += signalRegion[lag+m] * marker[m];
+       }
+       
+       // dot is correlation
+       // We might want abs(dot) if phase flip possible? Usually signals are synced phase-wise.
+       // Let's use dot (raw correlation) for peak finding, assuming phase alignment.
+       // But wait, "meanAbsCorr" implies we track magnitude.
+       // If dot is negative, it's anti-correlated.
+       // A chirp match should be positive strong peak.
+       
+       if (dot > bestCorr) {
+          bestCorr = dot;
+          bestLag = start + lag;
+       }
+       
+       sumAbsCorr += dot.abs();
+       count++;
+    }
+    
+    double confidence = 0.0;
+    if (count > 0) {
+       final mean = sumAbsCorr / count;
+       confidence = bestCorr / (mean + 1e-9);
+    }
+    
+    return _CorrelationResult(bestLag, confidence);
   }
 
   // --- WAV prepend helpers (same logic you already had, slightly cleaned) ---
@@ -581,58 +672,47 @@ class TimestampSyncService {
     return view;
   }
   
-  Future<void> _trimStartOfWav({required String inputPath, required String outputPath, required double trimSeconds}) async {
+  // --- WAV Helpers (Samples) ---
+
+  Future<void> _trimStartOfWavSamples({required String inputPath, required String outputPath, required int trimSamples}) async {
      final inputFile = File(inputPath);
      final bytes = await inputFile.readAsBytes();
-     
-     // Minimum header size
      if (bytes.length < 44) return;
      
-     final sampleRate = _sampleRate; 
-     final channels = _numChannels;
-     final bytesPerSec = sampleRate * channels * 2;
-     final trimBytes = (trimSeconds * bytesPerSec).round();
-     
-     final blockAlign = channels * 2;
-     final alignedTrimBytes = (trimBytes ~/ blockAlign) * blockAlign;
+     final blockAlign = _numChannels * 2;
+     final trimBytes = trimSamples * blockAlign; // sample * channels * 2
      
      // Skip original header
-     if (44 + alignedTrimBytes >= bytes.length) {
-       // Trimmed everything
-       final header = _buildWavHeader(0, sampleRate, channels);
+     if (44 + trimBytes >= bytes.length) {
+       final header = _buildWavHeader(0, _sampleRate, _numChannels);
        await File(outputPath).writeAsBytes(header);
        return;
      }
 
-     final newLength = (bytes.length - 44) - alignedTrimBytes;
-     final header = _buildWavHeader(newLength, sampleRate, channels);
+     final newLength = (bytes.length - 44) - trimBytes;
+     // Re-check alignment? Block align is 2 or 4.
+     
+     final header = _buildWavHeader(newLength, _sampleRate, _numChannels);
      
      final outBytes = BytesBuilder();
      outBytes.add(header);
-     outBytes.add(bytes.sublist(44 + alignedTrimBytes));
+     outBytes.add(bytes.sublist(44 + trimBytes));
      
      await File(outputPath).writeAsBytes(outBytes.toBytes());
   }
 
-  Future<String> _prependSilenceToWav(String inputPath, double silenceSeconds, {String? outputPath}) async {
+  Future<void> _prependSilenceToWavSamples(String inputPath, String outputPath, int silenceSamples) async {
     final inFile = File(inputPath);
     final bytes = await inFile.readAsBytes();
     
-    final sampleRate = _sampleRate;
-    final channels = _numChannels;
-    final bytesPerSec = sampleRate * channels * 2;
-    final silenceBytesCount = (silenceSeconds * bytesPerSec).round();
-    final blockAlign = channels * 2;
-    final alignedSilenceBytes = (silenceBytesCount ~/ blockAlign) * blockAlign;
+    final blockAlign = _numChannels * 2;
+    final silenceBytesCount = silenceSamples * blockAlign;
     
-    // Assume 44 byte header for files we created
-    final currentDataLen = bytes.length - 44;
-    final newDataLen = currentDataLen + alignedSilenceBytes;
+    final currentDataLen = (bytes.length >= 44) ? bytes.length - 44 : 0;
+    final newDataLen = currentDataLen + silenceBytesCount;
     
-    final header = _buildWavHeader(newDataLen, sampleRate, channels);
-    final silence = Uint8List(alignedSilenceBytes); 
-    
-    final outPath = outputPath ?? inputPath; 
+    final header = _buildWavHeader(newDataLen, _sampleRate, _numChannels);
+    final silence = Uint8List(silenceBytesCount); 
     
     final bb = BytesBuilder();
     bb.add(header);
@@ -641,8 +721,77 @@ class TimestampSyncService {
       bb.add(bytes.sublist(44));
     }
     
-    await File(outPath).writeAsBytes(bb.toBytes());
-    return outPath;
+    await File(outputPath).writeAsBytes(bb.toBytes());
+  }
+
+  // --- MIXING HELPER ---
+
+  Future<String> _mixAlignedWavs({
+     required String refWavPath,
+     required String recAlignedWavPath,
+     double refGain = 1.0,
+     double recGain = 1.0,
+  }) async {
+      final fRef = File(refWavPath);
+      final fRec = File(recAlignedWavPath);
+      
+      final bytesRef = await fRef.readAsBytes();
+      final bytesRec = await fRec.readAsBytes();
+      
+      // Skip headers (44 bytes implied)
+      int offRef = 44;
+      int offRec = 44;
+      if (bytesRef.length < 44) offRef = 0;
+      if (bytesRec.length < 44) offRec = 0;
+      
+      final bdRef = ByteData.sublistView(bytesRef);
+      final bdRec = ByteData.sublistView(bytesRec);
+      
+      final lenRef = (bytesRef.length - offRef) ~/ 2;
+      final lenRec = (bytesRec.length - offRec) ~/ 2;
+      
+      final maxLen = (lenRef > lenRec) ? lenRef : lenRec;
+      
+      _log('Mixing: Ref($lenRef samps) + Rec($lenRec samps) -> $maxLen samps');
+      
+      // Prepare output buffer
+      final outBytesCount = maxLen * 2;
+      final outData = Uint8List(outBytesCount);
+      final bdOut = ByteData.sublistView(outData);
+      
+      for (int i=0; i < maxLen; i++) {
+         int sRef = 0;
+         int sRec = 0;
+         
+         if (i < lenRef) {
+            sRef = bdRef.getInt16(offRef + i*2, Endian.little);
+         }
+         
+         if (i < lenRec) {
+            sRec = bdRec.getInt16(offRec + i*2, Endian.little);
+         }
+         
+         // Mix
+         double mixed = (sRef * refGain) + (sRec * recGain);
+         
+         // Clamp
+         if (mixed > 32767) mixed = 32767;
+         if (mixed < -32768) mixed = -32768;
+         
+         bdOut.setInt16(i*2, mixed.round(), Endian.little);
+      }
+      
+      // Build WAV
+      final header = _buildWavHeader(outBytesCount, _sampleRate, _numChannels);
+      final bb = BytesBuilder();
+      bb.add(header);
+      bb.add(outData);
+      
+      final dir = await getTemporaryDirectory();
+      final outPath = '${dir.path}/sync_mixed.wav';
+      await File(outPath).writeAsBytes(bb.toBytes());
+      
+      return outPath;
   }
 
   Future<void> dispose() async {
@@ -668,4 +817,10 @@ class TimestampSyncService {
 
     _isInited = false;
   }
+}
+
+class _CorrelationResult {
+  final int bestLag;
+  final double confidence;
+  const _CorrelationResult(this.bestLag, this.confidence);
 }
