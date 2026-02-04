@@ -10,9 +10,10 @@ import 'package:path_provider/path_provider.dart';
 // NEW
 import 'package:flutter_sound/flutter_sound.dart';
 import 'pitch_isolate_processor.dart';
+import 'ultrasonic_marker.dart';
 
 enum AlignmentStrategy {
-  prependSilenceToRecordingWav,
+  signalAnalysis,
   fallbackDelayReferencePlayback,
   noAlignmentPossible,
 }
@@ -91,10 +92,12 @@ class TimestampSyncService {
   int _audioChunksSeen = 0;
   Timer? _debugTimer;
   
-  // Manual WAV writing state
-  RandomAccessFile? _wavRAF;
-  int _wavDataLength = 0;
-  File? _wavFile;
+  // Manual WAV writing state (Removed RAF, now memory buffer)
+  // Max memory buffer 30MB (~5 mins of 48k mono 16bit)
+  static const int _maxCaptureBytes = 30 * 1024 * 1024;
+  final List<Uint8List> _audioChunks = [];
+  int _capturedBytes = 0;
+  int _droppedBytes = 0;
 
   // Logs
   final List<String> _logs = [];
@@ -146,6 +149,16 @@ class TimestampSyncService {
   void setLivePitchEnabled(bool enabled) {
     _livePitchEnabled = enabled;
   }
+
+  // Marker config
+  static const double _markerStartHz = 19000;
+  static const double _markerEndHz = 21000;
+  static const int _markerDurationMs = 30;
+  static const double _markerAmplitude = 0.15;
+  static const int _markerSilenceAfterMs = 20;
+
+  // We track where we *expect* the marker to be in the reference file (usually 0)
+  // But since we generate it, we know it starts at 0.
   
   void _logStats() {
     _log('Stats: AudioChunks=$_audioChunksSeen, '
@@ -163,11 +176,10 @@ class TimestampSyncService {
     await _recStreamSub?.cancel();
     _recStreamSub = null;
     
-    // Close any open wav raf
-    if (_wavRAF != null) {
-      await _wavRAF!.close();
-      _wavRAF = null;
-    }
+    // Clear buffers
+    _audioChunks.clear();
+    _capturedBytes = 0;
+    _droppedBytes = 0;
     
     // Reset stats
     _audioChunksSeen = 0;
@@ -229,18 +241,16 @@ class TimestampSyncService {
     });
 
     // 2) Start recorder -> toStream (PCM16)
-    // We will manually write the WAV file to ensure we get the stream data for pitch tracking AND file saving.
+    // We collect in memory and write AFTER stop.
     
-    // Prepare WAV file
+    // Set file path for writing later
     final tempDir = await getTemporaryDirectory();
     _rawWavPath = '${tempDir.path}/sync_raw.wav';
-    _wavFile = File(_rawWavPath!);
-    // Open as RandomAccessFile with write mode (truncates)
-    _wavRAF = await _wavFile!.open(mode: FileMode.write);
-    _wavDataLength = 0;
     
-    // Write placeholder header (44 bytes)
-    await _wavRAF!.writeFrom(Uint8List(44));
+    // Clear buffers (just in case)
+    _audioChunks.clear();
+    _capturedBytes = 0;
+    _droppedBytes = 0;
     
     await _recStreamSub?.cancel();
     _recStreamSub = _audioStreamController.stream.listen((data) {
@@ -249,20 +259,15 @@ class TimestampSyncService {
           _log('Rec FIRST pcm chunk at $_recStartNs ns (bytes=${data.length})');
         }
         
-        // Write to file (async fire and forget? No, RAF operations are async futures)
-        // We should chain them? For now, we trust single threaded event loop + await
-        // Actually inside listen callback we can't await properly without pausing stream.
-        // It's better to use a sync write if possible or queue.
-        // RAF has sync methods! use writeFromSync to avoid concurrency issues in stream listener?
-        // Yes, let's use sync for safety and simplicity in listener.
+        // Buffer Logic (Ring Buffer)
+        _audioChunks.add(data);
+        _capturedBytes += data.length;
         
-        if (_wavRAF != null) {
-          try {
-             _wavRAF!.writeFromSync(data);
-             _wavDataLength += data.length;
-          } catch (e) {
-             debugPrint('[SyncService] Error writing wav: $e');
-          }
+        // Enforce cap
+        while (_capturedBytes > _maxCaptureBytes && _audioChunks.isNotEmpty) {
+           final removed = _audioChunks.removeAt(0);
+           _capturedBytes -= removed.length;
+           _droppedBytes += removed.length;
         }
         
          // Process pitch (non-blocking isolate mailbox)
@@ -291,7 +296,8 @@ class TimestampSyncService {
     // 3) Start reference playback (from asset)
     // flutter_sound expects a URI or a path. For assets, the common pattern is:
     // - load asset to a temp file, then play from that file path.
-    final refPath = await _materializeAssetToFile(refAssetPath);
+    // Use ULTRASONIC marker injection
+    final refPath = await _materializeRefWithUltrasonicMarker(refAssetPath);
     _log('Ref materialized to file: $refPath');
 
     await _playerRef.startPlayer(
@@ -330,72 +336,154 @@ class TimestampSyncService {
     await _recStreamSub?.cancel();
     
     // Finalize WAV file (update header)
-    if (_wavRAF != null) {
-      try {
-        // Go back to start and write real header
-        _wavRAF!.setPositionSync(0);
-        final header = _buildWavHeader(_wavDataLength, _sampleRate, _numChannels);
-        _wavRAF!.writeFromSync(header);
-        _wavRAF!.closeSync(); // Close sync to ensure it's flushed/closed before we read it
-      } catch (e) {
-        _log('Error finalizing WAV RAF: $e');
+    // Write accumulated buffer to WAV
+    try {
+      if (_capturedBytes > 0 && _rawWavPath != null) {
+        final f = File(_rawWavPath!);
+        final raf = await f.open(mode: FileMode.write);
+
+        // Header
+        final header = _buildWavHeader(_capturedBytes, _sampleRate, _numChannels);
+        await raf.writeFrom(header);
+        
+        // Data chunks
+        for (final chunk in _audioChunks) {
+          await raf.writeFrom(chunk);
+        }
+        await raf.close();
+        
+        _log('WAV written. Bytes=$_capturedBytes, Dropped=$_droppedBytes. Path=$_rawWavPath');
+        
+        // Free memory
+        _audioChunks.clear();
+      } else {
+        _log('No captured bytes to write.');
       }
-      _wavRAF = null;
-      _log('WAV finalized (RAF). len=$_wavDataLength');
+    } catch (e) {
+      _log('Error writing WAV: $e');
     }
 
     _log('Stopped. rawWav=$_rawWavPath');
     
-    // Logic:
-    // Offset = RecStart - RefStart
-    // If Offset > 0: Rec started LATER. We missed the start of the song. 
-    //    Prepend silence of duration `offset`.
-    // If Offset < 0: Rec started EARLIER. 
-    //    Trim the start of duration `-offset`.
+    // --- SIGNAL ANALYSIS & ALIGNMENT (ULTRASONIC) ---
+    _log('Starting ultrasonic analysis...');
+
+    int bestLagRef = -1;
+    int bestLagRec = -1;
+    double confidenceRec = 0.0;
     
-    final offsetNs = _recStartNs - _refStartNs;
-    final offsetSec = offsetNs / 1e9;
-    _log('Offset calculated: $offsetSec sec (${(offsetSec*1000).toStringAsFixed(3)} ms)');
+    File? recRawFile;
+    if (_rawWavPath != null) {
+      recRawFile = File(_rawWavPath!);
+    }
+    
+    // We also need the REFERENCE WAV used for playback (which has the marker)
+    // _lastRefAssetPath is the asset... wait, we need the materialized file path?
+    // We returned it in startRun but didn't store it class-level?
+    // Ah, we regenerate the expected marker waveform in memory, we don't need to read the file 
+    // if we trust we generated it at the start.
+    // BUT, for the reference signal "truth", we ideally read the file we played or just assume 
+    // the marker is at sample 0 (since we prepended it).
+    // The prompt says: "detect that chirp in both the reference and the recorded WAV".
+    
+    // So we need to re-materialize or keep the path of the ref file we played? 
+    // Or just look at the asset? No, the asset doesn't have the marker.
+    // We probably regenerated it in _materializeRefWithUltrasonicMarker.
+    // Let's assume marker is at 0 in Ref for simplicity (we prepended it), 
+    // OR scanning the materialized file is safer if we want to be purist.
+    // The prompt explicitly says: "detect that chirp in both ... via cross-correlation".
+    
+    // Let's find the ref file. We don't save the path in class state currently. 
+    // It's in the temp dir as 'ref_with_marker.wav'.
+    final dir = await getTemporaryDirectory();
+    final refFilePath = '${dir.path}/ref_with_marker.wav';
+    final refFile = File(refFilePath);
+    
+    if (recRawFile != null && recRawFile.existsSync() && refFile.existsSync()) {
+        final recBytes = await recRawFile.readAsBytes();
+        final refBytes = await refFile.readAsBytes();
+        
+        // Config for detection
+        final needle = UltrasonicMarker.generateChirpWaveform(
+          sampleRate: _sampleRate, 
+          startHz: _markerStartHz, 
+          endHz: _markerEndHz, 
+          durationMs: _markerDurationMs
+        );
+        
+        // Search Ref (first 0.5s)
+        final resRef = _findMarkerLag(
+           pcmBytes: refBytes.sublist(44), // skip header
+           needle: needle,
+           maxSearchSeconds: 0.5,
+        );
+        bestLagRef = resRef.bestLag;
+        
+        // Search Rec (first 2.0s)
+        final resRec = _findMarkerLag(
+           pcmBytes: recBytes.sublist(44), // skip header
+           needle: needle,
+           maxSearchSeconds: 2.0,
+        );
+        bestLagRec = resRec.bestLag;
+        confidenceRec = resRec.confidence;
+        
+        _log('Correlation Results:');
+        _log('  Ref: lag=$bestLagRef, conf=${resRef.confidence.toStringAsFixed(2)}');
+        _log('  Rec: lag=$bestLagRec, conf=${resRec.confidence.toStringAsFixed(2)}');
+    }
 
     _alignedWavPath = null;
     AlignmentStrategy strategy = AlignmentStrategy.noAlignmentPossible;
+    double offsetSec = 0.0;
     
-    if (_rawWavPath != null) {
-      final dir = await getTemporaryDirectory();
-      _alignedWavPath = '${dir.path}/sync_aligned.wav';
-      
-      try {
-        if (offsetSec > 0) {
-          // Rec started later -> Prepend silence (PAD)
-          await _prependSilenceToWav(
-            _rawWavPath!,
-            offsetSec,
-            outputPath: _alignedWavPath!,
-          );
-          strategy = AlignmentStrategy.prependSilenceToRecordingWav;
-          _log('Aligned by padding ${offsetSec}s silence.');
-        } else {
-          // Rec started earlier -> Trim start
-          final trimSeconds = -offsetSec;
-          await _trimStartOfWav(
-             inputPath: _rawWavPath!,
+    // Confidence threshold
+    const double minConfidence = 6.0;
+
+    if (bestLagRef != -1 && bestLagRec != -1 && confidenceRec >= minConfidence) {
+       // Offset: Rec - Ref
+       final diffSamples = bestLagRec - bestLagRef;
+       offsetSec = diffSamples / _sampleRate;
+       
+       _log('Offset calculated (ultrasonic): $diffSamples samples ($offsetSec sec)');
+       
+       final dir = await getTemporaryDirectory();
+       _alignedWavPath = '${dir.path}/sync_aligned.wav';
+       
+       try {
+         if (offsetSec > 0) {
+           // Recorder LATE -> Trim Rec start
+           await _trimStartOfWav(
+              inputPath: _rawWavPath!,
+              outputPath: _alignedWavPath!,
+              trimSeconds: offsetSec, 
+           );
+           strategy = AlignmentStrategy.signalAnalysis;
+           _log('Aligned by trimming ${offsetSec}s.');
+         } else {
+           // Recorder EARLY -> Pad Rec start
+           final padSec = -offsetSec;
+           await _prependSilenceToWav(
+             _rawWavPath!,
+             padSec,
              outputPath: _alignedWavPath!,
-             trimSeconds: trimSeconds,
-          );
-          strategy = AlignmentStrategy.prependSilenceToRecordingWav; // Reusing strategy enum
-           _log('Aligned by trimming ${trimSeconds}s from start.');
-        }
-      } catch (e) {
-        _log('Alignment failed: $e');
-        _alignedWavPath = null;
-      }
+           );
+           strategy = AlignmentStrategy.signalAnalysis;
+           _log('Aligned by padding ${padSec}s.');
+         }
+       } catch (e) {
+          _log('Alignment failed: $e');
+          _alignedWavPath = null;
+       }
+    } else {
+      _log('Marker detection FAILED or LOW CONFIDENCE. (conf=$confidenceRec < $minConfidence)');
     }
     
     return SyncRunResult(
       recStartNs: _recStartNs,
       refStartNs: _refStartNs,
       offsetSec: offsetSec,
-      silencePrependedSec: offsetSec > 0 ? offsetSec : 0.0,
+      silencePrependedSec: 0.0, 
       rawRecordingPath: _rawWavPath!,
       alignedRecordingPath: _alignedWavPath ?? '',
       strategy: strategy, 
@@ -449,20 +537,112 @@ class TimestampSyncService {
     }
   }
 
-  /// For flutter_sound: assets aren’t directly playable by URI on all platforms.
-  /// Materialize asset -> temp file.
+  /// Standard asset materialization (NO MARKER) for playback
   Future<String> _materializeAssetToFile(String assetPath) async {
-    // Load asset bytes using rootBundle
     final byteData = await rootBundle.load(assetPath);
-    final bytes = byteData.buffer.asUint8List();
+    final buffer = byteData.buffer;
+    final tempDir = await getTemporaryDirectory();
+    final tempPath = '${tempDir.path}/${assetPath.split('/').last}';
+    await File(tempPath).writeAsBytes(
+        buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+    return tempPath;
+  }
+
+  /// INJECTS ULTRASONIC MARKER at the start.
+  Future<String> _materializeRefWithUltrasonicMarker(String assetPath) async {
+    // 1. Load asset bytes
+    final assetByteData = await rootBundle.load(assetPath);
+    final assetBytes = assetByteData.buffer.asUint8List();
     
-    // Write to temp file
+    // 2. Generate Marker
+    final markerPcm = UltrasonicMarker.buildUltrasonicChirpPcm16(
+      sampleRate: _sampleRate, 
+      startHz: _markerStartHz, 
+      endHz: _markerEndHz, 
+      durationMs: _markerDurationMs, 
+      amplitude: _markerAmplitude,
+      silenceAfterMs: _markerSilenceAfterMs,
+    );
+    
+    // 3. Assemble
+    // Assume asset has 44 byte header. We strip it.
+    int assetHeaderLen = 44;
+    if (assetBytes.length < 44) assetHeaderLen = 0; // fallback
+    
+    final assetPcm = assetBytes.sublist(assetHeaderLen);
+    
+    final totalLen = markerPcm.length + assetPcm.length;
+    final header = _buildWavHeader(totalLen, _sampleRate, _numChannels);
+    
+    final bb = BytesBuilder();
+    bb.add(header);
+    bb.add(markerPcm);
+    bb.add(assetPcm);
+    
+    // Write to temp
     final dir = await getTemporaryDirectory();
-    final fileName = assetPath.split('/').last;
+    const fileName = 'ref_with_marker.wav';
     final tempFile = File('${dir.path}/$fileName');
-    await tempFile.writeAsBytes(bytes);
+    await tempFile.writeAsBytes(bb.toBytes());
     
     return tempFile.path;
+  }
+  
+  // --- Correlation Helper ---
+  
+  _CorrelationResult _findMarkerLag({
+    required Uint8List pcmBytes, 
+    required List<double> needle, 
+    required double maxSearchSeconds
+  }) {
+      final numSamples = pcmBytes.length ~/ 2;
+      final maxSearchSamples = (maxSearchSeconds * _sampleRate).round();
+      final searchLen = (numSamples < maxSearchSamples) ? numSamples : maxSearchSamples;
+      
+      final needleLen = needle.length;
+      if (searchLen < needleLen) return _CorrelationResult(-1, 0.0);
+      
+      // Extract signal to doubles for easier math
+      // (Optimization: only convert what we scan? But we scan sliding window.)
+      // We need signal up to searchLen + needleLen ideally to scan full needle at last position.
+      // Scan limit is start index.
+      final scanLimit = searchLen - needleLen;
+      
+      final signal = List<double>.filled(searchLen, 0.0);
+      final bd = ByteData.sublistView(pcmBytes);
+      for (int i=0; i<searchLen; i++) {
+         signal[i] = bd.getInt16(i*2, Endian.little) / 32768.0;
+      }
+      
+      double bestCorr = -1.0;
+      int bestLag = -1;
+      
+      double sumAbsCorr = 0.0;
+      int countCorr = 0;
+      
+      for (int lag=0; lag < scanLimit; lag++) {
+         double dot = 0.0;
+         for (int j=0; j < needleLen; j++) {
+            dot += signal[lag+j] * needle[j];
+         }
+         final absDot = dot.abs();
+         
+         if (absDot > bestCorr) {
+            bestCorr = absDot;
+            bestLag = lag;
+         }
+         
+         sumAbsCorr += absDot;
+         countCorr++;
+      }
+      
+      double confidence = 0.0;
+      if (countCorr > 0 && sumAbsCorr > 0) {
+         final mean = sumAbsCorr / countCorr;
+         confidence = bestCorr / mean;
+      }
+      
+      return _CorrelationResult(bestLag, confidence);
   }
 
   // --- WAV prepend helpers (same logic you already had, slightly cleaned) ---
@@ -571,10 +751,7 @@ class TimestampSyncService {
     _pitchProcessor.dispose();
     _debugTimer?.cancel();
     
-    if (_wavRAF != null) {
-      try { _wavRAF!.closeSync(); } catch (_) {}
-      _wavRAF = null;
-    }
+    // RAF cleanup removed (memory only now)
 
     // flutter_sound doesn't have isOpen() method, just try to close
     try {
@@ -589,4 +766,9 @@ class TimestampSyncService {
 
     _isInited = false;
   }
+}
+class _CorrelationResult {
+  final int bestLag;
+  final double confidence;
+  _CorrelationResult(this.bestLag, this.confidence);
 }
