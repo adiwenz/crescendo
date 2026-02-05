@@ -100,8 +100,8 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final gridPaint = Paint()
-      ..color = isReviewMode 
-          ? Colors.deepPurpleAccent.withOpacity(0.05) // Subtle purple grid in review
+      ..color = isReviewMode
+          ? Colors.deepPurpleAccent.withOpacity(0.02) // Very subtle purple grid in review
           : colors.divider.withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
       ..strokeWidth = 1;
     final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
@@ -116,13 +116,11 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final playheadX = size.width * playheadFraction;
-    final noteColor = isReviewMode
-        ? const Color(0xFF9C27B0).withOpacity(0.7) // Solid Purple for Review
-        : (colors.isMagical
-            ? colors.accentPurple.withOpacity(0.65)
-            : (colors.isDark
-                ? colors.textPrimary.withOpacity(0.55)
-                : colors.accentPurple.withOpacity(0.55)));
+    final noteColor = (colors.isMagical
+          ? colors.accentPurple.withOpacity(0.65)
+          : (colors.isDark
+              ? colors.textPrimary.withOpacity(0.55)
+              : colors.accentPurple.withOpacity(0.55)));
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);

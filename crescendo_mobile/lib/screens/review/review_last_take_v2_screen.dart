@@ -99,12 +99,17 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E1E), // Darker gray for DAW feel
+      backgroundColor: const Color(0xFFF9F9FC), // Soft lavender/white tint
       appBar: AppBar(
-        title: const Text('Review Take', style: TextStyle(color: Colors.white70)),
-        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Review Take', style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.w600)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white70),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          color: const Color(0xFF1A1A1A),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: ValueListenableBuilder<PitchHighwaySessionState>(
         valueListenable: _controller.state,
@@ -124,7 +129,7 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
               Expanded(
                 flex: 65,
                 child: Container(
-                  color: const Color(0xFFF5F5FA), // Light airy canvas
+                  color: Colors.transparent, // Let scaffold bg show through
                   child: Stack(
                     children: [
                       // Pitch Highway
@@ -192,8 +197,18 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
               Expanded(
                 flex: 35,
                 child: Container(
-                  color: const Color(0xFF121212), // Deep black/gray
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 20,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -205,10 +220,10 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                           Text(
                             _formatTime(now),
                             style: const TextStyle(
-                              color: Colors.white, 
-                              fontSize: 24, 
-                              fontFamily: 'Monospace', 
-                              fontWeight: FontWeight.w300
+                              color: Color(0xFF1A1A1A), 
+                              fontSize: 32, 
+                              fontWeight: FontWeight.w300,
+                              letterSpacing: -1.0,
                             )
                           ),
                           const SizedBox(height: 4),
@@ -220,9 +235,9 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                                 trackHeight: 4,
                                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                                activeTrackColor: const Color(0xFF9C27B0), // Purple
-                                inactiveTrackColor: Colors.white24,
-                                thumbColor: Colors.white,
+                                activeTrackColor: const Color(0xFF8055E3).withOpacity(0.3), // User requested #8055e3
+                                inactiveTrackColor: const Color(0xFFE0E0E0),
+                                thumbColor: const Color(0xFF8055E3),
                               ),
                               child: Slider(
                                 value: now.clamp(0.0, widget.referenceDurationSec),
@@ -238,23 +253,39 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.skip_previous_rounded),
-                                color: Colors.white70,
-                                iconSize: 28,
+                                color: const Color(0xFF8055E3),
+                                iconSize: 32,
                                 onPressed: () => _controller.seekTo(0),
                               ),
-                              const SizedBox(width: 16),
-                              IconButton(
-                                icon: Icon(state.isPlayingReplay ? Icons.pause_circle_filled : Icons.play_circle_fill),
-                                iconSize: 56,
-                                color: Colors.white,
-                                padding: EdgeInsets.zero,
-                                onPressed: () => _controller.toggleReplay(),
+                              const SizedBox(width: 24),
+                              GestureDetector(
+                                onTap: () => _controller.toggleReplay(),
+                                child: Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF8055E3),
+                                    borderRadius: BorderRadius.circular(32),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF8055E3).withOpacity(0.4),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      )
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    state.isPlayingReplay ? Icons.pause_rounded : Icons.play_arrow_rounded, 
+                                    size: 40, 
+                                    color: Colors.white
+                                  ),
+                                ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 24),
                               IconButton(
-                                icon: const Icon(Icons.loop_rounded), // Placeholder for loop logic if implemented
-                                color: Colors.white24, // Disabled look for now
-                                iconSize: 28,
+                                icon: const Icon(Icons.loop_rounded),
+                                color: Colors.black12, 
+                                iconSize: 32,
                                 onPressed: () {},
                               ),
                             ],
@@ -262,7 +293,7 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                         ],
                       ),
                       
-                      const Divider(color: Colors.white12, height: 12),
+                      const SizedBox(height: 8),
                       
                       // Alignment & Mix
                       Column(
@@ -273,18 +304,22 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                             children: [
                               Text(
                                 "Offset: ${widget.offsetResult.offsetMs.toStringAsFixed(1)} ms",
-                                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                style: const TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.w500),
                               ),
                               Row(
                                 children: [
-                                  Text("Active", style: TextStyle(color: state.applyOffset ? Colors.white : Colors.white24, fontSize: 12)),
+                                  Text("Align", style: TextStyle(color: state.applyOffset ? const Color(0xFF8055E3) : Colors.black26, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  const SizedBox(width: 8),
                                   Transform.scale(
                                     scale: 0.8,
                                     child: Switch(
                                       value: state.applyOffset,
                                       onChanged: (v) => _controller.setApplyOffset(v),
-                                      activeColor: const Color(0xFF9C27B0),
-                                      activeTrackColor: const Color(0xFF9C27B0).withOpacity(0.5),
+                                      activeColor: Colors.white,
+                                      activeTrackColor: const Color(0xFF8055E3),
+                                      inactiveThumbColor: Colors.white,
+                                      inactiveTrackColor: Colors.grey.shade300,
+                                      trackOutlineColor: MaterialStateProperty.all(Colors.transparent),
                                     ),
                                   ),
                                 ],
