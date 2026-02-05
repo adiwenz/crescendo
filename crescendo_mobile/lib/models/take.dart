@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'audio_sync_info.dart';
 import 'metrics.dart';
 import 'pitch_frame.dart';
 
@@ -12,6 +13,7 @@ class Take {
   final String audioPath;
   final List<PitchFrame> frames;
   final Metrics metrics;
+  final AudioSyncInfo? syncInfo;
 
   Take({
     this.id,
@@ -22,6 +24,7 @@ class Take {
     required this.audioPath,
     required this.frames,
     required this.metrics,
+    this.syncInfo,
   });
 
   Map<String, dynamic> toMap() => {
@@ -33,6 +36,7 @@ class Take {
         "audioPath": audioPath,
         "framesJson": jsonEncode(frames.map((f) => f.toJson()).toList()),
         "metricsJson": jsonEncode(metrics.toJson()),
+        if (syncInfo != null) "syncInfoJson": jsonEncode(syncInfo!.toMap()),
       };
 
   factory Take.fromMap(Map<String, dynamic> map) => Take(
@@ -46,5 +50,8 @@ class Take {
             .map((e) => PitchFrame.fromJson(e as Map<String, dynamic>))
             .toList(),
         metrics: Metrics.fromJson(jsonDecode(map["metricsJson"] as String) as Map<String, dynamic>),
+        syncInfo: map["syncInfoJson"] != null
+            ? AudioSyncInfo.fromMap(jsonDecode(map["syncInfoJson"] as String) as Map<String, dynamic>)
+            : null,
       );
 }

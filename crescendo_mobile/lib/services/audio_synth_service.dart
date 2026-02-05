@@ -12,6 +12,7 @@ import 'package:wav/wav.dart';
 
 import '../models/reference_note.dart';
 import '../utils/audio_constants.dart';
+import 'chirp_marker.dart';
 
 class AudioSynthService {
   static const double tailSeconds = 1.0;
@@ -70,7 +71,48 @@ class AudioSynthService {
     final tailSeconds = params['tailSeconds'] as double;
 
     final samples = <double>[];
-    double cursor = 0;
+    // Inject Ultrasonic Chirp at start
+    final chirpFloats = ChirpMarker.generateChirpWaveform(sampleRate: sampleRate);
+    final chirpDoubles = chirpFloats.map((e) => e.toDouble()).toList();
+    samples.addAll(chirpDoubles);
+    
+    // Add 20ms silence buffer after chirp
+    final silenceSamples = (0.02 * sampleRate).toInt();
+    samples.addAll(List.filled(silenceSamples, 0.0));
+    
+    // [REF_GEN] LOGS
+    final chirpLenSamples = chirpDoubles.length;
+    final chirpLenMs = (chirpLenSamples / sampleRate) * 1000;
+    final musicStartSample = samples.length;
+    final musicStartMs = (musicStartSample / sampleRate) * 1000;
+    
+    debugPrint('[REF_GEN] sr=$sampleRate');
+    debugPrint('[REF_GEN] chirpLenSamples=$chirpLenSamples chirpLenMs=${chirpLenMs.toStringAsFixed(1)}');
+    debugPrint('[REF_GEN] musicStartSample=$musicStartSample musicStartMs=${musicStartMs.toStringAsFixed(1)}');
+    
+    // Offset cursor so notes start AFTER chirp + silence
+    // We want the visual notes to align with the audio notes.
+    // If we shift audio by inserting chirp, we shift visual alignment!
+    // BUT the prompt says: "Reference audio includes a short ultrasonic chirp at a known sample index".
+    // And "Pitch frame timestamps MUST be corrected... correctedTime = rawFrameTime - audioSyncInfo.timeOffsetSec".
+    // If we insert the chirp, the "Music" starts later.
+    // The "ReferenceNote" startSecs are 0-based.
+    // If we insert 100ms at the start, the music starts at 0.1s.
+    // So visual notes (which expect music at 0) will be EARLY by 0.1s unless we offset visuals OR subtract this offset.
+    // However, the *Ultrasonic Sync* computes offset between Ref Chirp and Rec Chirp.
+    // If Ref Chirp is at 0, and we align Rec to Ref, then Rec is aligned to Ref's time base.
+    // If Ref has chirp at 0 and music at 0.1, then aligned recording will have sampled music at 0.1.
+    // We need to think about this:
+    // User: "Play reference audio normally from t=0".
+    // If we inject chirp, "t=0" contains chirp. Music starts at t=0.1.
+    // We should probably start the notes a bit later in the generated audio?
+    // OR we shift the notes in the audio generation?
+    // `startSec` in `noteData` is what the visual uses.
+    // I should shift the audio notes by `chirpDuration + silence`.
+    // Let's define `startOffset`.
+    
+    final startOffset = chirpDoubles.length / sampleRate + 0.02;
+    double cursor = startOffset; // Start placing notes from here
     Map<String, dynamic>? lastNote;
     double lastNoteDur = 0.0;
 
@@ -79,6 +121,8 @@ class AudioSynthService {
       final endSec = n['endSec'] as double;
       final midi = (n['midi'] as num).toDouble();
 
+      // Ensure we don't go backwards if note starts very early (e.g. 0.0)
+      // Though for Pitch Highway we have lead-in so startSec is ~2.0.
       if (startSec > cursor) {
         final gapFrames = ((startSec - cursor) * sampleRate).toInt();
         samples.addAll(List.filled(gapFrames, 0.0));
@@ -108,6 +152,8 @@ class AudioSynthService {
       final frames = (0.1 * sampleRate).toInt();
       samples.addAll(List.filled(frames, 0.0));
     }
+    
+    debugPrint('[REF_GEN] totalSamples=${samples.length}');
 
     return samples;
   }

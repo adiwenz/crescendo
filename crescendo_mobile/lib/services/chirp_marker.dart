@@ -5,10 +5,10 @@ class ChirpMarker {
   /// Generates a linear chirp with Hann window, encoded as PCM16 Little Endian.
   /// 
   /// [sampleRate] - default 48000
-  /// [startHz] - default 1200
-  /// [endHz] - default 8000
+  /// [startHz] - default 19000 (Ultrasonic)
+  /// [endHz] - default 21000 (Ultrasonic)
   /// [durationMs] - default 80
-  /// [amplitude] - default 0.3
+  /// [amplitude] - default 0.15
   /// [silenceAfterMs] - optional silence padding after the chirp
   static Uint8List buildChirpPcm16({
     int sampleRate = 48000,

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:logger/logger.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -55,9 +57,9 @@ class TimestampSyncService {
   int _monoNs() => _mono.elapsedMicroseconds * 1000;
 
   // flutter_sound objects
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final FlutterSoundPlayer _playerRef = FlutterSoundPlayer();
-  final FlutterSoundPlayer _playerRec = FlutterSoundPlayer();
+  final FlutterSoundRecorder _recorder = FlutterSoundRecorder(logLevel: Level.nothing);
+  final FlutterSoundPlayer _playerRef = FlutterSoundPlayer(logLevel: Level.nothing);
+  final FlutterSoundPlayer _playerRec = FlutterSoundPlayer(logLevel: Level.nothing);
 
   // State
   bool _isInited = false;
@@ -121,6 +123,11 @@ class TimestampSyncService {
     await _recorder.openRecorder();
     await _playerRef.openPlayer();
     await _playerRec.openPlayer();
+
+    // Explicitly silence logs (constructor param sometimes ignored)
+    _recorder.setLogLevel(Level.nothing);
+    _playerRef.setLogLevel(Level.nothing);
+    _playerRec.setLogLevel(Level.nothing);
 
     // Optional: reduce progress callback interval
     // Smaller interval => more precise "first tick"

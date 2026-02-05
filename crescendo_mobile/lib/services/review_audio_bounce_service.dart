@@ -193,6 +193,8 @@ class ReviewAudioBounceService {
     required File referenceWav,
     required double micGain,
     required double refGain,
+    required double renderStartSec,
+    required double durationSec,
     double micOffsetSec = 0.0,
     double refOffsetSec = 0.0,
     bool duckMicWhileRef = false,
@@ -232,16 +234,25 @@ class ReviewAudioBounceService {
        refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
     }
     
+    // Windowing Logic
+    final renderStartSamples = (renderStartSec * sampleRate).round();
+    final outputLength = (durationSec * sampleRate).round();
     final micOffsetSamples = (micOffsetSec * sampleRate).round();
     final refOffsetSamples = (refOffsetSec * sampleRate).round();
     
-    final outputLength = math.max(micSamples.length + micOffsetSamples, refSamples.length + refOffsetSamples);
+    debugPrint('[ReviewBounceMix] renderStartSec=$renderStartSec');
+    debugPrint('[ReviewBounceMix] durationSec=$durationSec');
+    debugPrint('[ReviewBounceMix] outputLength=$outputLength ($durationSec sec)');
+    
     final pcmSamples = Int16List(outputLength);
     
-    // Mix and convert to Int16 in one pass
+    // Mix and convert to Int16 in one pass with windowing
     for (var i = 0; i < outputLength; i++) {
-      final micIdx = i - micOffsetSamples;
-      final refIdx = i - refOffsetSamples;
+      // t is the absolute time in samples from 0.0 of the timeline
+      final t = i + renderStartSamples;
+      
+      final micIdx = t - micOffsetSamples;
+      final refIdx = t - refOffsetSamples;
       
       var micVal = (micIdx >= 0 && micIdx < micSamples.length) ? micSamples[micIdx] * micGain : 0.0;
       final refVal = (refIdx >= 0 && refIdx < refSamples.length) ? refSamples[refIdx] * refGain : 0.0;

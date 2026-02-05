@@ -13,6 +13,8 @@ import '../../services/audio_synth_service.dart';
 import '../../services/recording_service.dart';
 import '../../services/scoring_service.dart';
 import '../../services/storage/take_repository.dart';
+import '../../services/audio_alignment_service.dart';
+import '../../models/audio_sync_info.dart';
 import '../state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
@@ -69,6 +71,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
   double _manualOffsetMs = 0;
   late final double _audioLatencyMs;
   final double _pitchInputLatencyMs = 25;
+  AudioSyncInfo? _syncInfo;
 
   List<ReferenceNote> get _baseNotes => const [
         ReferenceNote(startSec: 0, endSec: 1.2, midi: 60, lyric: 'A'),
@@ -188,6 +191,10 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     _playing = true;
     _ticker.start();
     await _startRecording();
+    
+    // Give the recorder a moment to warm up so it captures the chirp at t=0
+    await Future.delayed(const Duration(milliseconds: 200));
+    
     await _playReference();
     } else {
       _playing = false;
@@ -233,7 +240,61 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
     // ignore: avoid_print
     print('[PitchHighwayScreen] _stopRecording - stopping recording');
     final result = await _recording.stop();
-    _lastRecordingPath = result.audioPath.isNotEmpty ? result.audioPath : _lastRecordingPath;
+    
+    if (result != null) {
+      // 1. Ensure WAV is ready
+      final wavPath = await result.wavPathFuture;
+      _lastRecordingPath = wavPath;
+      
+      // 2. Perform Ultrasonic Alignment
+      if (_referencePath != null && _referencePath!.isNotEmpty) {
+         try {
+           final refBytes = await File(_referencePath!).readAsBytes();
+           final recBytes = await File(wavPath).readAsBytes();
+           
+           final sync = await AudioAlignmentService.computeSync(
+             refBytes: refBytes, 
+             recBytes: recBytes
+           );
+           
+           if (sync != null) {
+              _syncInfo = sync;
+              final offset = sync.timeOffsetSec;
+
+              // NEW: Sample-Domain Alignment (Trim/Pad the File)
+              final alignedPath = await AudioAlignmentService.alignAndSave(
+                  recWav: File(wavPath),
+                  sync: sync
+              );
+              _lastRecordingPath = alignedPath; // Use ALIGNED file for replay/review
+
+              print('[ALIGN] refLag=${sync.refSyncSample} recLag=${sync.recordedSyncSample} offsetSamples=${sync.sampleOffset} offsetSec=${offset.toStringAsFixed(4)}');
+              
+              // 3. Correct timestamps (ALIGN METADATA TO AUDIO)
+              // Since we shifted the audio to align with Ref t=0, 
+              // we must shift the pitch frames similarly so they match the new audio.
+              for (var i=0; i<_capturedFrames.length; i++) {
+                 final f = _capturedFrames[i];
+                 final newTime = math.max(0.0, f.time - offset);
+                 _capturedFrames[i] = PitchFrame(
+                   time: newTime,
+                   hz: f.hz,
+                   midi: f.midi,
+                   voicedProb: f.voicedProb,
+                   rms: f.rms,
+                   centsError: f.centsError
+                 );
+              }
+           } else {
+              print('[PitchHighway] Sync failed (marker not found)');
+              _syncInfo = null;
+           }
+         } catch (e) {
+           print('[PitchHighway] Sync error: $e');
+         }
+      }
+    }
+
     // Dispose the recording service to fully release resources
     try {
       await _recording.dispose();
@@ -294,6 +355,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> with SingleTick
       audioPath: _lastRecordingPath!,
       frames: cleanFrames,
       metrics: metrics,
+      syncInfo: _syncInfo,
     );
     await _repo.insert(take);
     appState.takesVersion.value++;

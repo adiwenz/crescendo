@@ -3,7 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'package:audioplayers/audioplayers.dart';
+
+import '../../models/audio_sync_info.dart';
 import '../../models/replay_models.dart';
+import '../../services/audio_alignment_service.dart';
 
 class PitchHighwayReplay extends StatefulWidget {
   final List<TargetNote> targetNotes;
@@ -11,6 +15,10 @@ class PitchHighwayReplay extends StatefulWidget {
   final int takeDurationMs;
   final double height;
   final bool showControls;
+  // Audio playback
+  final String? referencePath;
+  final String? recordingPath;
+  final AudioSyncInfo? syncInfo;
 
   const PitchHighwayReplay({
     super.key,
@@ -19,6 +27,9 @@ class PitchHighwayReplay extends StatefulWidget {
     required this.takeDurationMs,
     this.height = 380,
     this.showControls = true,
+    this.referencePath,
+    this.recordingPath,
+    this.syncInfo,
   });
 
   @override
@@ -30,50 +41,139 @@ class PitchHighwayReplayState extends State<PitchHighwayReplay>
   late final Ticker _ticker;
   int _playheadMs = 0;
   bool _playing = false;
+  
+  final AudioPlayer _player = AudioPlayer();
+  String? _playablePath;
+  bool _audioReady = false;
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick);
+    _prepareAudio();
+  }
+  
+  Future<void> _prepareAudio() async {
+    final ref = widget.referencePath;
+    final rec = widget.recordingPath;
+    final sync = widget.syncInfo;
+    
+
+    debugPrint('[REPLAY_PREP] ref=$ref');
+    debugPrint('[REPLAY_PREP] rec=$rec');
+    debugPrint('[REPLAY_PREP] takeDurationMs=${widget.takeDurationMs}');
+    
+    // Default fallback
+    _playablePath = rec; 
+    
+    // Mix if possible
+    if (ref != null && rec != null && sync != null) {
+      try {
+        _playablePath = await AudioAlignmentService.mixAlignedWavs(
+          refPath: ref, 
+          recPath: rec, 
+          syncInfo: sync
+        );
+        debugPrint('[REPLAY_PREP] Prepared mixed audio: $_playablePath');
+        debugPrint('[REPLAY_PREP] mixedPath=$_playablePath');
+      } catch (e) {
+        debugPrint('[PitchHighwayReplay] Mix failed, falling back to rec: $e');
+      }
+    } else if (ref != null && rec == null) {
+       _playablePath = ref;
+    }
+    
+    if (_playablePath != null) {
+      await _player.setSourceDeviceFile(_playablePath!);
+      await _player.setReleaseMode(ReleaseMode.stop);
+      _audioReady = true;
+    }
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    _player.dispose();
     super.dispose();
   }
 
+  int _tickCount = 0;
   void _onTick(Duration elapsed) {
     if (!_playing) return;
-    setState(() {
-      _playheadMs = math.min(
-        widget.takeDurationMs,
-        _playheadMs + elapsed.inMilliseconds,
-      );
-      if (_playheadMs >= widget.takeDurationMs) {
-        _playing = false;
-        _ticker.stop();
-      }
-    });
+    _tickCount++;
+    
+    // Sync to audio if ready
+    if (_audioReady) {
+       _player.getCurrentPosition().then((pos) {
+          if (pos != null && mounted) {
+             final audioPos = pos.inMilliseconds;
+             final delta = audioPos - _playheadMs;
+             
+             if (_tickCount % 30 == 0) { // ~500ms at 60fps
+                debugPrint('[PLAYHEAD] audioPos=$audioPos playhead=$_playheadMs delta=$delta');
+             }
+             if (delta.abs() > 100) {
+                debugPrint('[DESYNC] WARNING audio-playhead delta=${delta}ms');
+             }
+             
+             setState(() {
+                _playheadMs = audioPos;
+                if (_playheadMs >= widget.takeDurationMs) {
+                   _playing = false;
+                   _ticker.stop();
+                   _player.stop();
+                }
+             });
+          }
+       });
+    } else {
+      // Fallback timer
+      setState(() {
+        _playheadMs = math.min(
+          widget.takeDurationMs,
+          _playheadMs + elapsed.inMilliseconds,
+        );
+        if (_playheadMs >= widget.takeDurationMs) {
+          _playing = false;
+          _ticker.stop();
+        }
+      });
+    }
   }
 
-  void _togglePlay() {
+  void _togglePlay() async {
     setState(() {
       _playing = !_playing;
-      if (_playing) {
-        _ticker.start();
-      } else {
-        _ticker.stop();
-      }
     });
+    
+    if (_playing) {
+      if (_audioReady) {
+        if (_playheadMs >= widget.takeDurationMs) {
+          _playheadMs = 0;
+          await _player.seek(Duration.zero);
+        }
+        await _player.resume();
+      }
+      _ticker.start();
+    } else {
+      if (_audioReady) await _player.pause();
+      _ticker.stop();
+    }
   }
 
-  void _replay() {
+  void _replay() async {
+    _logSummary();
+    debugPrint('[REPLAY_START] seek=0 playheadBefore=$_playheadMs');
+         
     setState(() {
       _playheadMs = 0;
       _playing = true;
-      _ticker.start();
     });
+    if (_audioReady) {
+       await _player.stop(); // Seek 0
+       await _player.resume();
+    }
+    _ticker.start();
   }
 
   void replay() => _replay();
@@ -283,6 +383,15 @@ class _ContourPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (samples.isEmpty) return;
+    
+    // [DEBUG] Timeline stats
+    if (samples.isNotEmpty) {
+       // Only log once per paint might be spammy, but useful for initial check
+       // We can just rely on the user seeing it.
+       // Or wrap in a static check/throttle.
+       // debugPrint('[PITCH_TIMELINE] first=${samples.first.timeMs} last=${samples.last.timeMs} count=${samples.length}');
+    }
+    
     final filtered = _smoothSamples(_validSamples(samples));
     if (filtered.isEmpty) return;
     final path = Path();

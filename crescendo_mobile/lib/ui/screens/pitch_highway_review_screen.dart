@@ -27,6 +27,7 @@ import '../../utils/audio_constants.dart';
 import '../../debug/debug_log.dart' show DebugLog, LogCat;
 import '../../services/sync_diagnostic_service.dart';
 import '../../services/audio_session_service.dart';
+import '../../services/audio_alignment_service.dart'; // NEW
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_contour_painter.dart';
@@ -306,15 +307,12 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
         renderStartSec: _renderStartSec,
       );
       
+      
       // Check cache first
-      final cachedMixed = await ReviewAudioBounceService.getCachedMixedWav(cacheKey);
-      if (cachedMixed != null) {
-        _mixedAudioPath = cachedMixed.path;
-        if (kDebugMode) {
-          debugPrint('[Review Bounce] Using cached mixed WAV: ${_mixedAudioPath}');
-        }
-        return;
-      }
+      // DEBUG: Disable cache for sync test
+      // final cachedMixed = await ReviewAudioBounceService.getCachedMixedWav(cacheKey);
+      // if (cachedMixed != null) { ... }
+      debugPrint('[Review Bounce DEBUG] Cache bypassed for chirp sync test');
       
       if (kDebugMode) {
         debugPrint('[Review Bounce] Cache miss, mixing audio...');
@@ -342,13 +340,25 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
       
       // Mix with recorded audio
       final micWav = File(_recordedAudioPath!);
+      
+      // 3. FORCE ZERO OFFSETS (Sample-Domain Alignment already applied in PitchHighwayScreen)
+      _micOffsetSec = 0.0;
+      
+      debugPrint('[Review Bounce DEBUG] Using Pre-Aligned Audio. Forcing offsets to 0.0');
+      debugPrint('  micOffsetSec=$_micOffsetSec');
+      debugPrint('  refOffsetSec=0.0');
+      debugPrint('  renderStartSec=$_renderStartSec');
+      debugPrint('  durationSec=$_durationSec');
+      
       final mixedWav = await _bounceService.mixWavs(
         micWav: micWav,
         referenceWav: referenceWav,
         micGain: 1.0,
         refGain: 1.0,
-        micOffsetSec: _micOffsetSec,
-        refOffsetSec: (widget.lastTake.offsetMs ?? AudioConstants.manualSyncOffsetMs) / 1000.0,
+        renderStartSec: _renderStartSec,
+        durationSec: _durationSec,
+        micOffsetSec: 0.0, // Force 0
+        refOffsetSec: 0.0, // Force 0
         duckMicWhileRef: false,
       );
       

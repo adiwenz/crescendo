@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/audio_sync_info.dart';
 import '../../models/replay_models.dart';
 import '../widgets/pitch_highway_replay.dart';
 
@@ -8,6 +9,9 @@ class ReplayExerciseScreen extends StatelessWidget {
   final List<TargetNote> targetNotes;
   final List<PitchSample> recordedSamples;
   final int takeDurationMs;
+  final String? referencePath;
+  final String? recordingPath;
+  final AudioSyncInfo? syncInfo;
 
   const ReplayExerciseScreen({
     super.key,
@@ -15,6 +19,9 @@ class ReplayExerciseScreen extends StatelessWidget {
     required this.targetNotes,
     required this.recordedSamples,
     required this.takeDurationMs,
+    this.referencePath,
+    this.recordingPath,
+    this.syncInfo,
   });
 
   @override
@@ -29,6 +36,9 @@ class ReplayExerciseScreen extends StatelessWidget {
           targetNotes: targetNotes,
           recordedSamples: recordedSamples,
           takeDurationMs: takeDurationMs,
+          referencePath: referencePath,
+          recordingPath: recordingPath,
+          syncInfo: syncInfo,
         ),
       ),
     );
