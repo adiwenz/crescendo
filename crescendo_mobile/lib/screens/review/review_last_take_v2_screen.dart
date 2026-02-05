@@ -74,15 +74,31 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
   }
   
   Future<void> _loadData() async {
-    final range = await VocalRangeService().getRange();
+    // Calculate range from notes
+    int minMidi = 127;
+    int maxMidi = 0;
+    
+    if (widget.notes.isNotEmpty) {
+      for (final n in widget.notes) {
+        if (n.midi < minMidi) minMidi = n.midi;
+        if (n.midi > maxMidi) maxMidi = n.midi;
+      }
+    } else {
+       // Fallback defaults
+       minMidi = 48;
+       maxMidi = 72;
+    }
+
+    // Add padding (e.g. +/- 3 semitones)
+    minMidi -= 3;
+    maxMidi += 3;
+
     if (mounted) {
       setState(() {
-        _midiMin = range.$1 > 0 ? range.$1 : 48;
-        _midiMax = range.$2 > 0 ? range.$2 : 72;
-        // Approximation: Review usually uses same difficulty as play, but we don't have difficulty passed here.
-        // Default to easy/medium speed ~100px/s or derive? 
-        // PitchHighwayTempo.pixelsPerSecondFor(diff). 
-        // Let's assume 100 which is standard.
+        _midiMin = minMidi;
+        _midiMax = maxMidi;
+        
+        // Use standard speed
         _pixelsPerSecond = 100;
       });
     }
@@ -329,15 +345,15 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                           // Mix Sliders (Compact)
                           Row(
                             children: [
-                              const Text("Ref", style: TextStyle(color: Color(0xFFCE93D8), fontSize: 11)), // Light Purple
+                              const Text("Ref", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
                               Expanded(
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 2,
                                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                                    activeTrackColor: const Color(0xFFCE93D8),
-                                    thumbColor: const Color(0xFFCE93D8),
+                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
+                                    thumbColor: const Color(0xFF8055E3),
                                   ),
                                   child: Slider(
                                     value: state.refVolume, 
@@ -346,15 +362,15 @@ class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text("You", style: TextStyle(color: Color(0xFF90CAF9), fontSize: 11)), // Light Blue
+                              const Text("You", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
                               Expanded(
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 2,
                                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                                    activeTrackColor: const Color(0xFF90CAF9),
-                                    thumbColor: const Color(0xFF90CAF9),
+                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
+                                    thumbColor: const Color(0xFF8055E3),
                                   ),
                                   child: Slider(
                                     value: state.recVolume, 

@@ -704,8 +704,7 @@ class PitchHighwayPainter extends CustomPainter {
       final xCurr = playheadX + (curr.tSec - tAdjusted) * pixelsPerSecond;
       if (xCurr < -16 || xPrev > size.width + 16) continue;
       
-      final usePurple = isReviewMode;
-      final trailColor = usePurple ? const Color(0xFF9C27B0) : colors.goldAccent;
+      final trailColor = colors.goldAccent;
       
       final glowPaint = Paint()
         ..style = PaintingStyle.stroke
