@@ -23,6 +23,7 @@ import '../../ui/widgets/app_background.dart';
 import '../../ui/widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../review/review_last_take_v2_screen.dart';
 
 class PitchHighwayV2PlayerScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -53,6 +54,8 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
   int _midiMin = 48;
   int _midiMax = 72;
   double _pixelsPerSecond = 100;
+  
+  bool _navigatedToReview = false;
 
   @override
   void initState() {
@@ -90,7 +93,7 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
       _controller = PitchHighwayV2SessionController(
         notes: _notes,
         referenceDurationSec: plan.durationSec,
-        ensureReferenceWav: () async => plan.wavFilePath, // UPDATED: Correct getter
+        ensureReferenceWav: () async => plan.wavFilePath, 
         ensureRecordingPath: () async {
           final dir = await getTemporaryDirectory();
           return '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
@@ -120,6 +123,26 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
     _liveMidi.dispose();
     super.dispose();
   }
+  
+  void _onExit() {
+    if (_controller == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    
+    final state = _controller!.state.value;
+    if (state.phase == PitchHighwaySessionPhase.recording) {
+      // If recording, stop and let it proceed to review
+      debugPrint('[V2] Early exit requested. Stopping recording to proceed to review.');
+      _controller!.stop();
+    } else if (state.phase == PitchHighwaySessionPhase.processing) {
+      // Already processing, just wait
+      debugPrint('[V2] Early exit requested but already processing. Ignoring.');
+    } else {
+      // Idle, Replay, or otherwise done
+      Navigator.of(context).pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,11 +164,33 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
         valueListenable: _controller!.state,
         builder: (context, state, _) {
           
+          // Navigation to Review
+          if (state.phase == PitchHighwaySessionPhase.replay && !_navigatedToReview) {
+             // Only navigate if we have results
+             if (state.offsetResult != null && state.referencePath != null && state.recordingPath != null) {
+                 _navigatedToReview = true;
+                 WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                       Navigator.of(context).pushReplacement(
+                         MaterialPageRoute(
+                           builder: (_) => ReviewLastTakeV2Screen(
+                             notes: _notes,
+                             referencePath: state.referencePath!,
+                             recordingPath: state.recordingPath!,
+                             offsetResult: state.offsetResult!,
+                             referenceDurationSec: _controller?.referenceDurationSec ?? 0,
+                           ),
+                         ),
+                       );
+                    }
+                 });
+             }
+             return const Center(child: CircularProgressIndicator());
+          }
+
           // Sync visual time to painter
           if (state.phase == PitchHighwaySessionPhase.recording) {
             _visualTime.value = state.recordVisualTimeSec;
-          } else if (state.phase == PitchHighwaySessionPhase.replay) {
-            _visualTime.value = state.replayVisualTimeSec;
           } else {
             _visualTime.value = 0;
           }
@@ -155,97 +200,42 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
           
           return Stack(
             children: [
-              // 1. Background / Painter (Only in Recording)
+              // 1. Background / Painter (Only in Recording or Idle)
               if (state.phase == PitchHighwaySessionPhase.recording || state.phase == PitchHighwaySessionPhase.idle)
                 Positioned.fill(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                       // Rebuild points
-                       final points = visibleFrames.map((f) {
-                          // We need Y coordinate.
-                          final midi = f.midi ?? 0;
-                          final y = (constraints.maxHeight) - ((midi - _midiMin) / (_midiMax - _midiMin)) * constraints.maxHeight;
-                          // UPDATED: Use TailPoint
-                          return TailPoint(tSec: f.time, yPx: y, voiced: (f.voicedProb??0) > 0.5); 
-                       }).toList();
+                  child: GestureDetector(
+                    onTap: () {
+                      debugPrint('[V2] Tap to exit triggered');
+                      _onExit();
+                    },
+                    behavior: HitTestBehavior.translucent,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                         // Rebuild points
+                         final points = visibleFrames.map((f) {
+                            // We need Y coordinate.
+                            final midi = f.midi ?? 0;
+                            final y = (constraints.maxHeight) - ((midi - _midiMin) / (_midiMax - _midiMin)) * constraints.maxHeight;
+                            return TailPoint(tSec: f.time, yPx: y, voiced: (f.voicedProb??0) > 0.5); 
+                         }).toList();
 
-                       return CustomPaint(
-                         painter: PitchHighwayPainter(
-                           notes: _notes, 
-                           pitchTail: const [], 
-                           tailPoints: points, 
-                           time: _visualTime,
-                           liveMidi: _liveMidi, // unused for now
-                           pitchTailTimeOffsetSec: 0,
-                           pixelsPerSecond: _pixelsPerSecond,
-                           playheadFraction: 0.45,
-                           drawBackground: true,
-                           midiMin: _midiMin,
-                           midiMax: _midiMax,
-                           colors: AppThemeColors.of(context),
-                         ),
-                       );
-                    }
-                  ),
-                ),
-                
-              // 2. Replay UI (Simple controls, no visuals as per requirement)
-              if (state.phase == PitchHighwaySessionPhase.replay)
-                Container(
-                  color: Colors.black87,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text("REPLAY MODE (Audio Aligned)", style: TextStyle(color: Colors.white, fontSize: 20)),
-                        const SizedBox(height: 20),
-                        if (state.offsetResult != null)
-                          Text("Offset: ${state.offsetResult!.offsetMs.toStringAsFixed(1)} ms", style: TextStyle(color: Colors.grey)),
-                        const SizedBox(height: 40),
-                        
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: Icon(state.isPlayingReplay ? Icons.stop_circle : Icons.play_circle_fill),
-                              iconSize: 64,
-                              color: state.isPlayingReplay ? Colors.red : Colors.green,
-                              onPressed: () => _controller!.toggleReplay(),
-                            ),
-                          ],
-                        ),
-                        
-                        // Controls
-                        Padding(
-                          padding: const EdgeInsets.all(32.0),
-                          child: Column(
-                            children: [
-                              SwitchListTile(
-                                title: const Text("Apply Alignment", style: TextStyle(color: Colors.white)),
-                                value: state.applyOffset,
-                                onChanged: (v) => _controller!.setApplyOffset(v),
-                              ),
-                              Row(
-                                children: [
-                                  const Text("Ref Vol", style: TextStyle(color: Colors.white)),
-                                  Expanded(child: Slider(value: state.refVolume, onChanged: (v) => _controller!.setRefVolume(v))),
-                                ],
-                              ),
-                             Row(
-                                children: [
-                                  const Text("Rec Vol", style: TextStyle(color: Colors.white)),
-                                  Expanded(child: Slider(value: state.recVolume, onChanged: (v) => _controller!.setRecVolume(v))),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(), 
-                            child: const Text("Done")
-                        ),
-                      ],
+                         return CustomPaint(
+                           painter: PitchHighwayPainter(
+                             notes: _notes, 
+                             pitchTail: const [], 
+                             tailPoints: points, 
+                             time: _visualTime,
+                             liveMidi: _liveMidi, 
+                             pitchTailTimeOffsetSec: 0,
+                             pixelsPerSecond: _pixelsPerSecond,
+                             playheadFraction: 0.45,
+                             drawBackground: true,
+                             midiMin: _midiMin,
+                             midiMax: _midiMax,
+                             colors: AppThemeColors.of(context),
+                           ),
+                         );
+                      }
                     ),
                   ),
                 ),
@@ -268,6 +258,16 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
               Positioned(
                  top: 40, right: 10,
                  child: Text("V2: ${state.phase.name}", style: TextStyle(color: Colors.white.withOpacity(0.5))),
+              ),
+              
+              // Close Button (Explicit Exit)
+              Positioned(
+                top: 40,
+                left: 10,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 32),
+                  onPressed: () => _onExit(),
+                ),
               ),
             ],
           );

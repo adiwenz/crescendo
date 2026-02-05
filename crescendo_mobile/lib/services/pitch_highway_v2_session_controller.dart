@@ -203,7 +203,12 @@ class PitchHighwayV2SessionController {
     await _refPlayer.stop();
     
     if (_recorder != null) {
-      await _recorder!.stop(customPath: state.value.recordingPath);
+      final result = await _recorder!.stop(customPath: state.value.recordingPath);
+      if (result != null) {
+         debugPrint('[V2Controller] Waiting for WAV encoding...');
+         await result.wavPathFuture;
+         debugPrint('[V2Controller] WAV ready for offset calculation.');
+      }
     }
     _pitchSub?.cancel();
 
@@ -226,6 +231,7 @@ class PitchHighwayV2SessionController {
       referencePath: refPath,
       strategy: OffsetStrategy.auto,
     );
+    debugPrint('[PitchHighwayV2SessionController] ADRIANNA Offset result: $result');  
     
     if (_isDisposed) return;
 
@@ -264,7 +270,8 @@ class PitchHighwayV2SessionController {
       await _recPlayer.stop();
 
       final offsetMs = s.applyOffset ? (s.offsetResult?.offsetMs ?? 0) : 0;
-      
+      debugPrint('[PitchHighwayV2SessionController] ADRIANNA Starting replay with offset: $offsetMs ms');
+
       // Volumes
       await _refReplayPlayer.setVolume(s.refVolume);
       await _recPlayer.setVolume(s.recVolume);
@@ -282,6 +289,7 @@ class PitchHighwayV2SessionController {
 
       if (offsetMs > 0) {
         await _recPlayer.resume();
+        debugPrint('[PitchHighwayV2SessionController] ADRIANNA _recPlayer.resume()');
         
         Future.delayed(Duration(milliseconds: offsetMs.toInt()), () async {
           if (!_isDisposed && state.value.isPlayingReplay) {
