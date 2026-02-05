@@ -12,10 +12,10 @@ class ChirpMarker {
   /// [silenceAfterMs] - optional silence padding after the chirp
   static Uint8List buildChirpPcm16({
     int sampleRate = 48000,
-    double startHz = 1200,
-    double endHz = 8000,
+    double startHz = 19000, // Ultrasonic
+    double endHz = 21000,   // Ultrasonic
     int durationMs = 80,
-    double amplitude = 0.3,
+    double amplitude = 0.15, // Reduced for high frequency safety
     int silenceAfterMs = 20,
   }) {
     final numSamples = (durationMs * sampleRate) ~/ 1000;
@@ -52,8 +52,8 @@ class ChirpMarker {
   /// Useful for cross-correlation "needle".
   static Float32List generateChirpWaveform({
     int sampleRate = 48000,
-    double startHz = 1200,
-    double endHz = 8000,
+    double startHz = 19000, // Ultrasonic
+    double endHz = 21000,   // Ultrasonic
     int durationMs = 80,
   }) {
     final numSamples = (durationMs * sampleRate) ~/ 1000;
