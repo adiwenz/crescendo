@@ -31,7 +31,7 @@ class PitchHighwayReplayOffsetTestScreen extends StatefulWidget {
 
 enum TestPhase { idle, recording, processing, replay }
 
-class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleTickerProviderStateMixin {
+class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerProviderStateMixin {
   
   // State
   TestPhase _phase = TestPhase.idle;
@@ -57,8 +57,11 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
 
   // Canvas / Visuals
   Ticker? _ticker;
+  Ticker? _replayTicker;
   double _visualTime = 0.0;
+  double _replayVisualTime = 0.0;
   DateTime? _recordStartTime;
+  DateTime? _replayStartTime;
 
   @override
   void initState() {
@@ -75,7 +78,30 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
         }
       }
     });
+
+    _replayTicker = createTicker((elapsed) {
+       if (_phase == TestPhase.replay && _replayStartTime != null) {
+          setState(() {
+            _replayVisualTime = DateTime.now().difference(_replayStartTime!).inMilliseconds / 1000.0;
+          });
+       }
+    });
+
     _prepareExercise();
+    
+    // Auto-reset UI when players finish
+    _refReplayPlayer.onPlayerComplete.listen((_) {
+      if (mounted && _isPlayingReplay) {
+         setState(() {
+           _isPlayingReplay = false;
+           _replayTicker?.stop();
+         });
+         // Ensure both are stopped
+         debugPrint("[Test] Replay finished (listener). Stopping players.");
+         _recPlayer.stop(); 
+         _refReplayPlayer.stop();
+      }
+    });
   }
 
   Future<void> _prepareExercise() async {
@@ -90,25 +116,6 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
     // 2. Generate reference WAV
     final dir = await getTemporaryDirectory();
     final path = '${dir.path}/ref_test_chirp.wav';
-    
-    // We'll generate a simple click/chirp at start + tones
-    // or just use SinePreviewAudioGenerator if available, but for now manual generation involves less complexity
-    // Let's rely on AudioSynthService or generate a dummy file.
-    // Ideally we want a CHIRP.
-    // For now, let's use the ReferenceAudioGenerator if possible, OR just synthesize a simple file.
-    
-    // Hack: create a silent wav with a blip at 0.1s using a buffer
-    // This requires writing WAV bytes.
-    // Let's try to assume we can sing against silence if generation is hard, 
-    // BUT we need reference audio to measure offset against.
-    
-    // Let's assume we can copy an asset or just generate "Silence + Bliip"
-    // To keep it simple: we use a known existing asset for now? 
-    // Or we skip reference generation logic complexity and just say "Sing a beep at 1s in"
-    // NO, the requirement says "Use a deterministic reference WAV".
-    
-    // We will assume the user has a way to generate, or we construct a dummy check.
-    // Let's generate a minimal WAV here.
     
     _refPath = await _generateTestWav(path);
     setState(() {});
@@ -138,19 +145,6 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
         bytes[i] = (val * 32767).toInt();
      }
      
-     // Write
-     // We need the WavUtil or just reuse the code we saw earlier.
-     // Assuming WavUtil is available via previous artifact we can't easily import from 'wav_util.dart' 
-     // unless we made it public. But we did!
-     // We'll import form services/../audio/wav_util.dart
-     
-     // But wait, I need to make sure I imported it. 
-     // I didn't verify wav_util.dart location precisely for import, let's guess standard path.
-     // It was in lib/audio/wav_util.dart
-     
-     // Actually I can't call static helper easily if it wasn't exported.
-     // I will use a placeholder writer or existing one if reachable.
-     // I will assumes I can write it here for speed.
      return WavUtil.writePcm16MonoWav(path, bytes, sr);
   }
 
@@ -245,50 +239,89 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
   }
 
   Future<void> _toggleReplay() async {
-    if (_isPlayingReplay) {
-      await _refReplayPlayer.stop();
-      await _recPlayer.stop();
-      setState(() => _isPlayingReplay = false);
-    } else {
-      // START ALIGNED
-      final offsetMs = _applyOffset ? (_offsetResult?.offsetMs ?? 0) : 0;
-      final offsetSamples = _applyOffset ? (_offsetResult?.offsetSamples ?? 0) : 0;
-      
-      debugPrint("[Test] Starting replay. Offset: ${offsetMs}ms. Apply: $_applyOffset");
-      
-      await _refReplayPlayer.setVolume(_refVolume);
-      await _recPlayer.setVolume(_recVolume);
-      
-      if (offsetMs > 0) {
-        // Ref is leading (happens first), Rec is lagging.
-        // Delay Ref to match Rec.
-        debugPrint("[Test] Offset > 0. Playing Rec NOW, Ref in ${offsetMs.toInt()}ms");
-        
-        await _recPlayer.resume(); 
-        Future.delayed(Duration(milliseconds: offsetMs.toInt()), () async {
-           debugPrint("[Test] Playing Ref now (delayed)");
-           await _refReplayPlayer.resume();
-        });
-        
+    debugPrint("[Test] _toggleReplay called. isPlaying: $_isPlayingReplay");
+    try {
+      if (_isPlayingReplay) {
+        debugPrint("[Test] Stopping replay...");
+        _replayTicker?.stop();
+        await _refReplayPlayer.stop();
+        await _recPlayer.stop();
+        setState(() => _isPlayingReplay = false);
+        debugPrint("[Test] Replay stopped.");
       } else {
-        // Rec is leading. Delay Rec.
-        final delay = offsetMs.abs().toInt();
-        debugPrint("[Test] Offset < 0. Playing Ref NOW, Rec in ${delay}ms");
+        // START ALIGNED
         
-        await _refReplayPlayer.resume();
-        Future.delayed(Duration(milliseconds: delay), () async {
-           debugPrint("[Test] Playing Rec now (delayed)");
-           await _recPlayer.resume();
-        });
-      }
+        // FORCE STOP / RESET state
+        debugPrint("[Test] Resetting players (stop & seek 0)...");
+        await _refReplayPlayer.stop();
+        await _recPlayer.stop();
+        
+        final offsetMs = _applyOffset ? (_offsetResult?.offsetMs ?? 0) : 0;
+        
+        debugPrint("[Test] Starting replay. Offset: ${offsetMs}ms. Apply: $_applyOffset");
+        
+        debugPrint("[Test] Setting volumes...");
+        await _refReplayPlayer.setVolume(_refVolume);
+        await _recPlayer.setVolume(_recVolume);
 
-      setState(() => _isPlayingReplay = true);
+        // Re-set sources to be absolutely sure
+        debugPrint("[Test] Re-setting sources...");
+        if (_refPath != null) await _refReplayPlayer.setSourceDeviceFile(_refPath!);
+        if (_recPath != null) await _recPlayer.setSourceDeviceFile(_recPath!);
+        
+        debugPrint("[Test] Setting isPlayingReplay = true...");
+        setState(() => _isPlayingReplay = true);
+        
+        if (offsetMs > 0) {
+          // Ref is leading (happens first), Rec is lagging.
+          debugPrint("[Test] Offset > 0. Playing Ref in ${offsetMs.toInt()}ms");
+          
+          debugPrint("[Test] Resuming RecPlayer (leading)...");
+          await _recPlayer.resume(); 
+          Future.delayed(Duration(milliseconds: offsetMs.toInt()), () async {
+             // check if still playing (user might have stopped)
+             if (_isPlayingReplay) {
+               debugPrint("[Test] Playing Ref now (delayed)");
+               await _refReplayPlayer.resume();
+               _replayStartTime = DateTime.now();
+               _replayTicker?.start();
+             } else {
+               debugPrint("[Test] Cancelled Ref start (stopped during delay)");
+             }
+          });
+          
+        } else {
+          // Rec is leading. Delay Rec.
+          debugPrint("[Test] Offset <= 0. Playing Ref NOW.");
+          
+          await _refReplayPlayer.resume();
+          _replayStartTime = DateTime.now();
+          _replayTicker?.start();
+          
+          final delay = offsetMs.abs().toInt();
+          debugPrint("[Test] RecPlayer delayed by ${delay}ms");
+          Future.delayed(Duration(milliseconds: delay), () async {
+             if (_isPlayingReplay) {
+               debugPrint("[Test] Playing Rec now (delayed)");
+               await _recPlayer.resume();
+             } else {
+               debugPrint("[Test] Cancelled Rec start (stopped during delay)");
+             }
+          });
+        }
+      }
+    } catch (e, stack) {
+      debugPrint("[Test] ERROR in _toggleReplay: $e");
+      debugPrint(stack.toString());
+      // Force reset state on error
+      setState(() => _isPlayingReplay = false);
     }
   }
 
   @override
   void dispose() {
     _ticker?.dispose();
+    _replayTicker?.dispose();
     _refPlayer.dispose();
     _recPlayer.dispose();
     _refReplayPlayer.dispose();
@@ -377,71 +410,101 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with SingleT
   }
   
   Widget _buildReplayUI() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        children: [
-           // Results
-           Card(
-             child: Padding(
-               padding: const EdgeInsets.all(16.0),
-               child: Column(
-                 children: [
-                   const Text("Alignment Result", style: TextStyle(fontWeight: FontWeight.bold)),
-                   const Divider(),
-                   Text("Offset: ${_offsetResult?.offsetSamples} samples"),
-                   Text("Time: ${_offsetResult?.offsetMs.toStringAsFixed(2)} ms"),
-                   Text("Confidence: ${_offsetResult?.confidence.toStringAsFixed(2)}"),
-                   Text("Method: ${_offsetResult?.method}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                 ],
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+             // Results
+             Card(
+               child: Padding(
+                 padding: const EdgeInsets.all(16.0),
+                 child: Column(
+                   children: [
+                     const Text("Alignment Result", style: TextStyle(fontWeight: FontWeight.bold)),
+                     const Divider(),
+                     Text("Offset: ${_offsetResult?.offsetSamples} samples"),
+                     Text("Time: ${_offsetResult?.offsetMs.toStringAsFixed(2)} ms"),
+                     Text("Confidence: ${_offsetResult?.confidence.toStringAsFixed(2)}"),
+                     Text("Method: ${_offsetResult?.method}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                   ],
+                 ),
                ),
              ),
-           ),
-           
-           const SizedBox(height: 24),
-           
-           // Controls
-           SwitchListTile(
-              title: const Text("Apply Offset Correction"),
-              value: _applyOffset,
-              onChanged: (v) => setState(() => _applyOffset = v),
-           ),
-           
-           const Text("Reference Volume"),
-           Slider(value: _refVolume, onChanged: (v) {
-              setState(() => _refVolume = v);
-              _refReplayPlayer.setVolume(v);
-           }),
-           
-           const Text("Recording Volume"),
-           Slider(value: _recVolume, onChanged: (v) {
-              setState(() => _recVolume = v);
-              _recPlayer.setVolume(v);
-           }),
-           
-           const Spacer(),
-           
-           Row(
-             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-             children: [
-               ElevatedButton.icon(
-                 style: ElevatedButton.styleFrom(
-                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                   backgroundColor: _isPlayingReplay ? Colors.red : Colors.green,
+             
+             const SizedBox(height: 24),
+             
+             // Visualizer
+             SizedBox(
+               height: 200,
+               child: ClipRect(
+                 child: Stack(
+                  children: [
+                    Positioned.fill(child: Container(color: Colors.black)),
+                    CustomPaint(
+                      size: Size.infinite,
+                      painter: SimpleNotesPainter(_notes, _replayVisualTime, 48, 72),
+                    ),
+                    CustomPaint(
+                      size: Size.infinite,
+                      painter: SimplePitchPainter(
+                        _capturedFrames, 
+                        _replayVisualTime, 
+                        48, 
+                        72,
+                        timeOffsetSec: _applyOffset ? -(_offsetResult?.offsetMs ?? 0) / 1000.0 : 0
+                      ),
+                    ),
+                  ],
                  ),
-                 icon: Icon(_isPlayingReplay ? Icons.stop : Icons.play_arrow),
-                 label: Text(_isPlayingReplay ? "STOP" : "PLAY ALIGNED"),
-                 onPressed: _toggleReplay,
                ),
-               
-               OutlinedButton(
-                 onPressed: () => setState(() => _phase = TestPhase.idle),
-                 child: const Text("Done"),
-               )
-             ],
-           ),
-           const Spacer(),
-        ],
+             ),
+              
+             const SizedBox(height: 24),
+              
+             // Controls
+             SwitchListTile(
+                title: const Text("Apply Offset Correction"),
+                value: _applyOffset,
+                onChanged: (v) => setState(() => _applyOffset = v),
+             ),
+             
+             const Text("Reference Volume"),
+             Slider(value: _refVolume, onChanged: (v) {
+                setState(() => _refVolume = v);
+                _refReplayPlayer.setVolume(v);
+             }),
+             
+             const Text("Recording Volume"),
+             Slider(value: _recVolume, onChanged: (v) {
+                setState(() => _recVolume = v);
+                _recPlayer.setVolume(v);
+             }),
+             
+             const SizedBox(height: 20),
+             
+             Row(
+               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+               children: [
+                 ElevatedButton.icon(
+                   style: ElevatedButton.styleFrom(
+                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                     backgroundColor: _isPlayingReplay ? Colors.red : Colors.green,
+                   ),
+                   icon: Icon(_isPlayingReplay ? Icons.stop : Icons.play_arrow),
+                   label: Text(_isPlayingReplay ? "STOP" : "PLAY ALIGNED"),
+                   onPressed: _toggleReplay,
+                 ),
+                 
+                 OutlinedButton(
+                   onPressed: () => setState(() => _phase = TestPhase.idle),
+                   child: const Text("Done"),
+                 )
+               ],
+             ),
+             const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -504,8 +567,9 @@ class SimplePitchPainter extends CustomPainter {
   final double now; // unused if static
   final int minMidi;
   final int maxMidi;
+  final double timeOffsetSec;
 
-  SimplePitchPainter(this.frames, this.now, this.minMidi, this.maxMidi);
+  SimplePitchPainter(this.frames, this.now, this.minMidi, this.maxMidi, {this.timeOffsetSec = 0.0});
   
   @override
   void paint(Canvas canvas, Size size) {
@@ -527,7 +591,7 @@ class SimplePitchPainter extends CustomPainter {
     
     for (var f in frames) {
        if (f.midi == null) continue;
-       final x = tToX(f.time); // PitchFrame time is relative to record start?
+       final x = tToX(f.time + timeOffsetSec); // PitchFrame time is relative to record start?
        final y = mToY(f.midi!);
        
        if (first) {
