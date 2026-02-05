@@ -69,8 +69,8 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
       
       // 1. Range
       final range = await VocalRangeService().getRange();
-      _midiMin = range.$1 > 0 ? range.$1 : 48;
-      _midiMax = range.$2 > 0 ? range.$2 : 72;
+      _midiMin = (range.$1 > 0 ? range.$1 : 48) - 3;
+      _midiMax = (range.$2 > 0 ? range.$2 : 72) + 3;
       
       // 2. Tempo / Spec
       final spec = widget.exercise.highwaySpec;
