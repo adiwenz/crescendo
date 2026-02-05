@@ -179,6 +179,7 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
                              recordingPath: state.recordingPath!,
                              offsetResult: state.offsetResult!,
                              referenceDurationSec: _controller?.referenceDurationSec ?? 0,
+                             alignedFrames: state.alignedFrames,
                            ),
                          ),
                        );

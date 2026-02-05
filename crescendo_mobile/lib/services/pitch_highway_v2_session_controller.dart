@@ -9,6 +9,7 @@ import '../services/audio_session_service.dart';
 import '../services/recording_service.dart';
 import '../models/reference_note.dart';
 import '../models/pitch_frame.dart';
+import '../utils/replay_alignment_model.dart';
 
 enum PitchHighwaySessionPhase { idle, recording, processing, replay }
 
@@ -17,6 +18,7 @@ class PitchHighwaySessionState {
   final PitchHighwaySessionPhase phase;
   final List<ReferenceNote> notes;
   final List<PitchFrame> capturedFrames;
+  final List<PitchFrame> alignedFrames;
   final String? referencePath;
   final String? recordingPath;
   final AudioOffsetResult? offsetResult;
@@ -35,6 +37,7 @@ class PitchHighwaySessionState {
     this.phase = PitchHighwaySessionPhase.idle,
     this.notes = const [],
     this.capturedFrames = const [],
+    this.alignedFrames = const [],
     this.referencePath,
     this.recordingPath,
     this.offsetResult,
@@ -50,6 +53,7 @@ class PitchHighwaySessionState {
     PitchHighwaySessionPhase? phase,
     List<ReferenceNote>? notes,
     List<PitchFrame>? capturedFrames,
+    List<PitchFrame>? alignedFrames,
     String? referencePath,
     String? recordingPath,
     AudioOffsetResult? offsetResult,
@@ -64,6 +68,7 @@ class PitchHighwaySessionState {
       phase: phase ?? this.phase,
       notes: notes ?? this.notes,
       capturedFrames: capturedFrames ?? this.capturedFrames,
+      alignedFrames: alignedFrames ?? this.alignedFrames,
       referencePath: referencePath ?? this.referencePath,
       recordingPath: recordingPath ?? this.recordingPath,
       offsetResult: offsetResult ?? this.offsetResult,
@@ -250,9 +255,32 @@ class PitchHighwayV2SessionController {
     await _refReplayPlayer.setSourceDeviceFile(refPath);
 
     if (_isDisposed) return;
+    
+    // Compute aligned frames for replay
+    List<PitchFrame> alignedFrames = [];
+    if (result.confidence > 0.0) { // Or always
+       final offsetSec = result.offsetMs / 1000.0;
+       final model = ReplayAlignmentModel(micOffsetSec: offsetSec);
+       
+       alignedFrames = state.value.capturedFrames.map((f) {
+         // Create copy with shifted time
+         return PitchFrame(
+           time: model.micTimeToExerciseTime(f.time),
+           hz: f.hz,
+           midi: f.midi,
+           centsError: f.centsError,
+           voicedProb: f.voicedProb,
+           rms: f.rms,
+         );
+       }).toList();
+       
+       debugPrint('[V2Controller] Aligned ${alignedFrames.length} frames with offset ${offsetSec}s');
+    }
+
     state.value = state.value.copyWith(
       offsetResult: result,
       phase: PitchHighwaySessionPhase.replay,
+      alignedFrames: alignedFrames,
     );
   }
 
@@ -317,16 +345,20 @@ class PitchHighwayV2SessionController {
   void _startReplayTimer() {
     _replayStartTime = DateTime.now();
     _replayTimer?.cancel();
-    _replayTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
+    _replayTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
       if (_isDisposed || !state.value.isPlayingReplay) {
         timer.cancel();
         return;
       }
-      final now = DateTime.now();
-      final elapsed = now.difference(_replayStartTime!).inMilliseconds / 1000.0;
-      state.value = state.value.copyWith(
-        replayVisualTimeSec: elapsed,
-      );
+      
+      // Drive visuals from Reference Player position (the master clock)
+      final pos = await _refReplayPlayer.getCurrentPosition();
+      if (pos != null) {
+        final t = pos.inMicroseconds / 1000000.0;
+        state.value = state.value.copyWith(
+          replayVisualTimeSec: t,
+        );
+      }
     });
   }
 
