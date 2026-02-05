@@ -269,6 +269,30 @@ class _PitchHighwayV2PlayerScreenState extends State<PitchHighwayV2PlayerScreen>
                   onPressed: () => _onExit(),
                 ),
               ),
+
+              // Clear Cache Button (Debug)
+              if (state.phase == PitchHighwaySessionPhase.idle)
+                Positioned(
+                  top: 80,
+                  right: 10,
+                  child: IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.amber, size: 32),
+                    onPressed: () async {
+                      setState(() => _isLoading = true);
+                      await ReferenceAudioGenerator.instance.clearCache();
+                      debugPrint('[V2] Cache cleared manually. Regenerating...');
+                      
+                      // Regenerate immediately
+                      await _loadData();
+                      
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Cache cleared & Audio regenerated!')),
+                        );
+                      }
+                    },
+                  ),
+                ),
             ],
           );
         },

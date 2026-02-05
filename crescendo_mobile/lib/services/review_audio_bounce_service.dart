@@ -197,10 +197,10 @@ class ReviewAudioBounceService {
   }
   
   void _injectSyncTone(Float32List samples, int sampleRate, double durationSec) {
-    // Generate 1kHz pure sine wave at high amplitude
+    // Generate 19kHz ultrasonic sine wave (near Nyquist limit of 24kHz)
     final frames = (durationSec * sampleRate).toInt();
     final invSampleRate = 1.0 / sampleRate;
-    const freq = 1000.0; 
+    const freq = 19000.0; 
     
     double phase = 0.0;
     final phaseInc = freq * invSampleRate;
@@ -285,7 +285,7 @@ class ReviewAudioBounceService {
       final micIdx = t - micOffsetSamples;
       final refIdx = t - refOffsetSamples;
       
-      var micVal = (micIdx >= 0 && micIdx < micSamples.length) ? micSamples[micIdx] * micGain : 0.0;
+      var micVal = (micIdx >= 0 && micIdx < micSamples.length) ? micSamples[micIdx] * micGain * 8.0 : 0.0;
       final refVal = (refIdx >= 0 && refIdx < refSamples.length) ? refSamples[refIdx] * refGain : 0.0;
       
       if (duckMicWhileRef && refVal.abs() > 0.001) {

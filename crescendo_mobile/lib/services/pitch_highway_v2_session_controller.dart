@@ -276,7 +276,7 @@ class PitchHighwayV2SessionController {
 
       // Volumes
       await _refReplayPlayer.setVolume(s.refVolume);
-      await _recPlayer.setVolume(s.recVolume);
+      await _recPlayer.setVolume(s.recVolume * 8.0);
 
       // Reset sources to be safe
       if (s.referencePath != null) {
@@ -355,7 +355,7 @@ class PitchHighwayV2SessionController {
   void setRecVolume(double v) {
     if (_isDisposed) return;
     state.value = state.value.copyWith(recVolume: v);
-    _recPlayer.setVolume(v);
+    _recPlayer.setVolume(v * 8.0);
   }
 
   void dispose() {

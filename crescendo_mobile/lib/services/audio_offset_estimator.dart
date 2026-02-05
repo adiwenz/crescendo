@@ -56,8 +56,14 @@ class AudioOffsetEstimator {
       final recFloats = _toMonoFloat(recWav, maxFrames);
 
       if (strategy == OffsetStrategy.chirp || strategy == OffsetStrategy.auto) {
-        // Try chirp/peak detection first
-        final result = _estimateChirpOffset(refFloats, recFloats, sampleRate);
+        // Apply High-Pass Filter to emphasize Ultrasonic Chirp (19kHz)
+        // Simple differentiator: y[n] = x[n] - x[n-1]
+        // This attenuates low frequencies (noise/voice) and boosts high frequencies.
+        final refFiltered = _applyDifferentiation(refFloats);
+        final recFiltered = _applyDifferentiation(recFloats);
+
+        // Try chirp/peak detection
+        final result = _estimateChirpOffset(refFiltered, recFiltered, sampleRate);
         if (result.confidence > 0.5 || strategy == OffsetStrategy.chirp) {
            return result;
         }
@@ -91,6 +97,20 @@ class AudioOffsetEstimator {
        floats[i] = (sum / wav.channels) / 32768.0; 
     }
     return floats;
+  }
+
+  static List<double> _applyDifferentiation(List<double> input) {
+    if (input.isEmpty) return [];
+    final output = List<double>.filled(input.length, 0.0);
+    
+    // y[0] = x[0]
+    output[0] = input[0];
+    
+    for (int i = 1; i < input.length; i++) {
+      output[i] = input[i] - input[i - 1]; // Simple 1st order High pass
+    }
+    
+    return output;
   }
 
   static AudioOffsetResult _estimateChirpOffset(
