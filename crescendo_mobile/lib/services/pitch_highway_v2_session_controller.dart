@@ -170,6 +170,8 @@ class PitchHighwayV2SessionController {
     });
 
     // 7. Start Playback
+    // Wait briefly to ensure mic is hot and captures the sync signal
+    await Future.delayed(const Duration(milliseconds: 200));
     await _refPlayer.resume();
     _recordStartTime = DateTime.now();
 

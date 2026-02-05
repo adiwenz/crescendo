@@ -66,4 +66,37 @@ class ExercisePlan {
   
   /// Backward compatibility for code using exerciseId
   String get exerciseId => id;
+
+  ExercisePlan copyWith({
+    String? id,
+    String? title,
+    String? keyLabel,
+    String? wavFilePath,
+    List<ReferenceNote>? notes,
+    int? sampleRate,
+    int? durationMs,
+    double? gapSec,
+    int? bpm,
+    int? scoreOffsetMs,
+    String? rangeHash,
+    String? patternHash,
+    double? leadInSec,
+    double? durationSec, // Allow passing seconds directly or use milliseconds
+  }) {
+    return ExercisePlan(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      keyLabel: keyLabel ?? this.keyLabel,
+      wavFilePath: wavFilePath ?? this.wavFilePath,
+      notes: notes ?? this.notes,
+      sampleRate: sampleRate ?? this.sampleRate,
+      durationMs: durationMs ?? (durationSec != null ? (durationSec * 1000).round() : this.durationMs),
+      gapSec: gapSec ?? this.gapSec,
+      bpm: bpm ?? this.bpm,
+      scoreOffsetMs: scoreOffsetMs ?? this.scoreOffsetMs,
+      rangeHash: rangeHash ?? this.rangeHash,
+      patternHash: patternHash ?? this.patternHash,
+      leadInSec: leadInSec ?? this.leadInSec,
+    );
+  }
 }

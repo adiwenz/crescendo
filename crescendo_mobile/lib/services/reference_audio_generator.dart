@@ -144,8 +144,21 @@ class ReferenceAudioGenerator {
         'generatedAt': DateTime.now().toIso8601String(),
       };
       await File(metaPath).writeAsString(jsonEncode(meta));
+
+      // SHIFT NOTES so the UI aligns with the audio (which now has chirp offset)
+      final offset = AudioConstants.totalChirpOffsetSec;
       
-      return internalPlan;
+      final shiftedNotes = internalPlan.notes.map((n) {
+         return n.copyWith(
+           startSec: n.startSec + offset,
+           endSec: n.endSec + offset,
+         );
+      }).toList();
+
+      return internalPlan.copyWith(
+         notes: shiftedNotes,
+         durationSec: internalPlan.durationSec + offset,
+      );
     }, null);
 
     final elapsed = DateTime.now().difference(startTime);
@@ -175,13 +188,27 @@ class ReferenceAudioGenerator {
         final metaJson = await metaFile.readAsString();
         final meta = jsonDecode(metaJson);
         if (meta['rangeHash'] == rangeHash && meta['patternHash'] == patternHash) {
-          return compute((_) => ExercisePlanBuilder.buildMetadata(
+          final plan = await compute((_) => ExercisePlanBuilder.buildMetadata(
             exercise: exercise,
             lowestMidi: low,
             highestMidi: high,
             difficulty: difficulty,
             wavFilePath: wavPath,
           ), null);
+
+          // Apply SHIFT for cached items too
+          final offset = AudioConstants.totalChirpOffsetSec;
+          final shiftedNotes = plan.notes.map((n) {
+             return n.copyWith(
+               startSec: n.startSec + offset,
+               endSec: n.endSec + offset,
+             );
+          }).toList();
+
+          return plan.copyWith(
+             notes: shiftedNotes,
+             durationSec: plan.durationSec + offset,
+          );
         }
       } catch (e) {
         debugPrint('[RefGen] tryGetCached validation failed: $e');

@@ -20,6 +20,10 @@ class AudioConstants {
     return timeSec >= leadInSec;
   }
   
+  static const double chirpDurationSec = 0.050; // 50ms chirp
+  static const double chirpSilenceSec = 0.200; // 200ms silence
+  static const double totalChirpOffsetSec = chirpDurationSec + chirpSilenceSec;
+
   /// Check if a time (in milliseconds) is during the lead-in period
   static bool isDuringLeadIn(int timeMs) {
     return timeMs < leadInMs;

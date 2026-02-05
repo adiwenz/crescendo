@@ -80,9 +80,8 @@ class ReviewAudioBounceService {
     final startTime = DateTime.now();
     
     // 0. Constants for Sync Signal (Piloting)
-    const double syncToneDuration = 0.050; // 50ms chirp/tone at start
-    const double syncSilenceDuration = 0.200; // 200ms silence after tone
-    const double totalSyncOffset = syncToneDuration + syncSilenceDuration;
+    final syncToneDuration = AudioConstants.chirpDurationSec;
+    final totalSyncOffset = AudioConstants.totalChirpOffsetSec;
     
     // 1. Generate float samples (synthesis)
     final samples = _generateSamples(

@@ -20,4 +20,24 @@ class ReferenceNote {
   bool get isGlide => isGlideStart || isGlideEnd;
   double get durationSec => endSec - startSec;
   String? get solfege => lyric;
+
+  ReferenceNote copyWith({
+    double? startSec,
+    double? endSec,
+    int? midi,
+    String? lyric,
+    bool? isGlideStart,
+    bool? isGlideEnd,
+    int? glideEndMidi,
+  }) {
+    return ReferenceNote(
+      startSec: startSec ?? this.startSec,
+      endSec: endSec ?? this.endSec,
+      midi: midi ?? this.midi,
+      lyric: lyric ?? this.lyric,
+      isGlideStart: isGlideStart ?? this.isGlideStart,
+      isGlideEnd: isGlideEnd ?? this.isGlideEnd,
+      glideEndMidi: glideEndMidi ?? this.glideEndMidi,
+    );
+  }
 }
