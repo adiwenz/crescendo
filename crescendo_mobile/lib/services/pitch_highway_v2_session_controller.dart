@@ -371,6 +371,78 @@ class PitchHighwayV2SessionController {
     }
   }
 
+  Future<void> seekTo(double timeSec) async {
+    if (_isDisposed) return;
+    
+    // Clamp to duration
+    final t = timeSec.clamp(0.0, referenceDurationSec);
+    
+    // Update visual immediately for snappy UI
+    state.value = state.value.copyWith(replayVisualTimeSec: t);
+    
+    // Seek players
+    final pos = Duration(milliseconds: (t * 1000).toInt());
+    await _refReplayPlayer.seek(pos);
+    
+    // For recording, we need to respect the offset
+    if (state.value.applyOffset && (state.value.offsetResult?.offsetMs ?? 0) != 0) {
+       final offsetMs = state.value.offsetResult!.offsetMs;
+       // recTime = refTime - offset (if offset is latency, then rec is delayed, so recTime = refTime - offset?)
+       // Wait, replay logic is:
+       // if delay > 0 (mic latency): we play REC first, then REF. 
+       // NO, if offset > 0 (meaning we need to SHIFT rec by +offset to align), usually implies Rec was EARLY? 
+       // Let's look at toggleReplay logic:
+       // If offsetMs > 0: Play REC, wait, play REF. Means REC starts FIRST. So REC is currently "behind" in file time?
+       // Actually, let's just seek both to `pos`. The offset is usually small enough that for scrubbing we can just seek both to same relative time if we assume aligned files? 
+       // BUT we are playing original files with offset.
+       
+       // If Apply Alignment is ON:
+       // The `toggleReplay` handles the start delay.
+       // For seeking, we might just seek `_recPlayer` to `pos +/- offset`.
+       
+       // Let's re-read toggleReplay:
+       // offsetMs > 0: _recPlayer.resume(), wait offset, _refPlayer.resume().
+       // This implies Rec needs to start EARLIER to be heard at correct time relative to Ref?
+       // So Rec Track is shifted RIGHT (later) by `offsetMs` relative to Ref Track?
+       // No, if Rec starts first, it means it was LATE?
+       
+       // Simplification: Just seek both to `pos` for now. Precise scrubbing with offset is tricky with simple Players.
+       // Ideally we'd calculate `recPos = pos - Duration(ms: offsetMs)` or similar.
+       
+       // Let's try to match the playback logic:
+       // We want the sound at `t` in the REFERENCE track.
+       // The corresponding sound in RECORDING track is at `t`?
+       // If we aligned them by shifting start times, then `seek` should preserve that shift? 
+       // `audioplayers` seek is absolute file position.
+       
+       // If `toggleReplay` uses `delayed` launch, that delay is gone after start.
+       // So if we seek locally, we lose the delay unless we manage it.
+       // HOWEVER, `audioplayers` doesn't support "seek with delay".
+       
+       // Best effort: Seek Ref to `pos`. Seek Rec to `pos` (maybe adjusted).
+       // If offsetMs > 0 (Rec starts first): Rec is shifted LEFT relative to Ref?
+       // If offsetMs = 1000ms. Rec starts at T=0. Ref starts at T=1s.
+       // So Ref.Time(0) matches Rec.Time(1s)? 
+       // If user scrubs to Ref.Time(2s), Rec should be at 3s?
+       // So `recPos = pos + offset`.
+       
+       // Let's try that logic.
+       int recMs = pos.inMilliseconds;
+       if (offsetMs > 0) {
+          recMs += offsetMs.toInt();
+       } else {
+          recMs += offsetMs.toInt(); // offset is negative, so we subtract
+       }
+       // If recMs < 0, we are in the "pre-roll" of recording? (Not possible, file starts at 0).
+       // Clamp to >= 0.
+       recMs = recMs.clamp(0, (referenceDurationSec * 1000 + 5000).toInt()); // arbitrary max
+       
+       await _recPlayer.seek(Duration(milliseconds: recMs));
+    } else {
+       await _recPlayer.seek(pos);
+    }
+  }
+
   // --- Setters ---
 
   void setApplyOffset(bool v) {

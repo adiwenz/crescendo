@@ -40,6 +40,7 @@ class PitchHighwayPainter extends CustomPainter {
   final int? runId; // For debugging: track which run this painter belongs to
   final SirenPath?
       sirenPath; // Optional visual path for Sirens (separate from audio notes)
+  final bool isReviewMode; // NEW flag
 
   PitchHighwayPainter({
     required this.notes,
@@ -60,6 +61,7 @@ class PitchHighwayPainter extends CustomPainter {
     this.tailPoints,
     this.debugLogMapping = false,
     this.runId,
+    this.isReviewMode = false,
     AppThemeColors? colors,
   })  : colors = colors ?? AppThemeColors.dark,
         // CRITICAL: Always use time as repaint listenable for stability.
@@ -98,8 +100,9 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final gridPaint = Paint()
-      ..color = colors.divider
-          .withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
+      ..color = isReviewMode 
+          ? Colors.deepPurpleAccent.withOpacity(0.05) // Subtle purple grid in review
+          : colors.divider.withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
       ..strokeWidth = 1;
     final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
     for (var midi = midiMin; midi <= midiMax; midi += gridStep) {
@@ -113,11 +116,13 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final playheadX = size.width * playheadFraction;
-    final noteColor = colors.isMagical
-        ? colors.accentPurple.withOpacity(0.65)
-        : (colors.isDark
-            ? colors.textPrimary.withOpacity(0.55)
-            : colors.accentPurple.withOpacity(0.55));
+    final noteColor = isReviewMode
+        ? const Color(0xFF9C27B0).withOpacity(0.7) // Solid Purple for Review
+        : (colors.isMagical
+            ? colors.accentPurple.withOpacity(0.65)
+            : (colors.isDark
+                ? colors.textPrimary.withOpacity(0.55)
+                : colors.accentPurple.withOpacity(0.55)));
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
@@ -700,19 +705,23 @@ class PitchHighwayPainter extends CustomPainter {
       final xPrev = playheadX + (prev.tSec - tAdjusted) * pixelsPerSecond;
       final xCurr = playheadX + (curr.tSec - tAdjusted) * pixelsPerSecond;
       if (xCurr < -16 || xPrev > size.width + 16) continue;
+      
+      final usePurple = isReviewMode;
+      final trailColor = usePurple ? const Color(0xFF9C27B0) : colors.goldAccent;
+      
       final glowPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 18.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.goldAccent.withOpacity(alpha * 1.5)
+        ..color = trailColor.withOpacity(alpha * 1.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       final corePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.goldAccent.withOpacity(alpha * 2.5);
+        ..color = trailColor.withOpacity(alpha * 2.5);
       canvas.drawLine(
           Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
       canvas.drawLine(
@@ -731,6 +740,7 @@ class PitchHighwayPainter extends CustomPainter {
         oldDelegate.smoothingWindowSec != smoothingWindowSec ||
         oldDelegate.pitchTailTimeOffsetSec != pitchTailTimeOffsetSec ||
         oldDelegate.showLivePitch != showLivePitch ||
+        oldDelegate.isReviewMode != isReviewMode ||
         oldDelegate.showPlayheadLine != showPlayheadLine;
   }
 }
