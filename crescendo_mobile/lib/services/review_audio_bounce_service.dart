@@ -79,12 +79,21 @@ class ReviewAudioBounceService {
   }) async {
     final startTime = DateTime.now();
     
+    // 0. Constants for Sync Signal (Piloting)
+    const double syncToneDuration = 0.050; // 50ms chirp/tone at start
+    const double syncSilenceDuration = 0.200; // 200ms silence after tone
+    const double totalSyncOffset = syncToneDuration + syncSilenceDuration;
+    
     // 1. Generate float samples (synthesis)
     final samples = _generateSamples(
       notes: notes,
       sampleRate: sampleRate,
-      durationSec: durationSec,
+      durationSec: durationSec + totalSyncOffset,
+      timeOffsetSec: totalSyncOffset,
     );
+    
+    // 1b. Inject Sync Tone
+    _injectSyncTone(samples, sampleRate, syncToneDuration);
     
     // 2. Convert to 16-bit PCM in-place
     final pcmSamples = Int16List(samples.length);
@@ -126,6 +135,7 @@ class ReviewAudioBounceService {
     required List<ReferenceNote> notes,
     required int sampleRate,
     required double durationSec,
+    double timeOffsetSec = 0.0,
   }) {
     final totalFrames = (durationSec * sampleRate).ceil();
     final samples = Float32List(totalFrames);
@@ -133,8 +143,8 @@ class ReviewAudioBounceService {
     final invSampleRate = 1.0 / sampleRate;
 
     for (final note in notes) {
-      final startFrame = (note.startSec * sampleRate).toInt();
-      final endFrame = math.min((note.endSec * sampleRate).toInt(), totalFrames);
+      final startFrame = ((note.startSec + timeOffsetSec) * sampleRate).toInt();
+      final endFrame = math.min(((note.endSec + timeOffsetSec) * sampleRate).toInt(), totalFrames);
       final noteFrames = endFrame - startFrame;
       
       if (noteFrames <= 0 || startFrame >= totalFrames) continue;
@@ -186,7 +196,39 @@ class ReviewAudioBounceService {
     
     return samples;
   }
+  
+  void _injectSyncTone(Float32List samples, int sampleRate, double durationSec) {
+    // Generate 1kHz pure sine wave at high amplitude
+    final frames = (durationSec * sampleRate).toInt();
+    final invSampleRate = 1.0 / sampleRate;
+    const freq = 1000.0; 
+    
+    double phase = 0.0;
+    final phaseInc = freq * invSampleRate;
+    
+    // Apply short fade in/out to avoid popping
+    final fadeFrames = (0.002 * sampleRate).toInt(); // 2ms fade
 
+    for (var i = 0; i < frames; i++) {
+        if (i >= samples.length) break;
+        
+        final val = _fastSin(phase);
+        phase = (phase + phaseInc); 
+        phase -= phase.floor();
+        
+        double amp = 0.8; 
+        
+        // envelope
+        if (i < fadeFrames) {
+           amp *= (i / fadeFrames);
+        } else if (i >= frames - fadeFrames) {
+           amp *= ((frames - i) / fadeFrames);
+        }
+        
+        samples[i] = val * amp;
+    }
+  }
+  
   /// Mix two WAV files sample-by-sample (Optimized)
   Future<File> mixWavs({
     required File micWav,
@@ -217,20 +259,14 @@ class ReviewAudioBounceService {
     // Read samples as float [-1.0, 1.0]
     var micSamples = _readWavSamples(micBytes, micWavInfo);
     var refSamples = _readWavSamples(refBytes, refWavInfo);
-
-    if (kDebugMode) {
-      debugPrint('[ReviewBounce] Mixing: Mic=${micWavInfo.sampleRate}Hz Ref=${refWavInfo.sampleRate}Hz -> Target=${sampleRate}Hz');
-    }
     
     // Resample Mic if needed
     if (micWavInfo.sampleRate != sampleRate) {
-      if (kDebugMode) debugPrint('[ReviewBounce] Resampling MIC from ${micWavInfo.sampleRate} to $sampleRate');
       micSamples = _resample(micSamples, micWavInfo.sampleRate, sampleRate);
     }
 
-    // Resample Ref if needed (unlikely if we chose ref rate, but good for safety)
+    // Resample Ref if needed 
     if (refWavInfo.sampleRate != sampleRate) {
-       if (kDebugMode) debugPrint('[ReviewBounce] Resampling REF from ${refWavInfo.sampleRate} to $sampleRate');
        refSamples = _resample(refSamples, refWavInfo.sampleRate, sampleRate);
     }
     
@@ -239,10 +275,6 @@ class ReviewAudioBounceService {
     final outputLength = (durationSec * sampleRate).round();
     final micOffsetSamples = (micOffsetSec * sampleRate).round();
     final refOffsetSamples = (refOffsetSec * sampleRate).round();
-    
-    debugPrint('[ReviewBounceMix] renderStartSec=$renderStartSec');
-    debugPrint('[ReviewBounceMix] durationSec=$durationSec');
-    debugPrint('[ReviewBounceMix] outputLength=$outputLength ($durationSec sec)');
     
     final pcmSamples = Int16List(outputLength);
     
