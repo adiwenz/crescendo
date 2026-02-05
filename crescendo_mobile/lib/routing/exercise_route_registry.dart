@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../debug/debug_flags.dart';
+import '../models/exercise_plan.dart';
+import '../models/pitch_highway_difficulty.dart';
+import '../models/vocal_exercise.dart';
+import '../screens/exercise/pitch_highway_v2_player_screen.dart';
 import '../services/exercise_repository.dart';
 import '../ui/screens/exercise_player_screen.dart';
-import '../models/vocal_exercise.dart';
-import '../models/pitch_highway_difficulty.dart';
-import '../models/exercise_plan.dart';
 
 class ExerciseRouteEntry {
   final String id;
@@ -60,6 +62,23 @@ class ExerciseRouteRegistry {
           exercise.type == ExerciseType.pitchHighway
               ? pitchHighwayDifficultyFromLevel(difficultyLevel)
               : null;
+
+      // START V2 DEBUG ROUTING
+      if (exercise.type == ExerciseType.pitchHighway && 
+          DebugFlags.enablePitchHighwayV2) {
+         Navigator.push(
+            context,
+            MaterialPageRoute(
+               builder: (_) => PitchHighwayV2PlayerScreen(
+                  exercise: exercise,
+                  pitchDifficulty: pitchDifficulty!,
+               ),
+            ),
+         );
+         return true;
+      }
+      // END V2 DEBUG ROUTING
+
       Navigator.push(
         context,
         MaterialPageRoute(

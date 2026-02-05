@@ -3,24 +3,14 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../audio/wav_util.dart';
 
-import '../../services/audio_offset_estimator.dart';
-import '../../services/audio_session_service.dart';
+import '../../services/pitch_highway_v2_session_controller.dart';
 import '../../services/recording_service.dart';
-import '../../services/audio_synth_service.dart';
-import '../../services/reference_audio_generator.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
-import '../../models/vocal_exercise.dart';
-import '../../models/pitch_highway_difficulty.dart';
-import '../../ui/widgets/pitch_highway_painter.dart';
-import '../../utils/pitch_visual_state.dart';
-import '../../utils/audio_constants.dart';
 
 class PitchHighwayReplayOffsetTestScreen extends StatefulWidget {
   const PitchHighwayReplayOffsetTestScreen({super.key});
@@ -29,98 +19,46 @@ class PitchHighwayReplayOffsetTestScreen extends StatefulWidget {
   State<PitchHighwayReplayOffsetTestScreen> createState() => _PitchState();
 }
 
-enum TestPhase { idle, recording, processing, replay }
-
-class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerProviderStateMixin {
+class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> {
+  late PitchHighwayV2SessionController _controller;
   
-  // State
-  TestPhase _phase = TestPhase.idle;
-  List<ReferenceNote> _notes = [];
-  final List<PitchFrame> _capturedFrames = [];
-  String? _refPath;
-  String? _recPath;
-  AudioOffsetResult? _offsetResult;
-  double _refDurationSec = 6.0;
-
-  // Audio / Services
-  final AudioPlayer _refPlayer = AudioPlayer();
-  final AudioPlayer _recPlayer = AudioPlayer();
-  final AudioPlayer _refReplayPlayer = AudioPlayer(); // Separate player for replay
-  RecordingService? _recorder;
-  StreamSubscription<PitchFrame>? _pitchSub;
-  
-  // UI Replay Controls
-  bool _isPlayingReplay = false;
-  double _refVolume = 1.0;
-  double _recVolume = 1.0;
-  bool _applyOffset = true;
-
-  // Canvas / Visuals
-  Ticker? _ticker;
-  Ticker? _replayTicker;
-  double _visualTime = 0.0;
-  double _replayVisualTime = 0.0;
-  DateTime? _recordStartTime;
-  DateTime? _replayStartTime;
+  // Conf
+  static const double _refDurationSec = 5.5;
 
   @override
   void initState() {
     super.initState();
-    _ticker = createTicker((elapsed) {
-      if (_phase == TestPhase.recording && _recordStartTime != null) {
-        setState(() {
-          _visualTime = DateTime.now().difference(_recordStartTime!).inMilliseconds / 1000.0;
-        });
-        
-        // Auto-stop
-        if (_visualTime >= _refDurationSec + 0.5) { // 0.5s trailing
-          _stopRecording();
-        }
-      }
-    });
-
-    _replayTicker = createTicker((elapsed) {
-       if (_phase == TestPhase.replay && _replayStartTime != null) {
-          setState(() {
-            _replayVisualTime = DateTime.now().difference(_replayStartTime!).inMilliseconds / 1000.0;
-          });
-       }
-    });
-
-    _prepareExercise();
-    
-    // Auto-reset UI when players finish
-    _refReplayPlayer.onPlayerComplete.listen((_) {
-      if (mounted && _isPlayingReplay) {
-         setState(() {
-           _isPlayingReplay = false;
-           _replayTicker?.stop();
-         });
-         // Ensure both are stopped
-         debugPrint("[Test] Replay finished (listener). Stopping players.");
-         _recPlayer.stop(); 
-         _refReplayPlayer.stop();
-      }
-    });
+    _initController();
   }
 
-  Future<void> _prepareExercise() async {
+  Future<void> _initController() async {
     // 1. Create dummy notes
-    _notes = [
+    final notes = [
       ReferenceNote(startSec: 1.0, endSec: 2.0, midi: 60),
       ReferenceNote(startSec: 2.5, endSec: 3.5, midi: 64),
       ReferenceNote(startSec: 4.0, endSec: 5.0, midi: 67),
     ];
-    _refDurationSec = 5.5;
 
-    // 2. Generate reference WAV
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/ref_test_chirp.wav';
-    
-    _refPath = await _generateTestWav(path);
-    setState(() {});
+    _controller = PitchHighwayV2SessionController(
+      notes: notes,
+      referenceDurationSec: _refDurationSec,
+      ensureReferenceWav: _ensureReferenceWav,
+      ensureRecordingPath: () async {
+         final dir = await getTemporaryDirectory();
+         return '${dir.path}/rec_offset_test.wav';
+      },
+      recorderFactory: () => RecordingService(owner: 'offset_test', bufferSize: 1024),
+    );
+
+    await _controller.prepare();
   }
-  
+
+  Future<String> _ensureReferenceWav() async {
+     final dir = await getTemporaryDirectory();
+     final path = '${dir.path}/ref_test_chirp.wav';
+     return _generateTestWav(path);
+  }
+
   Future<String> _generateTestWav(String path) async {
      // Generate 16-bit PCM: 48kHz, 6s.
      // Chirp at 0.2s. Tone at 1.0s.
@@ -148,256 +86,88 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
      return WavUtil.writePcm16MonoWav(path, bytes, sr);
   }
 
-  Future<void> _startRecording() async {
-    if (_refPath == null) return;
-    
-    // Audio Session
-    await AudioSessionService.applyExerciseSession();
-    
-    final dir = await getTemporaryDirectory();
-    _recPath = '${dir.path}/rec_offset_test.wav';
-    
-    _capturedFrames.clear();
-    _visualTime = 0;
-
-    _recorder = RecordingService(owner: 'offset_test', bufferSize: 1024);
-    
-    // Prepare Players
-    await _refPlayer.setSourceDeviceFile(_refPath!);
-    
-    setState(() {
-      _phase = TestPhase.recording;
-    });
-
-    // Start
-    await _recorder!.start(owner: 'offset_test', mode: RecordingMode.take);
-    _pitchSub = _recorder!.liveStream.listen((frame) {
-      if (mounted) {
-        // Just append, maybe throttle redraws if heavy
-        setState(() {
-           _capturedFrames.add(frame);
-        });
-      }
-    });
-
-    // Play Ref
-    await _refPlayer.resume();
-    
-    _recordStartTime = DateTime.now();
-    _ticker?.start();
-  }
-
-  Future<void> _stopRecording() async {
-    _ticker?.stop();
-    await _refPlayer.stop();
-    await _recorder?.stop(customPath: _recPath); // explicit path
-    _pitchSub?.cancel();
-    
-    setState(() {
-      _phase = TestPhase.processing;
-    });
-    
-    await _computeOffset();
-  }
-
-  Future<void> _computeOffset() async {
-    if (_refPath == null || _recPath == null) return;
-    
-    final result = await AudioOffsetEstimator.estimateOffsetSamples(
-      recordedPath: _recPath!, 
-      referencePath: _refPath!,
-      strategy: OffsetStrategy.auto
-    );
-    
-    if (mounted) {
-      setState(() {
-        _offsetResult = result;
-        _phase = TestPhase.replay;
-      });
-      
-      // Switch to playback session for reliable output
-      await AudioSessionService.applyReviewSession();
-      
-      // Prep replay players
-      debugPrint('[Test] Preparing replay players...');
-      debugPrint('[Test] Ref: $_refPath');
-      debugPrint('[Test] Rec: $_recPath');
-      
-      if (_recPath != null) {
-        final recFile = File(_recPath!);
-        if (await recFile.exists()) {
-           final len = await recFile.length();
-           debugPrint('[Test] Rec file exists, size: $len bytes');
-        } else {
-           debugPrint('[Test] ERROR: Rec file does not exist at $_recPath');
-        }
-      }
-
-      await _refReplayPlayer.setSourceDeviceFile(_refPath!);
-      await _recPlayer.setSourceDeviceFile(_recPath!);
-    }
-  }
-
-  Future<void> _toggleReplay() async {
-    debugPrint("[Test] _toggleReplay called. isPlaying: $_isPlayingReplay");
-    try {
-      if (_isPlayingReplay) {
-        debugPrint("[Test] Stopping replay...");
-        _replayTicker?.stop();
-        await _refReplayPlayer.stop();
-        await _recPlayer.stop();
-        setState(() => _isPlayingReplay = false);
-        debugPrint("[Test] Replay stopped.");
-      } else {
-        // START ALIGNED
-        
-        // FORCE STOP / RESET state
-        debugPrint("[Test] Resetting players (stop & seek 0)...");
-        await _refReplayPlayer.stop();
-        await _recPlayer.stop();
-        
-        final offsetMs = _applyOffset ? (_offsetResult?.offsetMs ?? 0) : 0;
-        
-        debugPrint("[Test] Starting replay. Offset: ${offsetMs}ms. Apply: $_applyOffset");
-        
-        debugPrint("[Test] Setting volumes...");
-        await _refReplayPlayer.setVolume(_refVolume);
-        await _recPlayer.setVolume(_recVolume);
-
-        // Re-set sources to be absolutely sure
-        debugPrint("[Test] Re-setting sources...");
-        if (_refPath != null) await _refReplayPlayer.setSourceDeviceFile(_refPath!);
-        if (_recPath != null) await _recPlayer.setSourceDeviceFile(_recPath!);
-        
-        debugPrint("[Test] Setting isPlayingReplay = true...");
-        setState(() => _isPlayingReplay = true);
-        
-        if (offsetMs > 0) {
-          // Ref is leading (happens first), Rec is lagging.
-          debugPrint("[Test] Offset > 0. Playing Ref in ${offsetMs.toInt()}ms");
-          
-          debugPrint("[Test] Resuming RecPlayer (leading)...");
-          await _recPlayer.resume(); 
-          Future.delayed(Duration(milliseconds: offsetMs.toInt()), () async {
-             // check if still playing (user might have stopped)
-             if (_isPlayingReplay) {
-               debugPrint("[Test] Playing Ref now (delayed)");
-               await _refReplayPlayer.resume();
-               _replayStartTime = DateTime.now();
-               _replayTicker?.start();
-             } else {
-               debugPrint("[Test] Cancelled Ref start (stopped during delay)");
-             }
-          });
-          
-        } else {
-          // Rec is leading. Delay Rec.
-          debugPrint("[Test] Offset <= 0. Playing Ref NOW.");
-          
-          await _refReplayPlayer.resume();
-          _replayStartTime = DateTime.now();
-          _replayTicker?.start();
-          
-          final delay = offsetMs.abs().toInt();
-          debugPrint("[Test] RecPlayer delayed by ${delay}ms");
-          Future.delayed(Duration(milliseconds: delay), () async {
-             if (_isPlayingReplay) {
-               debugPrint("[Test] Playing Rec now (delayed)");
-               await _recPlayer.resume();
-             } else {
-               debugPrint("[Test] Cancelled Rec start (stopped during delay)");
-             }
-          });
-        }
-      }
-    } catch (e, stack) {
-      debugPrint("[Test] ERROR in _toggleReplay: $e");
-      debugPrint(stack.toString());
-      // Force reset state on error
-      setState(() => _isPlayingReplay = false);
-    }
-  }
-
   @override
   void dispose() {
-    _ticker?.dispose();
-    _replayTicker?.dispose();
-    _refPlayer.dispose();
-    _recPlayer.dispose();
-    _refReplayPlayer.dispose();
-    _recorder?.dispose();
-    _pitchSub?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_controller == null) {
+       // Should not happen if initState synchronous part runs first, but late init can be risky if accessed before assignment. 
+       // _controller is assigned synchronously in _initController (only .prepare() is async). 
+       // So this is safe.
+       return const SizedBox(); 
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Offset Alignment Test')),
-      body: Column(
-        children: [
-          // Header Status
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey[200],
-            child: Row(
-               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-               children: [
-                 Text('Phase: ${_phase.name.toUpperCase()}'),
-                 if (_phase == TestPhase.recording) 
-                   Text('${_visualTime.toStringAsFixed(1)} / $_refDurationSec s'),
-               ],
-            ),
-          ),
-          
-          // Main Content
-          Expanded(
-            child: _phase == TestPhase.recording 
-             ? _buildRecordingUI()
-             : _phase == TestPhase.replay 
-               ? _buildReplayUI()
-               : _phase == TestPhase.processing 
-                 ? const Center(child: CircularProgressIndicator())
-                 : _buildIdleUI(),
-          ),
-        ],
+      appBar: AppBar(title: const Text('Offset Alignment Test (V2 Controller)')),
+      body: ValueListenableBuilder<PitchHighwaySessionState>(
+        valueListenable: _controller.state,
+        builder: (context, state, _) {
+          return Column(
+            children: [
+              // Header Status
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.grey[200],
+                child: Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     Text('Phase: ${state.phase.name.toUpperCase()}'),
+                     if (state.phase == PitchHighwaySessionPhase.recording) 
+                       Text('${state.recordVisualTimeSec.toStringAsFixed(1)} / $_refDurationSec s'),
+                   ],
+                ),
+              ),
+              
+              // Main Content
+              Expanded(
+                child: Builder(builder: (context) {
+                   switch (state.phase) {
+                     case PitchHighwaySessionPhase.recording:
+                       return _buildRecordingUI(state);
+                     case PitchHighwaySessionPhase.replay:
+                       return _buildReplayUI(state);
+                     case PitchHighwaySessionPhase.processing:
+                       return const Center(child: CircularProgressIndicator());
+                     case PitchHighwaySessionPhase.idle:
+                     default:
+                       return _buildIdleUI(state);
+                   }
+                }),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
   
-  Widget _buildIdleUI() {
+  Widget _buildIdleUI(PitchHighwaySessionState state) {
     return Center(
       child: ElevatedButton.icon(
         icon: const Icon(Icons.mic, size: 32),
         label: const Text('Start Test\n(Headphones Recommended!)', textAlign: TextAlign.center),
         style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(24)),
-        onPressed: _refPath == null ? null : _startRecording,
+        onPressed: state.referencePath == null ? null : () => _controller.start(),
       ),
     );
   }
   
-  Widget _buildRecordingUI() {
-    // We can use the real PitchHighwayPainter if we want, or a simplified visualizer
-    // Let's try to reuse PitchHighwayPainter logic by wrapping it.
-    // Assuming PitchHighwayPainter needs specific params.
-    // For simplicity, let's just draw the live pitch trace.
+  Widget _buildRecordingUI(PitchHighwaySessionState state) {
     return Stack(
       children: [
-        // Background
         Positioned.fill(child: Container(color: Colors.black87)),
-        
-        // Notes (Draw simplistic rectangles)
         CustomPaint(
           size: Size.infinite,
-          painter: SimpleNotesPainter(_notes, _visualTime, 48, 72),
+          painter: SimpleNotesPainter(state.notes, state.recordVisualTimeSec, 48, 72),
         ),
-        
-        // Pitch Trace
         CustomPaint(
            size: Size.infinite,
-           painter: SimplePitchPainter(_capturedFrames, _visualTime, 48, 72),
+           painter: SimplePitchPainter(state.capturedFrames, state.recordVisualTimeSec, 48, 72),
         ),
-        
         Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -409,13 +179,15 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
     );
   }
   
-  Widget _buildReplayUI() {
+  Widget _buildReplayUI(PitchHighwaySessionState state) {
+    final offsetResult = state.offsetResult;
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
              // Results
+             if (offsetResult != null)
              Card(
                child: Padding(
                  padding: const EdgeInsets.all(16.0),
@@ -423,10 +195,10 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
                    children: [
                      const Text("Alignment Result", style: TextStyle(fontWeight: FontWeight.bold)),
                      const Divider(),
-                     Text("Offset: ${_offsetResult?.offsetSamples} samples"),
-                     Text("Time: ${_offsetResult?.offsetMs.toStringAsFixed(2)} ms"),
-                     Text("Confidence: ${_offsetResult?.confidence.toStringAsFixed(2)}"),
-                     Text("Method: ${_offsetResult?.method}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                     Text("Offset: ${offsetResult.offsetSamples} samples"),
+                     Text("Time: ${offsetResult.offsetMs.toStringAsFixed(2)} ms"),
+                     Text("Confidence: ${offsetResult.confidence.toStringAsFixed(2)}"),
+                     Text("Method: ${offsetResult.method}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
                    ],
                  ),
                ),
@@ -443,16 +215,16 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
                     Positioned.fill(child: Container(color: Colors.black)),
                     CustomPaint(
                       size: Size.infinite,
-                      painter: SimpleNotesPainter(_notes, _replayVisualTime, 48, 72),
+                      painter: SimpleNotesPainter(state.notes, state.replayVisualTimeSec, 48, 72),
                     ),
                     CustomPaint(
                       size: Size.infinite,
                       painter: SimplePitchPainter(
-                        _capturedFrames, 
-                        _replayVisualTime, 
+                        state.capturedFrames, 
+                        state.replayVisualTimeSec, 
                         48, 
                         72,
-                        timeOffsetSec: _applyOffset ? -(_offsetResult?.offsetMs ?? 0) / 1000.0 : 0
+                        timeOffsetSec: state.applyOffset ? -(offsetResult?.offsetMs ?? 0) / 1000.0 : 0
                       ),
                     ),
                   ],
@@ -465,21 +237,15 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
              // Controls
              SwitchListTile(
                 title: const Text("Apply Offset Correction"),
-                value: _applyOffset,
-                onChanged: (v) => setState(() => _applyOffset = v),
+                value: state.applyOffset,
+                onChanged: _controller.setApplyOffset,
              ),
              
              const Text("Reference Volume"),
-             Slider(value: _refVolume, onChanged: (v) {
-                setState(() => _refVolume = v);
-                _refReplayPlayer.setVolume(v);
-             }),
+             Slider(value: state.refVolume, onChanged: _controller.setRefVolume),
              
              const Text("Recording Volume"),
-             Slider(value: _recVolume, onChanged: (v) {
-                setState(() => _recVolume = v);
-                _recPlayer.setVolume(v);
-             }),
+             Slider(value: state.recVolume, onChanged: _controller.setRecVolume),
              
              const SizedBox(height: 20),
              
@@ -489,15 +255,21 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
                  ElevatedButton.icon(
                    style: ElevatedButton.styleFrom(
                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                     backgroundColor: _isPlayingReplay ? Colors.red : Colors.green,
+                     backgroundColor: state.isPlayingReplay ? Colors.red : Colors.green,
                    ),
-                   icon: Icon(_isPlayingReplay ? Icons.stop : Icons.play_arrow),
-                   label: Text(_isPlayingReplay ? "STOP" : "PLAY ALIGNED"),
-                   onPressed: _toggleReplay,
+                   icon: Icon(state.isPlayingReplay ? Icons.stop : Icons.play_arrow),
+                   label: Text(state.isPlayingReplay ? "STOP" : "PLAY ALIGNED"),
+                   onPressed: () => _controller.toggleReplay(),
                  ),
                  
                  OutlinedButton(
-                   onPressed: () => setState(() => _phase = TestPhase.idle),
+                   onPressed: () async {
+                      await _controller.stop(); 
+                      if (mounted) {
+                         // Prepare again to restart
+                         _controller.prepare();
+                      }
+                   },
                    child: const Text("Done"),
                  )
                ],
@@ -510,7 +282,7 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> with TickerP
   }
 }
 
-// ---- Helpers ----
+// ---- Helpers (Preserved) ----
 
 class SimpleNotesPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -525,19 +297,6 @@ class SimpleNotesPainter extends CustomPainter {
     final paint = Paint()..color = Colors.blue.withValues(alpha: 0.5);
     final width = size.width;
     final height = size.height;
-    // final timeWindow = 4.0; // show 4 seconds
-    
-    // transform: x is time (scrolling left), y is pitch
-    // x=0 is 'now' at left? Or 'now' at 20%? 
-    // classic highway: now is bottom/center. 
-    // Scrolling left-to-right (sequencer view)?
-    // Let's do sequencer view: x = (t - now) * pxPerSec + offset
-    
-    // Actually vertical highway is standard in this app.
-    // Let's do vertical. y=time. x=pitch.
-    // Time flows down? or up?
-    // Let's stick to simple horizontal sequencer for debug:
-    // Left=0s, Right=6s. static view. cursor moves.
     
     double tToX(double t) => (t / 6.0) * width;
     double mToY(int m) => height - ((m - minMidi) / (maxMidi - minMidi)) * height;
@@ -591,7 +350,7 @@ class SimplePitchPainter extends CustomPainter {
     
     for (var f in frames) {
        if (f.midi == null) continue;
-       final x = tToX(f.time + timeOffsetSec); // PitchFrame time is relative to record start?
+       final x = tToX(f.time + timeOffsetSec); 
        final y = mToY(f.midi!);
        
        if (first) {
