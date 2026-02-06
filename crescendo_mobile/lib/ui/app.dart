@@ -14,6 +14,7 @@ import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'route_observer.dart';
+import '../screens/onboarding/onboarding_screen.dart';
 import 'widgets/app_background.dart';
 import 'widgets/lazy_indexed_stack.dart';
 import '../debug/transport_clock_test_screen.dart';
@@ -79,6 +80,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 );
               },
               navigatorObservers: [routeObserver],
+              initialRoute: '/onboarding',
               routes: {
                 '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
                 '/settings': (_) => const SettingsScreen(),
@@ -92,6 +94,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 '/debug/transport_clock': (_) => const TransportClockTestScreen(),
                 '/debug/duplex_audio': (_) => const DuplexAudioTestScreen(),
                 '/debug/one_clock': (_) => const OneClockDebugTestScreen(),
+                '/onboarding': (_) => const OnboardingScreen(),
               },
             );
           },
