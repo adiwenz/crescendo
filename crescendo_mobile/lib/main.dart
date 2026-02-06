@@ -13,6 +13,7 @@ import 'utils/daily_completion_utils.dart';
 
 import 'core/locator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +49,15 @@ Future<void> main() async {
   // Pre-warm database to avoid lazy loading jank on first navigation
   await AppDatabase().database;
   
+  // Prevent FOUT: Preload Google Fonts (Manrope)
+  // We wait for the most common weights to be available before rendering
+  await GoogleFonts.pendingFonts([
+    GoogleFonts.manrope(fontWeight: FontWeight.w400),
+    GoogleFonts.manrope(fontWeight: FontWeight.w500),
+    GoogleFonts.manrope(fontWeight: FontWeight.w600),
+    GoogleFonts.manrope(fontWeight: FontWeight.w700),
+  ]);
+
   // Check onboarding state
   final prefs = await SharedPreferences.getInstance();
   final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
