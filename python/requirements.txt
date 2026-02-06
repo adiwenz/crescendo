@@ -12,6 +12,7 @@ flask
 noisereduce
 torchcodec
 demucs
+pillow
+requests
 
 # brew install fluidsynth   # macOS only
-
