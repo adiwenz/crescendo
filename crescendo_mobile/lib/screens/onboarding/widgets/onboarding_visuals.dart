@@ -55,13 +55,14 @@ class _RisingCurvePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final path = Path();
+    // Move mostly to bottom: 0.8 -> 0.7 range
     path.moveTo(0, size.height * 0.8);
     
     // Abstract rising curve
     path.cubicTo(
       size.width * 0.3, size.height * 0.8,
-      size.width * 0.5, size.height * 0.6 + (progress * 20),
-      size.width, size.height * 0.3,
+      size.width * 0.5, size.height * 0.75 + (progress * 20),
+      size.width, size.height * 0.6,
     );
 
     canvas.drawPath(path, paint);
@@ -110,7 +111,8 @@ class _LayeredLinesPainter extends CustomPainter {
     for (int i = 0; i < 3; i++) {
       paint.color = Colors.white.withOpacity(0.2 + (i * 0.1));
       final path = Path();
-      double y = size.height * 0.4 + (i * 40);
+      // Move to bottom: 0.7 range
+      double y = size.height * 0.7 + (i * 30);
       path.moveTo(0, y);
       path.quadraticBezierTo(size.width * 0.5, y - 20, size.width, y);
       canvas.drawPath(path, paint);
@@ -174,7 +176,8 @@ class _StabilizingLinePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final path = Path();
-    double midY = size.height * 0.5;
+    // Move to bottom: 0.7 range
+    double midY = size.height * 0.7;
     
     path.moveTo(0, midY);
     
@@ -194,8 +197,6 @@ class _StabilizingLinePainter extends CustomPainter {
     final highlightPaint = Paint()
       ..color = Colors.white.withOpacity(0.8)
       ..style = PaintingStyle.fill;
-    
-    canvas.drawCircle(Offset(size.width * 0.8, midY), 6.0, highlightPaint);
   }
 
   @override
@@ -227,8 +228,9 @@ class _OpeningArcPainter extends CustomPainter {
       ..strokeWidth = 4.0;
 
     final path = Path();
-    path.moveTo(0, size.height * 0.7);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.3, size.width, size.height * 0.5);
+    // Move to bottom: 0.8->0.6 range
+    path.moveTo(0, size.height * 0.8);
+    path.quadraticBezierTo(size.width * 0.5, size.height * 0.6, size.width, size.height * 0.75);
     
     canvas.drawPath(path, paint);
   }
