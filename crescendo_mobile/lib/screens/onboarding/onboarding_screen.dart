@@ -103,18 +103,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         // Using bodyWidget for custom alignment
                         bodyWidget: Column(
                           children: [
-                            Text(
-                              'They help your voice:',
-                              style: bodyStyle,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
+                            // Text(
+                            //   'They help your voice:',
+                            //   style: bodyStyle,
+                            //   textAlign: TextAlign.left,
+                            // ),
+                            // const SizedBox(height: 16),
                             // Constrained width container to make left-aligned bullets look centered
                             Container(
                               constraints: const BoxConstraints(maxWidth: 260),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Text(
+                              'They help your voice:',
+                              style: bodyStyle,
+                              textAlign: TextAlign.left,
+                            ),
+                            const SizedBox(height: 16),
                                   _buildBulletPoint('find notes faster', bodyStyle),
                                   _buildBulletPoint('stay in tune with less effort', bodyStyle),
                                   _buildBulletPoint('reduce tension and fatigue', bodyStyle),

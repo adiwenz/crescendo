@@ -4,8 +4,8 @@ import '../../../../design/app_text.dart';
 
 class OnboardingCard extends StatelessWidget {
   final String title;
-  final String? body; // Made optional
-  final Widget? bodyWidget; // New custom widget option
+  final String? body;
+  final Widget? bodyWidget;
   final Widget visual;
   final VoidCallback onContinue;
   final String ctaText;
@@ -22,90 +22,90 @@ class OnboardingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Using LayoutBuilder to manage the split intelligently
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        
-        return Column(
-          children: [
-             // visual takes up available space, but at least 40% of screen to look good
-            Expanded(
-              flex: 4, 
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(24),
-                child: visual,
-              ),
-            ),
-             // Text area takes remaining space (flex 5 = ~55%). 
-             // We use SingleChildScrollView inside to be absolutely safe against overflow.
-            Expanded(
-              flex: 5,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end, // Push content down if there's extra space
-                  children: [
-                    // Flexible content area that can scroll
-                     Flexible(
-                       child: SingleChildScrollView(
-                         child: Column(
-                           mainAxisSize: MainAxisSize.min,
-                           children: [
-                             const SizedBox(height: 16),
-                             Text(
-                               title,
-                               style: AppText.h1.copyWith(fontSize: 28, height: 1.2),
-                               textAlign: TextAlign.center,
-                             ),
-                             const SizedBox(height: 16),
-                             if (bodyWidget != null)
-                               bodyWidget!
-                             else
-                               Text(
-                                 body!,
-                                 style: AppText.body.copyWith(fontSize: 16, height: 1.5, color: AppColors.textSecondary.withOpacity(0.8)),
-                                 textAlign: TextAlign.center,
-                               ),
-                             const SizedBox(height: 24),
-                           ],
-                         ),
-                       ),
-                     ),
-                    // Button always at the bottom of this section
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: onContinue,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: Colors.white,
-                          elevation: 4,
-                          shadowColor: AppColors.accent.withOpacity(0.4),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                        ),
-                        child: Text(
-                          ctaText,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+    // New layout: Title Top, Body Middle, CTA Bottom.
+    // We use a Stack to let the Visual inhabit the space freely (likely middle/background),
+    // while the text content is strictly positioned.
+    return Stack(
+      children: [
+        // Layer 1: Visual
+        // We let the visual fill the space, or we could center it.
+        // Given the painters use "size.height * 0.x", filling the screen allows them to draw relative to full height.
+        Positioned.fill(
+          child: visual,
+        ),
+
+        // Layer 2: Text Content
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              children: [
+                // Top: Title
+                const SizedBox(height: 40), // Top spacing
+                Text(
+                  title,
+                  style: AppText.h1.copyWith(
+                    fontSize: 32, // Larger/Cleaner
+                    height: 1.2,
+                    fontWeight: FontWeight.w600,
+                    // color: Colors.white, // REVERTED: Background is light (#dfbdfe), so text must be dark.
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                
+                // Spacer to push Body to middle
+                const Spacer(),
+                
+                // Middle: Body
+                // We wrap in a container to ensure it doesn't span too wide
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: bodyWidget ?? Text(
+                    body!,
+                    style: AppText.body.copyWith(
+                      fontSize: 18, // Slightly larger for readability
+                      height: 1.5,
+                      color: AppColors.textPrimary.withOpacity(0.8),
+                      // fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+                // Spacer to push CTA to bottom
+                const Spacer(),
+
+                // Bottom: CTA
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: onContinue,
+                    style: ElevatedButton.styleFrom(
+                      // Let's use the Accent color as it's the primary action.
+                      backgroundColor: AppColors.accent, 
+                      foregroundColor: Colors.white,
+                      elevation: 0, // Flat/Modern
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    const SizedBox(height: 48), // Bottom padding
-                  ],
+                    child: Text(
+                      ctaText,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 60), // Space for bottom dots and safe area
+              ],
             ),
-          ],
-        );
-      }
+          ),
+        ),
+      ],
     );
   }
 }
