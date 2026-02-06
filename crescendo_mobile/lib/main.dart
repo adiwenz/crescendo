@@ -12,6 +12,7 @@ import 'services/storage/db.dart';
 import 'utils/daily_completion_utils.dart';
 
 import 'core/locator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +48,12 @@ Future<void> main() async {
   // Pre-warm database to avoid lazy loading jank on first navigation
   await AppDatabase().database;
   
-  runApp(const CrescendoApp());
+  // Check onboarding state
+  final prefs = await SharedPreferences.getInstance();
+  final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
+  final initialRoute = seenOnboarding ? '/' : '/onboarding';
+
+  runApp(CrescendoApp(initialRoute: initialRoute));
 }
 
 /// Check if device might be using wireless debugging and warn.

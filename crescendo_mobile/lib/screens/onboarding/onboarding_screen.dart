@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../design/app_colors.dart';
 import '../../design/app_text.dart';
 import 'widgets/onboarding_card.dart';
@@ -41,7 +42,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  void _finishOnboarding() {
+  Future<void> _finishOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('seenOnboarding', true);
+
+    if (!mounted) return;
     // Navigate to home or initial route
     // Using simple replacement for now, usually updates a persistent "seenOnboarding" pref
     Navigator.of(context).pushReplacementNamed('/');

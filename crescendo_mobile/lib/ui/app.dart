@@ -22,7 +22,8 @@ import '../debug/duplex_audio_test_screen.dart';
 import '../debug/one_clock_debug_test_screen.dart';
 
 class CrescendoApp extends StatefulWidget {
-  const CrescendoApp({super.key});
+  final String initialRoute;
+  const CrescendoApp({super.key, this.initialRoute = '/'});
 
   @override
   State<CrescendoApp> createState() => _CrescendoAppState();
@@ -80,7 +81,7 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 );
               },
               navigatorObservers: [routeObserver],
-              initialRoute: '/onboarding',
+              initialRoute: widget.initialRoute,
               routes: {
                 '/': (_) => _RootScaffold(currentIndex: _index, onTab: (i) => setState(() => _index = i)),
                 '/settings': (_) => const SettingsScreen(),
