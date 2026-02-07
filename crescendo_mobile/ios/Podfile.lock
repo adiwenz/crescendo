@@ -6,6 +6,8 @@ PODS:
   - Flutter (1.0.0)
   - flutter_midi_pro (0.0.1):
     - Flutter
+  - flutter_native_splash (2.4.3):
+    - Flutter
   - flutter_sound (9.30.0):
     - Flutter
     - flutter_sound_core (= 9.30.0)
@@ -37,6 +39,7 @@ DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
   - Flutter (from `Flutter`)
   - flutter_midi_pro (from `.symlinks/plugins/flutter_midi_pro/ios`)
+  - flutter_native_splash (from `.symlinks/plugins/flutter_native_splash/ios`)
   - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - one_clock_audio (from `.symlinks/plugins/one_clock_audio/ios`)
@@ -61,6 +64,8 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_midi_pro:
     :path: ".symlinks/plugins/flutter_midi_pro/ios"
+  flutter_native_splash:
+    :path: ".symlinks/plugins/flutter_native_splash/ios"
   flutter_sound:
     :path: ".symlinks/plugins/flutter_sound/ios"
   integration_test:
@@ -87,6 +92,7 @@ SPEC CHECKSUMS:
   audioplayers_darwin: 877d9a4d06331c5c374595e46e16453ac7eafa40
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_midi_pro: 0a87e01e0bd9695047b0654dcbb61ce6d82621be
+  flutter_native_splash: df59bb2e1421aa0282cb2e95618af4dcb0c56c29
   flutter_sound: 0e2f5015f122fc8be5ab9afd9e4b7f2aefbd65c8
   flutter_sound_core: 7f2626d249d3a57bfa6da892ef7e22d234482c1a
   integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573

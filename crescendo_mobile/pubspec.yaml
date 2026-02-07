@@ -40,6 +40,7 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   sqflite_common_ffi: ^2.3.0
   flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 flutter:
   uses-material-design: true
@@ -66,3 +67,37 @@ flutter_launcher_icons:
     generate: true
   linux:
     generate: true
+
+flutter_native_splash:
+  image: assets/splash.png
+  image_dark: assets/splash.png
+  # We can't do a gradient natively easily without a background image, 
+  # so we pick the top color or a solid approximation. 
+  # Actually, the user wants the generated image which IS the splash screen.
+  # So we should set the background image (image) to fill the screen?
+  # No, `image` is the center icon. `background_image` is the background.
+  # But the generated image is the WHOLE screen (gradient + icon).
+  # So we should use `background_image` instead of `color` + `image`.
+  # Let's retry the config below.
+
+  # Since the generated image has the gradient AND the icon embedded:
+  background_image: "assets/splash_background.png"
+  
+  # For dark mode, we might want a different one, but usually splash is consistent.
+  # Use the same one for now to match the user request.
+  background_image_dark: "assets/splash_background.png"
+
+  android_12:
+    # Android 12+ uses the icon + background color
+    # We can't fully enforce the gradient background image on Android 12 launch API easily
+    # without window background hacks.
+    # Best effort: use the top color and the center icon if we had it separate.
+    # Since we only have the full image, let's try setting the background color 
+    # and maybe the image as the "branded icon".
+    # Actually, Android 12 splashes are constrained.
+    # Safe bet for now: Use the generated image as background_image for iOS/Old Android.
+    # For Android 12, let's use the image as the icon and the color as background.
+    image: assets/splash.png
+    background_image: "assets/splash_background.png"
+  
+  web: false
