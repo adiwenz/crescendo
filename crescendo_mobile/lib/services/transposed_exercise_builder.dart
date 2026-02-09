@@ -130,8 +130,8 @@ class TransposedExerciseBuilder {
         : scaledSegments.map((s) => s.endMs).reduce(math.max);
     final patternDurationTicks = clock.secondsToTicks(patternDurationMs / 1000.0);
     
-    // Gap: 2 beats at 120 BPM = 1.0 seconds = 960 ticks (at 480 PPQ)
-    final gapTicks = clock.secondsToTicks(1.0); 
+    // Gap: 4 beats at 120 BPM = 2.0 seconds = 1920 ticks (at 480 PPQ)
+    final gapTicks = clock.secondsToTicks(2.0); 
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
@@ -202,17 +202,22 @@ class TransposedExerciseBuilder {
       if (nextHigh <= effectiveHighest) {
         final gapStartTick = currentTick + patternDurationTicks;
         
-        // Chord 1: Current Key (Wait 0.2s -> 0.2s play)
-        // 0.2s = 20% of 1s (2 beats) = ~192 ticks @ 120bpm
-        final waitTicks = clock.secondsToTicks(0.2);
-        final chordDurTicks = clock.secondsToTicks(0.2);
+        // Timing Logic (4 Beats Total Gap):
+        // Beat 1: Silence (Wait)
+        // Beat 2: Chord 1 (Current Key) - Duration 1 beat
+        // Beat 3: Chord 2 (Target Key) - Duration 1.5 beats (dotted quarter)
+        // Beat 4 (second half): Silence
         
-        final chord1StartTick = gapStartTick + waitTicks;
+        const ticksPerBeat = MusicalClock.ppq; // 480
+        
+        // Chord 1
+        final chord1StartTick = gapStartTick + ticksPerBeat; // Start at Beat 2
+        final chord1DurTicks = ticksPerBeat; // 1 beat duration
         
         // Add Chord 1 Event
         allChordEvents.add(TickChordEvent(
           startTick: chord1StartTick,
-          durationTicks: chordDurTicks,
+          durationTicks: chord1DurTicks,
           chord: Chord.I_Major,
           octaveOffset: 0,
         ));
@@ -227,18 +232,19 @@ class TransposedExerciseBuilder {
         for (final midi in chord1Notes) {
           allHarmony.add(ReferenceNote(
             startSec: clock.ticksToSeconds(chord1StartTick),
-            endSec: clock.ticksToSeconds(chord1StartTick + chordDurTicks),
+            endSec: clock.ticksToSeconds(chord1StartTick + chord1DurTicks),
             midi: midi,
           ));
         }
 
-        // Chord 2: New Key (Immediately after Chord 1)
-        final chord2StartTick = chord1StartTick + chordDurTicks;
+        // Chord 2
+        final chord2StartTick = gapStartTick + (ticksPerBeat * 2); // Start at Beat 3
+        final chord2DurTicks = (ticksPerBeat * 1.5).round(); // 1.5 beats (dotted quarter)
         
         // Add Chord 2 Event
         allChordEvents.add(TickChordEvent(
           startTick: chord2StartTick,
-          durationTicks: chordDurTicks,
+          durationTicks: chord2DurTicks,
           chord: Chord.I_Major,
           octaveOffset: 0,
         ));
@@ -253,7 +259,7 @@ class TransposedExerciseBuilder {
         for (final midi in chord2Notes) {
           allHarmony.add(ReferenceNote(
             startSec: clock.ticksToSeconds(chord2StartTick),
-            endSec: clock.ticksToSeconds(chord2StartTick + chordDurTicks),
+            endSec: clock.ticksToSeconds(chord2StartTick + chord2DurTicks),
             midi: midi,
           ));
         }
