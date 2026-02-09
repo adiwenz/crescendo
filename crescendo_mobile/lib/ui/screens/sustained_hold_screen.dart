@@ -116,7 +116,9 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
   
   void _nextNote() {
       _controller.nextNote();
-      _startNote();
+      if (_controller.state.value != SustainedHoldState.review) {
+          _startNote();
+      }
   }
 
   @override
@@ -341,7 +343,7 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
                                       foregroundColor: colors.surface0,
                                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)
                                   ),
-                                  child: const Text("Next Note"),
+                                  child: Text(_controller.currentNoteIndex.value == SustainedHoldController.notesInSet - 1 ? "Finish" : "Next Note"),
                               )
                           ],
                       )
