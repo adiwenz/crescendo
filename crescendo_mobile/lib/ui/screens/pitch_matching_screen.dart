@@ -119,18 +119,9 @@ class _PitchMatchingScreenState extends State<PitchMatchingScreen>
     final accentColor = colors.lavenderGlow; 
     final surfaceColor = colors.surface0;
     
-    return Scaffold(
-      backgroundColor: surfaceColor,
-      appBar: AppBar(
-        title: Text(widget.exercise.name),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.close, color: colors.textPrimary),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
+    return Container(
+      color: surfaceColor,
+      child: SafeArea(
         child: Column(
           children: [
             // Top Status / Instruction
@@ -167,10 +158,10 @@ class _PitchMatchingScreenState extends State<PitchMatchingScreen>
                     // Target Line (Static)
                     Container(
                       width: 200,
-                      height: 4,
+                      height: 8,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                     ),
                     
