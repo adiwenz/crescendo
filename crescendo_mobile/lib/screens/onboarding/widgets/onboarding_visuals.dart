@@ -123,84 +123,82 @@ class _LayeredLinesPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// SCREEN 3: How It Works - Stabilizing Line
-class HowItWorksVisual extends StatefulWidget {
+// SCREEN 3: How It Works - Multiple Glowing Swoops (Static)
+class HowItWorksVisual extends StatelessWidget {
   const HowItWorksVisual({super.key});
 
   @override
-  State<HowItWorksVisual> createState() => _HowItWorksVisualState();
-}
-
-class _HowItWorksVisualState extends State<HowItWorksVisual> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return CustomPaint(
-          painter: _StabilizingLinePainter(_controller.value),
-          size: Size.infinite,
-        );
-      },
+    // Static frame (progress = 0.0 or a nice offset like 0.25)
+    // Let's use 0.25 to catch some curve variation
+    return CustomPaint(
+      painter: _GlowingSwoopsPainter(0.25),
+      size: Size.infinite,
     );
   }
 }
 
-class _StabilizingLinePainter extends CustomPainter {
+class _GlowingSwoopsPainter extends CustomPainter {
   final double progress;
-  _StabilizingLinePainter(this.progress);
+  _GlowingSwoopsPainter(this.progress);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
+    // We want multiple lines "swooping" and intersecting gracefully
+    final count = 4;
+    
+    for (int i = 0; i < count; i++) {
+      // Phase shift for each line so they don't move firmly together
+      double phase = (i * 0.5) + (progress * 2 * math.pi);
+      
+      // Base opacity varies by line index
+      double opacity = 0.3 + (i * 0.15);
+      if (opacity > 1.0) opacity = 1.0;
 
-    final path = Path();
-    // Move to bottom: 0.7 range
-    double midY = size.height * 0.7;
-    
-    path.moveTo(0, midY);
-    
-    // Line moves from wavy to straight
-    for (double x = 0; x <= size.width; x+= 5) {
-      double wave = math.sin((x / 50) + (progress * 2 * math.pi)) * 20;
-      // Dampen wave as it goes right
-      double dampen = 1.0 - (x / size.width); 
-      // Or dampen based on time to show stabilization? 
-      // Let's dampen based on X to show "process" of stabilizing
-      path.lineTo(x, midY + (wave * dampen));
+      // GLOW PAINT (Thick, blurred)
+      final glowPaint = Paint()
+        ..color = Colors.white.withOpacity(opacity * 0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+
+      // MAIN LINE PAINT (Thin, sharp)
+      final linePaint = Paint()
+        ..color = Colors.white.withOpacity(opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..strokeCap = StrokeCap.round;
+        
+      final path = Path();
+      
+      // Start point varies slightly
+      double startY = size.height * 0.65 + (math.sin(phase) * 20);
+      path.moveTo(0, startY);
+      
+      // Control points for cubic bezier
+      // CP1
+      double cp1x = size.width * 0.3;
+      double cp1y = size.height * 0.55 + (math.cos(phase * 0.7) * 60);
+      
+      // CP2
+      double cp2x = size.width * 0.7;
+      double cp2y = size.height * 0.75 + (math.sin(phase * 0.9) * 60);
+      
+      // End Point
+      double endY = size.height * 0.60 + (math.cos(phase) * 20);
+      
+      path.cubicTo(cp1x, cp1y, cp2x, cp2y, size.width, endY);
+      
+      // Draw Glow
+      canvas.drawPath(path, glowPaint);
+      // Draw Line
+      canvas.drawPath(path, linePaint);
     }
-    
-    canvas.drawPath(path, paint);
-
-    // Highlight at end
-    final highlightPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.fill;
   }
 
   @override
-  bool shouldRepaint(_StabilizingLinePainter oldDelegate) => true;
+  bool shouldRepaint(_GlowingSwoopsPainter oldDelegate) => false;
 }
 
 // SCREEN 4: Get Started - Opening Arc
