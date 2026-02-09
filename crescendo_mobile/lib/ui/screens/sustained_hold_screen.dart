@@ -4,10 +4,10 @@ import '../../controllers/sustained_hold_controller.dart';
 import '../../models/vocal_exercise.dart';
 import '../../services/audio_synth_service.dart';
 import '../../services/recording_service.dart';
-import '../../services/progress_service.dart';
 import '../theme/app_theme.dart';
 import '../../models/reference_note.dart';
 import '../../utils/pitch_math.dart';
+import '../widgets/pitch_contour_card.dart';
 
 class SustainedHoldScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -74,13 +74,10 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
           }
           _controller.updateTime(0.05);
           
-          if (_controller.state.value == SustainedHoldState.intermission) {
+          
+          if (_controller.state.value == SustainedHoldState.feedback) {
               timer.cancel();
-              _stopListening();
-              // Auto-advance after short delay
-              Future.delayed(const Duration(milliseconds: 1000), () {
-                  if (!_isDisposed) _startNote();
-              });
+              _finishSet(); 
           } else if (_controller.state.value == SustainedHoldState.review) {
               timer.cancel();
               _finishSet();
@@ -111,6 +108,16 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
       // Save Attempt
       // ... implementation ...
   }
+  
+  void _repeatNote() {
+      _controller.repeatNote();
+      _startNote();
+  }
+  
+  void _nextNote() {
+      _controller.nextNote();
+      _startNote();
+  }
 
   @override
   void dispose() {
@@ -135,6 +142,8 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
             builder: (context, state, _) {
                 if (state == SustainedHoldState.review) {
                     return _buildReviewScreen(context);
+                } else if (state == SustainedHoldState.feedback) {
+                    return _buildFeedbackScreen(context);
                 }
                 return _buildExerciseScreen(context);
             }
@@ -210,6 +219,7 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
                           return ValueListenableBuilder<bool>(
                               valueListenable: _controller.isSnapped,
                               builder: (context, snapped, _) {
+
                                   double dy = 0;
                                   bool isVisible = false;
                                   const double rangeCents = 60.0; 
@@ -286,31 +296,109 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
       );
   }
 
+  Widget _buildFeedbackScreen(BuildContext context) {
+      final colors = AppThemeColors.of(context);
+      final result = _controller.lastResult;
+      
+      return Center(
+          child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                       Text("Note Complete", style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: colors.textPrimary
+                      )),
+                      const SizedBox(height: 24),
+                      
+                      if (result != null)
+                          PitchContourCard(
+                              targetMidi: result.targetMidi,
+                              frames: result.frames,
+                              height: 150,
+                          ),
+                          
+                      const SizedBox(height: 48),
+                      
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                              OutlinedButton(
+                                  onPressed: _repeatNote,
+                                  style: OutlinedButton.styleFrom(
+                                      foregroundColor: colors.lavenderGlow,
+                                      side: BorderSide(color: colors.lavenderGlow),
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)
+                                  ),
+                                  child: const Text("Repeat Note"),
+                              ),
+                              ElevatedButton(
+                                  onPressed: _nextNote,
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: colors.lavenderGlow,
+                                      foregroundColor: colors.surface0,
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)
+                                  ),
+                                  child: const Text("Next Note"),
+                              )
+                          ],
+                      )
+                  ],
+              ),
+          ),
+      );
+  }
+
   Widget _buildReviewScreen(BuildContext context) {
        final colors = AppThemeColors.of(context);
        return Center(
-           child: Column(
-               mainAxisAlignment: MainAxisAlignment.center,
-               children: [
-                   Text("Set Complete!", style: TextStyle(
-                       fontSize: 24, 
-                       fontWeight: FontWeight.bold,
-                       color: colors.textPrimary
-                   )),
-                   const SizedBox(height: 24),
-                   // Simple list of results
-                   ..._controller.results.map((r) => Padding(
-                       padding: const EdgeInsets.all(8.0),
-                       child: Text("Note ${PitchMath.midiToName(r.targetMidi.toInt())}: ${(r.stability * 100).toInt()}% Stable", 
-                           style: TextStyle(color: colors.textSecondary)
-                       ),
-                   )),
-                   const SizedBox(height: 32),
-                   ElevatedButton(
-                       onPressed: () => Navigator.of(context).pop(),
-                       child: const Text("Done"),
-                   )
-               ],
+           child: SingleChildScrollView(
+             child: Padding(
+               padding: const EdgeInsets.all(24.0),
+               child: Column(
+                   mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+                       Text("Set Complete!", style: TextStyle(
+                           fontSize: 24, 
+                           fontWeight: FontWeight.bold,
+                           color: colors.textPrimary
+                       )),
+                       const SizedBox(height: 24),
+                       // List of cards
+                       ..._controller.results.map((r) => Padding(
+                           padding: const EdgeInsets.only(bottom: 16.0),
+                           child: Column(
+                               crossAxisAlignment: CrossAxisAlignment.start,
+                               children: [
+                                   Text("Note ${PitchMath.midiToName(r.targetMidi.toInt())}", 
+                                       style: TextStyle(
+                                           color: colors.textSecondary,
+                                           fontWeight: FontWeight.w600
+                                       )
+                                   ),
+                                   const SizedBox(height: 8),
+                                   PitchContourCard(
+                                       targetMidi: r.targetMidi,
+                                       frames: r.frames,
+                                       height: 80,
+                                   ),
+                               ],
+                           ),
+                       )),
+                       const SizedBox(height: 32),
+                       ElevatedButton(
+                           onPressed: () => Navigator.of(context).pop(),
+                           style: ElevatedButton.styleFrom(
+                               backgroundColor: colors.lavenderGlow,
+                               foregroundColor: colors.surface0,
+                           ),
+                           child: const Text("Done"),
+                       )
+                   ],
+               ),
+             ),
            ),
        );
   }

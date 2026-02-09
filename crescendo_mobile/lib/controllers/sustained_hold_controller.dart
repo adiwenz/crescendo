@@ -1,4 +1,4 @@
-import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/pitch_frame.dart';
 import '../utils/pitch_ball_controller.dart';
@@ -7,7 +7,7 @@ import '../utils/pitch_math.dart';
 enum SustainedHoldState {
   intro,      // Initial check/countdown
   playing,    // Reference playing, user singing
-  intermission, // Between notes
+  feedback,   // Showing contour card for current note
   review,     // Post-set review
 }
 
@@ -46,6 +46,7 @@ class SustainedHoldController extends ChangeNotifier {
 
   double get targetMidi => _targetMidi;
   List<SustainedNoteResult> get results => List.unmodifiable(_results);
+  SustainedNoteResult? get lastResult => _results.isNotEmpty ? _results.last : null;
 
   void init(List<double> targets) {
     _targetMidis = targets;
@@ -88,6 +89,25 @@ class SustainedHoldController extends ChangeNotifier {
       state.value = SustainedHoldState.playing;
   }
   
+  void repeatNote() {
+      // Remove the last result if we are repeating
+      if (_results.isNotEmpty && _results.length > currentNoteIndex.value) {
+          _results.removeLast();
+      }
+      _prepareNote(currentNoteIndex.value);
+      // Caller (UI) is responsible for starting audio/timer again
+      // We just reset internal state and prepare.
+  }
+  
+  void nextNote() {
+      if (currentNoteIndex.value < notesInSet - 1) {
+           _prepareNote(currentNoteIndex.value + 1);
+           // Caller (UI) starts
+      } else {
+          state.value = SustainedHoldState.review;
+      }
+  }
+  
   void updateTime(double dt) {
       if (state.value != SustainedHoldState.playing) return;
       
@@ -113,13 +133,7 @@ class SustainedHoldController extends ChangeNotifier {
           frames: List.from(_currentNoteFrames),
       ));
       
-      if (currentNoteIndex.value < notesInSet - 1) {
-          state.value = SustainedHoldState.intermission;
-          // Could auto-advance or wait for UI
-           _prepareNote(currentNoteIndex.value + 1);
-      } else {
-          state.value = SustainedHoldState.review;
-      }
+      state.value = SustainedHoldState.feedback;
   }
 
   void processPitchFrame(PitchFrame frame) {
