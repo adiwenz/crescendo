@@ -36,7 +36,7 @@ class PitchContourCard extends StatelessWidget {
           painter: _PitchContourPainter(
             targetMidi: targetMidi,
             frames: frames,
-            lineColor: colors.textPrimary,
+            lineColor: colors.lavenderGlow.withValues(alpha: 0.5),
             snappedColor: colors.lavenderGlow,
             targetNoteColor: Colors.grey.withValues(alpha: 0.4),
           ),

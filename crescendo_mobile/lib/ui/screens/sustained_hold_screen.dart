@@ -272,24 +272,10 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
               ValueListenableBuilder<double>(
                   valueListenable: _controller.timeRemaining,
                   builder: (context, time, _) {
-                      return Column(
-                          children: [
-                              Text("${time.toStringAsFixed(1)}s", style: TextStyle(
-                                  fontSize: 24,
-                                  color: colors.textSecondary
-                              )),
-                              const SizedBox(height: 8),
-                              ValueListenableBuilder<double>(
-                                  valueListenable: _controller.stabilityScore,
-                                  builder: (context, score, _) {
-                                      return Text("Stability: ${(score * 100).toInt()}%", style: TextStyle(
-                                          color: colors.lavenderGlow,
-                                          fontWeight: FontWeight.w600
-                                      ));
-                                  }
-                              )
-                          ],
-                      );
+                      return Text("${time.toStringAsFixed(1)}s", style: TextStyle(
+                          fontSize: 24,
+                          color: colors.textSecondary
+                      ));
                   }
               ),
               
