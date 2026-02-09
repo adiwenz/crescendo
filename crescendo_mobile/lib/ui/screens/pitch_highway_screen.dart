@@ -14,9 +14,11 @@ import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
 import '../../services/pitch_highway_session_controller.dart';
 import '../../services/recording_service.dart';
-import '../../services/reference_audio_generator.dart';
+import '../../audio/ref_audio/wav_cache_manager.dart';
+import '../../audio/ref_audio/ref_spec.dart';
 import '../../services/transposed_exercise_builder.dart';
 import '../../services/vocal_range_service.dart';
+import '../../services/reference_audio_generator.dart';
 import '../../utils/audio_constants.dart';
 import '../../ui/theme/app_theme.dart';
 import '../../ui/widgets/app_background.dart';
@@ -78,10 +80,16 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
       
       // 3. Notes
       debugPrint('[V2] preparing plan...');
-      final plan = await ReferenceAudioGenerator.instance.prepare(
-        widget.exercise,
-        widget.pitchDifficulty,
+      
+      final refSpec = RefSpec(
+        exerciseId: widget.exercise.id,
+        lowMidi: range.$1,
+        highMidi: range.$2,
+        extraOptions: {'difficulty': widget.pitchDifficulty.name},
+        renderVersion: 'v2',
       );
+      
+      final plan = await WavCacheManager.instance.get(refSpec, exercise: widget.exercise);
       
       if (!mounted) return;
       

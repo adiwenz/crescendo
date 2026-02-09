@@ -73,6 +73,7 @@ class ReviewAudioBounceService {
   /// Standardized at 48kHz for perfect hardware sync.
   Future<File> renderReferenceWav({
     required List<ReferenceNote> notes,
+    List<ReferenceNote> harmonyNotes = const [],
     required double durationSec,
     required int sampleRate,
     String? savePath,
@@ -86,6 +87,7 @@ class ReviewAudioBounceService {
     // 1. Generate float samples (synthesis)
     final samples = _generateSamples(
       notes: notes,
+      harmonyNotes: harmonyNotes,
       sampleRate: sampleRate,
       durationSec: durationSec + totalSyncOffset,
       timeOffsetSec: totalSyncOffset,
@@ -132,6 +134,7 @@ class ReviewAudioBounceService {
   /// Optimized samples generation
   Float32List _generateSamples({
     required List<ReferenceNote> notes,
+    List<ReferenceNote> harmonyNotes = const [],
     required int sampleRate,
     required double durationSec,
     double timeOffsetSec = 0.0,
@@ -141,56 +144,67 @@ class ReviewAudioBounceService {
     final fadeFrames = ((fadeInOutMs / 1000.0) * sampleRate).toInt();
     final invSampleRate = 1.0 / sampleRate;
 
-    for (final note in notes) {
-      final startFrame = ((note.startSec + timeOffsetSec) * sampleRate).toInt();
-      final endFrame = math.min(((note.endSec + timeOffsetSec) * sampleRate).toInt(), totalFrames);
-      final noteFrames = endFrame - startFrame;
-      
-      if (noteFrames <= 0 || startFrame >= totalFrames) continue;
-      
-      final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
-      
-      // Pre-calculate phase increments (normalized to [0, 1])
-      final p1Cr = hz * invSampleRate;
-      final p2Cr = p1Cr * 2.0;
-      final p3Cr = p1Cr * 3.0;
-      final p4Cr = p1Cr * 4.0;
-      
-      double p1 = 0.0, p2 = 0.0, p3 = 0.0, p4 = 0.0;
-      
-      for (var f = 0; f < noteFrames; f++) {
-        final frameIndex = startFrame + f;
-        if (frameIndex >= totalFrames) break;
-        
-        final noteTime = f * invSampleRate;
-        
-        // Sum harmonics using fast lookup
-        final fundamental = _fastSin(p1);
-        final harmonic2 = 0.6 * _fastSin(p2);
-        final harmonic3 = 0.3 * _fastSin(p3);
-        final harmonic4 = 0.15 * _fastSin(p4);
-        
-        // Advance phases
-        p1 = (p1 + p1Cr); p1 -= p1.floor();
-        p2 = (p2 + p2Cr); p2 -= p2.floor();
-        p3 = (p3 + p3Cr); p3 -= p3.floor();
-        p4 = (p4 + p4Cr); p4 -= p4.floor();
-        
-        // Envelope: 20ms attack, exponential decay
-        final attack = (noteTime * 50.0); // 1.0 / 0.02
-        final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
-        final val = 0.45 * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
-        
-        // Apply fade in/out
-        double fade = 1.0;
-        if (f < fadeFrames) {
-          fade = f / fadeFrames;
-        } else if (f >= noteFrames - fadeFrames) {
-          fade = (noteFrames - f) / fadeFrames;
+    // Helper to mix notes into buffer
+    void mixNotes(List<ReferenceNote> layerNotes, double amplitudeScale) {
+        for (final note in layerNotes) {
+          final startFrame = ((note.startSec + timeOffsetSec) * sampleRate).toInt();
+          final endFrame = math.min(((note.endSec + timeOffsetSec) * sampleRate).toInt(), totalFrames);
+          final noteFrames = endFrame - startFrame;
+          
+          if (noteFrames <= 0 || startFrame >= totalFrames) continue;
+          
+          final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
+          
+          // Pre-calculate phase increments (normalized to [0, 1])
+          final p1Cr = hz * invSampleRate;
+          final p2Cr = p1Cr * 2.0;
+          final p3Cr = p1Cr * 3.0;
+          final p4Cr = p1Cr * 4.0;
+          
+          double p1 = 0.0, p2 = 0.0, p3 = 0.0, p4 = 0.0;
+          
+          for (var f = 0; f < noteFrames; f++) {
+            final frameIndex = startFrame + f;
+            if (frameIndex >= totalFrames) break;
+            
+            final noteTime = f * invSampleRate;
+            
+            // Sum harmonics using fast lookup
+            final fundamental = _fastSin(p1);
+            final harmonic2 = 0.6 * _fastSin(p2);
+            final harmonic3 = 0.3 * _fastSin(p3);
+            final harmonic4 = 0.15 * _fastSin(p4);
+            
+            // Advance phases
+            p1 = (p1 + p1Cr); p1 -= p1.floor();
+            p2 = (p2 + p2Cr); p2 -= p2.floor();
+            p3 = (p3 + p3Cr); p3 -= p3.floor();
+            p4 = (p4 + p4Cr); p4 -= p4.floor();
+            
+            // Envelope: 20ms attack, exponential decay
+            final attack = (noteTime * 50.0); // 1.0 / 0.02
+            final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
+            final val = amplitudeScale * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
+            
+            // Apply fade in/out
+            double fade = 1.0;
+            if (f < fadeFrames) {
+              fade = f / fadeFrames;
+            } else if (f >= noteFrames - fadeFrames) {
+              fade = (noteFrames - f) / fadeFrames;
+            }
+            
+            samples[frameIndex] += (val * fade);
+          }
         }
-        
-        samples[frameIndex] += (val * fade);
-      }
+    }
+
+    // Mix Melody (0.45 amplitude)
+    mixNotes(notes, 0.45);
+    
+    // Mix Harmony (0.15 amplitude - background)
+    if (harmonyNotes.isNotEmpty) {
+      mixNotes(harmonyNotes, 0.15);
     }
     
     return samples;

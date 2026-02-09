@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart' show compute, debugPrint;
 
+import '../audio/ref_audio/wav_cache_manager.dart';
+
 import '../models/pitch_highway_difficulty.dart';
 import '../models/reference_note.dart';
 import '../services/exercise_repository.dart';
@@ -87,6 +89,18 @@ class ExerciseCacheService {
     } finally {
       _isGenerating = false;
     }
+    
+    // Trigger background WAV generation
+    // We do this after the note cache is ready so the UI is responsive first
+    // (though prewarm is async/non-blocking anyway)
+    final exercises = _exerciseRepo.getExercises();
+    // Default to beginner difficulty for prewarming
+    WavCacheManager.instance.prewarm(
+      exercises: exercises,
+      lowMidi: lowestMidi,
+      highMidi: highestMidi,
+      difficulty: PitchHighwayDifficulty.easy,
+    );
   }
 
   /// Load cache for the current range (if range is set).
@@ -151,18 +165,19 @@ Map<String, Map<String?, List<ReferenceNote>>> _generateCacheWorker(_CacheGenPar
           leadInSec: AudioConstants.leadInSec,
           difficulty: difficulty,
         );
-        notes = sirenResult.audioNotes; // Cache only audio notes (3 notes)
+        notes = sirenResult.melody; // Cache only audio notes (3 notes)
       } else {
-        notes = TransposedExerciseBuilder.buildTransposedSequence(
+        final sequence = TransposedExerciseBuilder.buildTransposedSequence(
           exercise: exercise,
           lowestMidi: lowestMidi,
           highestMidi: highestMidi,
           leadInSec: AudioConstants.leadInSec,
           difficulty: difficulty,
         );
+        notes = sequence.melody;
       }
 
-      final difficultyKey = difficulty.name;
+      final difficultyKey = difficulty?.name;
       if (!cache.containsKey(exercise.id)) {
         cache[exercise.id] = {};
       }
@@ -179,15 +194,16 @@ Map<String, Map<String?, List<ReferenceNote>>> _generateCacheWorker(_CacheGenPar
         leadInSec: AudioConstants.leadInSec,
         difficulty: null, // Default difficulty for cache
       );
-      notesDefault = sirenResult.audioNotes;
+      notesDefault = sirenResult.melody; // Cache only audio notes
     } else {
-      notesDefault = TransposedExerciseBuilder.buildTransposedSequence(
+      final sequence = TransposedExerciseBuilder.buildTransposedSequence(
         exercise: exercise,
         lowestMidi: lowestMidi,
         highestMidi: highestMidi,
         leadInSec: AudioConstants.leadInSec,
         difficulty: null,
       );
+      notesDefault = sequence.melody;
     }
 
     if (!cache.containsKey(exercise.id)) {
@@ -198,3 +214,5 @@ Map<String, Map<String?, List<ReferenceNote>>> _generateCacheWorker(_CacheGenPar
   
   return cache;
 }
+
+

@@ -1,3 +1,4 @@
+import 'harmonic_models.dart';
 import 'breathing_phase.dart';
 import 'exercise_note_segment.dart';
 import 'pitch_highway_spec.dart';
@@ -34,6 +35,7 @@ class VocalExercise {
   final bool isGlide; // True if exercise uses continuous pitch movement (sirens, slides, etc.)
   final List<BreathingPhase>? breathingPhases; // For breathing exercises
   final int? breathingRepeatCount; // null = 1, 0 = infinite
+  final List<ChordEvent>? chordProgression; // Harmonic context for the exercise
 
   VocalExercise({
     required this.id,
@@ -53,6 +55,7 @@ class VocalExercise {
     bool? isGlide,
     this.breathingPhases,
     this.breathingRepeatCount,
+    this.chordProgression,
   })  : iconKey = iconKey ?? _defaultIconKey(type),
         estimatedMinutes = estimatedMinutes ?? _estimateMinutes(durationSeconds),
         isGlide = isGlide ?? _defaultIsGlide(type, highwaySpec);
@@ -90,6 +93,7 @@ class VocalExercise {
       isGlide: isGlide,
       breathingPhases: breathingPhases,
       breathingRepeatCount: breathingRepeatCount,
+      chordProgression: chordProgression,
     );
   }
 

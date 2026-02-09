@@ -13,4 +13,7 @@ class SirenExerciseResult {
 
   /// Validate that audioNotes has exactly 3 notes
   bool get isValid => audioNotes.length == 3;
+  
+  /// Alias for compatibility with TransposedExerciseBuilder result interface
+  List<ReferenceNote> get melody => audioNotes;
 }

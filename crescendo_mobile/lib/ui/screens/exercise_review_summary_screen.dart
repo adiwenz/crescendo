@@ -318,16 +318,19 @@ class _ExerciseReviewSummaryScreenState
           'difficulty': difficulty,
         },
       );
-      return sirenResult.audioNotes;
+      return sirenResult.melody;
     } else {
       return compute(
-        (Map<String, dynamic> args) => TransposedExerciseBuilder.buildTransposedSequence(
+        (Map<String, dynamic> args) {
+           final seq = TransposedExerciseBuilder.buildTransposedSequence(
               exercise: args['exercise'],
               lowestMidi: args['lowestMidi'],
               highestMidi: args['highestMidi'],
               leadInSec: args['leadInSec'],
               difficulty: args['difficulty'],
-            ),
+            );
+            return seq.melody;
+        },
         {
           'exercise': widget.exercise,
           'lowestMidi': lowestMidi,

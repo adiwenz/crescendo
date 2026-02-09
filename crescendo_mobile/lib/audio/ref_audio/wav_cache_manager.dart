@@ -94,7 +94,7 @@ class WavCacheManager {
     required List<VocalExercise> exercises,
     required int lowMidi,
     required int highMidi,
-    PitchHighwayDifficulty difficulty = PitchHighwayDifficulty.beginner,
+    PitchHighwayDifficulty difficulty = PitchHighwayDifficulty.easy,
   }) async {
     await init();
 
@@ -192,7 +192,7 @@ class WavCacheManager {
     // 1. Build basic metadata (fast)
     final difficultyName = spec.extraOptions['difficulty'] as String? ?? 'beginner';
     final difficulty = PitchHighwayDifficulty.values.firstWhere(
-        (d) => d.name == difficultyName, orElse: () => PitchHighwayDifficulty.beginner);
+        (d) => d.name == difficultyName, orElse: () => PitchHighwayDifficulty.easy);
 
     // Note: ExercisePlanBuilder doesn't shift notes for audio offset.
     final internalPlan = await ExercisePlanBuilder.buildMetadata(

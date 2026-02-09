@@ -21,13 +21,15 @@ class ExercisePlanBuilder {
   }) async {
     
     // 1. Build the transposed sequence (Visuals + Audio markers)
-    final notes = TransposedExerciseBuilder.buildTransposedSequence(
+    final sequence = TransposedExerciseBuilder.buildTransposedSequence(
       exercise: exercise,
       lowestMidi: lowestMidi,
       highestMidi: highestMidi,
       difficulty: difficulty,
       leadInSec: AudioConstants.leadInSec,
     );
+    final notes = sequence.melody;
+    final harmonyNotes = sequence.harmony;
 
     // 2. Calculate duration
     final lastNoteEnd = notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
@@ -35,7 +37,7 @@ class ExercisePlanBuilder {
 
     // 3. Generate hashes for caching
     final rangeHash = _generateRangeHash(lowestMidi, highestMidi);
-    final patternHash = _generatePatternHash(exercise, difficulty);
+    final patternHash = generatePatternHash(exercise, difficulty);
 
     final firstMidi = notes.isEmpty ? 60 : notes.first.midi.round();
     final keyLabel = PitchMath.midiToName(firstMidi);
@@ -46,6 +48,7 @@ class ExercisePlanBuilder {
       keyLabel: keyLabel,
       wavFilePath: wavFilePath,
       notes: notes,
+      harmonyNotes: harmonyNotes,
       sampleRate: AudioConstants.audioSampleRate,
       durationMs: durationMs,
       rangeHash: rangeHash,
@@ -58,8 +61,13 @@ class ExercisePlanBuilder {
     return '$low-$high';
   }
 
-  static String _generatePatternHash(VocalExercise ex, PitchHighwayDifficulty diff) {
-    final raw = '${ex.id}|${diff.name}'; // In future, include pattern version/checksum
+  static String generatePatternHash(VocalExercise ex, PitchHighwayDifficulty diff) {
+    var raw = '${ex.id}|${diff.name}';
+    if (ex.chordProgression != null) {
+      raw += '|${ex.chordProgression!.length}'; // Simple hash: length of chords
+      // Ideally hashing the content, but length + string rep is better
+      raw += '|${ex.chordProgression.toString()}';
+    }
     final bytes = utf8.encode(raw);
     final digest = sha256.convert(bytes);
     return digest.toString().substring(0, 8);

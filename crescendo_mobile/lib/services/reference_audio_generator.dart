@@ -22,7 +22,7 @@ class ReferenceAudioGenerator {
   factory ReferenceAudioGenerator() => instance;
 
   static const int defaultSampleRate = AudioConstants.audioSampleRate;
-  static const String cacheVersion = 'v4';
+  static const String cacheVersion = 'v5';
 
   final _bounceService = ReviewAudioBounceService();
   final _vocalRangeService = VocalRangeService();
@@ -52,7 +52,7 @@ class ReferenceAudioGenerator {
 
     // 2. Compute metadata to check cache
     final rangeHash = '${low}-${high}';
-    final patternHash = '${exercise.id}_${difficulty.name}';
+    final patternHash = ExercisePlanBuilder.generatePatternHash(exercise, difficulty);
 
     // Use centralized version constant
     final cacheKey = '${cacheVersion}_${exercise.id}_${rangeHash}_${patternHash}';
@@ -127,6 +127,7 @@ class ReferenceAudioGenerator {
       final bounceService = ReviewAudioBounceService();
       await bounceService.renderReferenceWav(
         notes: internalPlan.notes,
+        harmonyNotes: internalPlan.harmonyNotes,
         durationSec: internalPlan.durationSec,
         sampleRate: AudioConstants.audioSampleRate,
         savePath: tempWavPath,
@@ -155,8 +156,16 @@ class ReferenceAudioGenerator {
          );
       }).toList();
 
+      final shiftedHarmony = internalPlan.harmonyNotes.map((n) {
+         return n.copyWith(
+           startSec: n.startSec + offset,
+           endSec: n.endSec + offset,
+         );
+      }).toList();
+
       return internalPlan.copyWith(
          notes: shiftedNotes,
+         harmonyNotes: shiftedHarmony,
          durationSec: internalPlan.durationSec + offset,
       );
     }, null);
@@ -174,7 +183,7 @@ class ReferenceAudioGenerator {
   ) async {
     final (low, high) = await _vocalRangeService.getRange();
     final rangeHash = '${low}-${high}';
-    final patternHash = '${exercise.id}_${difficulty.name}';
+    final patternHash = ExercisePlanBuilder.generatePatternHash(exercise, difficulty);
     final cacheKey = '${cacheVersion}_${exercise.id}_${rangeHash}_${patternHash}';
 
     final dir = await _cacheDir;
@@ -205,8 +214,16 @@ class ReferenceAudioGenerator {
              );
           }).toList();
 
+          final shiftedHarmony = plan.harmonyNotes.map((n) {
+             return n.copyWith(
+               startSec: n.startSec + offset,
+               endSec: n.endSec + offset,
+             );
+          }).toList();
+
           return plan.copyWith(
              notes: shiftedNotes,
+             harmonyNotes: shiftedHarmony,
              durationSec: plan.durationSec + offset,
           );
         }

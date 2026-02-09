@@ -3,6 +3,7 @@ import '../models/exercise_category.dart';
 import '../models/pitch_highway_spec.dart';
 import '../models/pitch_segment.dart';
 import '../models/vocal_exercise.dart';
+import '../models/harmonic_models.dart';
 
 const _seedDate = 1704067200000; // 2024-01-01 UTC
 
@@ -504,6 +505,26 @@ List<VocalExercise> seedVocalExercises() {
         noteMs: 400,
         tolerance: toleranceBeginner,
       ),
+      chordProgression: [
+        // I chord at start (0ms)
+        ChordEvent(
+          chord: Chord.I_Major,
+          startMs: 0,
+          durationMs: 2000, 
+        ),
+        // V chord at turn (after 5 notes * 400ms = 2000ms)
+        ChordEvent(
+          chord: Chord.V_Major,
+          startMs: 2000,
+          durationMs: 1600, 
+        ),
+        // I chord at end (after 2000 + 1600 = 3600ms)
+        ChordEvent(
+          chord: Chord.I_Major,
+          startMs: 3600,
+          durationMs: 1000, 
+        ),
+      ],
       createdAt: createdAt,
     ),
     VocalExercise(

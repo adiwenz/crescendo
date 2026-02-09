@@ -15,7 +15,9 @@ import '../../ui/route_observer.dart';
 import '../../models/exercise_level_progress.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../models/exercise_plan.dart';
-import '../../services/reference_audio_generator.dart';
+import '../../services/vocal_range_service.dart';
+import '../../audio/ref_audio/wav_cache_manager.dart';
+import '../../audio/ref_audio/ref_spec.dart';
 import '../../utils/navigation_trace.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
@@ -162,23 +164,28 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     
     final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
     
-    // Fast-path: Check cache first to avoid flicker/delay
-    final cached = await ReferenceAudioGenerator.instance.tryGetCached(ex, difficulty);
-    if (cached != null) {
-      if (mounted) {
-        setState(() {
-          _planFuture = Future.value(cached);
-          _isPreparing = false;
-        });
-      }
-      return;
-    }
+    // Fetch range for spec
+    // TODO: Ideally pass this from _load or value notifier to avoid async gap if possible, 
+    // but looking it up here is safe enough.
+    final (low, high) = await VocalRangeService().getRange();
 
-    // Cache miss: start full preparation
+    final spec = RefSpec(
+      exerciseId: ex.id,
+      lowMidi: low,
+      highMidi: high,
+      extraOptions: {'difficulty': difficulty.name},
+      renderVersion: 'v2',
+    );
+    
+    // WavCacheManager handles cache check + generation queue
+    // It returns a future that completes when the plan/file is ready
+    // Unlike ReferenceAudioGenerator, we don't need a separate "tryGetCached" check
+    // because WavCacheManager does that internally and returns fast if hit.
+    
     if (mounted) {
       setState(() {
         _isPreparing = true;
-        _planFuture = ReferenceAudioGenerator.instance.prepare(ex, difficulty).then((plan) {
+        _planFuture = WavCacheManager.instance.get(spec, exercise: ex).then((plan) {
           if (mounted) {
             setState(() => _isPreparing = false);
           }
@@ -187,8 +194,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
           if (mounted) {
             setState(() => _isPreparing = false);
           }
-          throw e;
+          throw e; // Propagate error to FutureBuilder
         });
+        
+        // Optimistic update: check if we can skip the loading spinner immediately
+        // if the future completes synchronously/microtask (cache hit)
+        // Actually WavCacheManager.get is async, but if it hits cache it's very fast.
       });
     }
   }

@@ -11,16 +11,16 @@ import '../models/vocal_exercise.dart';
 import '../utils/pitch_highway_tempo.dart';
 import '../utils/audio_constants.dart';
 import '../utils/pitch_math.dart';
+import 'harmonic_functions.dart';
+import '../models/harmonic_models.dart';
 
 /// Builds a complete transposed exercise sequence that starts at the user's lowest note
 /// and steps up by semitones until reaching the highest note.
 class TransposedExerciseBuilder {
-  /// Builds reference notes for the full transposed exercise sequence.
-  /// 
-  /// The exercise pattern is repeated multiple times, each time transposed up by one semitone.
-  /// The sequence starts at the user's lowestNote and continues until the highest pitch
-  /// of the exercise equals the user's highestNote.
-  static List<ReferenceNote> buildTransposedSequence({
+  /// Returns a record containing:
+  /// - `melody`: List of reference notes for the vocal melody
+  /// - `harmony`: List of reference notes for the backing harmony (chords)
+  static ({List<ReferenceNote> melody, List<ReferenceNote> harmony}) buildTransposedSequence({
     required VocalExercise exercise,
     required int lowestMidi,
     required int highestMidi,
@@ -41,13 +41,13 @@ class TransposedExerciseBuilder {
     // 2. Validate range
     if (effectiveLowest > effectiveHighest) {
        debugPrint('[TransposedExerciseBuilder] INVALID RANGE: effectiveLowest($effectiveLowest) > effectiveHighest($effectiveHighest). Register=$registerType');
-       return const [];
+       return (melody: const [], harmony: const []);
     }
 
     // Use shared constant if leadInSec not provided
     final effectiveLeadInSec = leadInSec ?? AudioConstants.leadInSec;
     final spec = exercise.highwaySpec;
-    if (spec == null || spec.segments.isEmpty) return const [];
+    if (spec == null || spec.segments.isEmpty) return (melody: <ReferenceNote>[], harmony: <ReferenceNote>[]);
 
     // Special handling for Sirens
     if (exercise.id == 'sirens') {
@@ -68,7 +68,7 @@ class TransposedExerciseBuilder {
          userMin: lowestMidi,
          userMax: highestMidi,
       );
-      return sirenResult.audioNotes;
+      return (melody: sirenResult.audioNotes, harmony: <ReferenceNote>[]);
     }
 
     // Apply tempo scaling if difficulty is provided
@@ -94,7 +94,7 @@ class TransposedExerciseBuilder {
     final baseRootMidi = firstEventMidi; // Use first chronological event as base for offset calculation
     
     final patternOffsets = _extractPatternOffsets(scaledSegments, baseRootMidi);
-    if (patternOffsets.isEmpty) return const [];
+    if (patternOffsets.isEmpty) return (melody: <ReferenceNote>[], harmony: <ReferenceNote>[]);
 
     // Find the min and max offsets in the pattern
     final patternMin = patternOffsets.reduce(math.min); // Lowest note offset (e.g., -12)
@@ -153,6 +153,7 @@ class TransposedExerciseBuilder {
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
+    final allHarmony = <ReferenceNote>[]; // NEW
     var transpositionSemitones = 0;
     var currentTimeSec = effectiveLeadInSec;
 
@@ -181,6 +182,18 @@ class TransposedExerciseBuilder {
       );
       
       allNotes.addAll(repetitionNotes);
+
+      // NEW: Harmony generation
+      if (exercise.chordProgression != null && exercise.chordProgression!.isNotEmpty) {
+        final harmonyNotes = HarmonicFunctions.generateHarmonyForKey(
+          progression: exercise.chordProgression!,
+          keyRootMidi: rootMidi,
+          startTimeSec: currentTimeSec,
+          isMinorKey: false, // Default to Major for now
+        );
+        allHarmony.addAll(harmonyNotes);
+      }
+      
       
       // Update time for next repetition - add pattern duration plus gap
       currentTimeSec += patternDurationSec + gapBetweenRepetitionsSec;
@@ -236,7 +249,7 @@ class TransposedExerciseBuilder {
          userMax: highestMidi,
       );
 
-    return allNotes;
+    return (melody: allNotes, harmony: allHarmony);
   }
 
 

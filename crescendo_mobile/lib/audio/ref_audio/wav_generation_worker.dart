@@ -60,6 +60,7 @@ class WavGenerationWorker {
       final bounceService = ReviewAudioBounceService();
       await bounceService.renderReferenceWav(
         notes: internalPlan.notes,
+        harmonyNotes: internalPlan.harmonyNotes,
         durationSec: internalPlan.durationSec,
         sampleRate: spec.sampleRate.toInt(),
         savePath: input.tempOutputPath,

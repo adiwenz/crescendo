@@ -19,6 +19,9 @@ class ExercisePlan {
   /// Sequence of notes to be displayed (pitch highway) and tracked
   final List<ReferenceNote> notes;
 
+  /// Sequence of harmony notes (chords) for background audio
+  final List<ReferenceNote> harmonyNotes;
+
   /// Sample rate used for the WAV synthesis (typically 48000)
   final int sampleRate;
 
@@ -49,6 +52,7 @@ class ExercisePlan {
     required this.keyLabel,
     required this.wavFilePath,
     required this.notes,
+    this.harmonyNotes = const [],
     required this.sampleRate,
     required this.durationMs,
     this.gapSec = 0.0,
@@ -67,12 +71,28 @@ class ExercisePlan {
   /// Backward compatibility for code using exerciseId
   String get exerciseId => id;
 
+  factory ExercisePlan.empty() {
+    return ExercisePlan(
+      id: '',
+      title: '',
+      keyLabel: '',
+      wavFilePath: '',
+      notes: const [],
+      sampleRate: 44100,
+      durationMs: 0,
+      rangeHash: '',
+      patternHash: '',
+      leadInSec: 0,
+    );
+  }
+
   ExercisePlan copyWith({
     String? id,
     String? title,
     String? keyLabel,
     String? wavFilePath,
     List<ReferenceNote>? notes,
+    List<ReferenceNote>? harmonyNotes,
     int? sampleRate,
     int? durationMs,
     double? gapSec,
@@ -89,6 +109,7 @@ class ExercisePlan {
       keyLabel: keyLabel ?? this.keyLabel,
       wavFilePath: wavFilePath ?? this.wavFilePath,
       notes: notes ?? this.notes,
+      harmonyNotes: harmonyNotes ?? this.harmonyNotes,
       sampleRate: sampleRate ?? this.sampleRate,
       durationMs: durationMs ?? (durationSec != null ? (durationSec * 1000).round() : this.durationMs),
       gapSec: gapSec ?? this.gapSec,
