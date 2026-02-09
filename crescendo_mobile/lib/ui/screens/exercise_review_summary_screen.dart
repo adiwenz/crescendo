@@ -15,7 +15,7 @@ import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../utils/audio_constants.dart';
 import '../../utils/pitch_math.dart';
-import '../../debug/debug_log.dart' show DebugLog, LogCat;
+
 import '../widgets/overview_graph.dart';
 import 'pitch_highway_review_screen.dart';
 import '../../services/attempt_repository.dart';
@@ -23,6 +23,7 @@ import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
 
 import '../../models/last_take_draft.dart';
+import '../../services/audio_offset_estimator.dart'; // AudioOffsetResult
 
 class ExerciseReviewSummaryScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -294,15 +295,12 @@ class _ExerciseReviewSummaryScreenState
     }
   }
 
-  Future<List<TargetNote>> _buildTargetNotesFromExercise() async {
-    // Fallback: build from exercise if target notes weren't saved
+  Future<List<ReferenceNote>> _buildReferenceNotes() async {
     final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
     final difficulty = _displayAttempt.pitchDifficulty != null
         ? pitchHighwayDifficultyFromName(_displayAttempt.pitchDifficulty!)
         : PitchHighwayDifficulty.medium;
 
-    // Special handling for Sirens: use buildSirensWithVisualPath to get audio notes
-    final List<ReferenceNote> notes;
     if (widget.exercise.id == 'sirens') {
       final sirenResult = await compute(
         (Map<String, dynamic> args) => TransposedExerciseBuilder.buildSirensWithVisualPath(
@@ -320,9 +318,9 @@ class _ExerciseReviewSummaryScreenState
           'difficulty': difficulty,
         },
       );
-      notes = sirenResult.audioNotes; // Get the 3 notes per cycle
+      return sirenResult.audioNotes;
     } else {
-      notes = await compute(
+      return compute(
         (Map<String, dynamic> args) => TransposedExerciseBuilder.buildTransposedSequence(
               exercise: args['exercise'],
               lowestMidi: args['lowestMidi'],
@@ -339,7 +337,10 @@ class _ExerciseReviewSummaryScreenState
         },
       );
     }
+  }
 
+  Future<List<TargetNote>> _buildTargetNotesFromExercise() async {
+    final notes = await _buildReferenceNotes();
     return notes.map((n) {
       return TargetNote(
         startMs: (n.startSec * 1000).round(),
@@ -350,73 +351,71 @@ class _ExerciseReviewSummaryScreenState
     }).toList();
   }
 
-  void _openFullReplay() {
+  void _openFullReplay() async {
     final take = _buildLastTake();
-    if (take == null) {
+    if (take == null || take.audioPath == null || take.referenceWavPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No recorded take available')),
+        const SnackBar(content: Text('No recorded take or reference available')),
       );
       return;
     }
     
-    // Default to the very beginning, but if the recording started later,
-    // provide a 2s lead-in for context.
-    final sliceStartSec = take.recorderStartSec ?? 0.0;
-    final replayStartSec = math.max(0.0, sliceStartSec - 2.0);
+    final notes = await _buildReferenceNotes();
+
+    if (!mounted) return;
     
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
-          exercise: widget.exercise,
-          lastTake: take,
-          startTimeSec: replayStartSec,
-          explicitDifficulty: widget.difficulty ?? 
-              (take.pitchDifficulty != null 
-                  ? pitchHighwayDifficultyFromName(take.pitchDifficulty!) 
-                  : null),
+          notes: notes,
+          referencePath: take.referenceWavPath!,
+          recordingPath: take.audioPath!,
+          offsetResult: AudioOffsetResult(
+            offsetSamples: ((take.recorderStartSec ?? 0.0) * (take.referenceSampleRate ?? 44100)).round(),
+            offsetMs: (take.recorderStartSec ?? 0.0) * 1000,
+            confidence: 1.0,
+            method: 'manual_start_sec',
+          ),
+          referenceDurationSec: (_durationMs / 1000.0),
+          alignedFrames: take.frames,
         ),
       ),
     );
   }
 
-  void _openSegmentReplay(ExerciseSegment segment) {
+  void _openSegmentReplay(ExerciseSegment segment) async {
     final take = _buildLastTake();
-    if (take == null) {
+    if (take == null || take.audioPath == null || take.referenceWavPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No recorded take available')),
+        const SnackBar(content: Text('No recorded take or reference available')),
       );
       return;
     }
-    // Start 2 seconds before the segment starts (for context/lead-in)
-    // But don't go below 0.0
-    final segmentStartSec = segment.startMs / 1000.0;
-    final segmentEndSec = segment.endMs / 1000.0;
-    final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
+    
+    // TODO: Support segment seeking in PitchHighwayReviewScreen
+    // final segmentStartSec = segment.startMs / 1000.0;
+    // final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
+    
+    final notes = await _buildReferenceNotes();
 
-    // Log segment tap
-    DebugLog.event(
-      LogCat.seek,
-      'segment_tap',
-      fields: {
-        'segmentIndex': segment.segmentIndex,
-        'segmentStartSec': segmentStartSec,
-        'segmentEndSec': segmentEndSec,
-        'replayStartSec': replayStartSec,
-      },
-    );
+    if (!mounted) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
-          exercise: widget.exercise,
-          lastTake: take,
-          startTimeSec: replayStartSec,
-          explicitDifficulty: widget.difficulty ?? 
-              (take.pitchDifficulty != null 
-                  ? pitchHighwayDifficultyFromName(take.pitchDifficulty!) 
-                  : null),
+          notes: notes,
+          referencePath: take.referenceWavPath!,
+          recordingPath: take.audioPath!,
+          offsetResult: AudioOffsetResult(
+            offsetSamples: ((take.recorderStartSec ?? 0.0) * (take.referenceSampleRate ?? 44100)).round(),
+            offsetMs: (take.recorderStartSec ?? 0.0) * 1000,
+            confidence: 1.0,
+            method: 'manual_start_sec',
+          ),
+          referenceDurationSec: (_durationMs / 1000.0),
+          alignedFrames: take.frames,
         ),
       ),
     );

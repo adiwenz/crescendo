@@ -82,8 +82,8 @@ class PitchHighwaySessionState {
   }
 }
 
-class PitchHighwayV2SessionController {
-  PitchHighwayV2SessionController({
+class PitchHighwaySessionController {
+  PitchHighwaySessionController({
     required List<ReferenceNote> notes,
     required this.referenceDurationSec,
     required this.ensureReferenceWav,

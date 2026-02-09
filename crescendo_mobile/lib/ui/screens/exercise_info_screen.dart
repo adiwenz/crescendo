@@ -20,7 +20,7 @@ import 'exercise_review_summary_screen.dart';
 import '../../services/attempt_repository.dart';
 import '../../services/reference_audio_generator.dart';
 import '../../models/exercise_plan.dart';
-import '../../utils/pitch_math.dart';
+
 
 class ExerciseInfoScreen extends StatefulWidget {
   final String exerciseId;
@@ -46,7 +46,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
   double? _lastScore;
   ExerciseAttempt? _latestAttempt;
   bool _preparing = false;
-  Future<ExercisePlan>? _planFuture;
+
 
   @override
   void initState() {
@@ -56,11 +56,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     _loadProgress();
     
     // Requirements: Defer heavy generation until after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _triggerPreparation();
-      }
-    });
+
   }
 
   @override
@@ -121,7 +117,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       _highlightedLevel = levelUp ? nextHighest : null;
       _selectedLevel = nextSelected;
     });
-    // Removed duplicate _triggerPreparation() as it's handled by postFrame and manual updates
+
     if (levelUp && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Level up! Level $nextHighest unlocked.')),
@@ -133,39 +129,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     }
   }
 
-  void _triggerPreparation() async {
-    final exercise = ExerciseRepository().getExercise(widget.exerciseId);
-    final difficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
-    
-    // Fast-path: Check cache first
-    final cached = await ReferenceAudioGenerator.instance.tryGetCached(exercise, difficulty);
-    if (cached != null) {
-      if (mounted) {
-        setState(() {
-          _planFuture = Future.value(cached);
-          _preparing = false;
-        });
-      }
-      return;
-    }
 
-    if (mounted) {
-      setState(() {
-        _preparing = true;
-        _planFuture = ReferenceAudioGenerator.instance.prepare(exercise, difficulty).then((plan) {
-          if (mounted) {
-            setState(() => _preparing = false);
-          }
-          return plan;
-        }).catchError((e) {
-          if (mounted) {
-            setState(() => _preparing = false);
-          }
-          throw e;
-        });
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +359,7 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
     final startTime = DateTime.now();
     debugPrint('[StartExercise] _startExercise called at ${startTime.millisecondsSinceEpoch}');
     
-    final selectedDifficulty = pitchHighwayDifficultyFromLevel(_selectedLevel);
+
     
     if (exercise.type == ExerciseType.pitchHighway) {
       // Navigate immediately
@@ -410,8 +374,6 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
           MaterialPageRoute(
             builder: (_) => ExercisePlayerScreen(
               exercise: exercise,
-              pitchDifficulty: selectedDifficulty,
-              exercisePlanFuture: _planFuture,
             ),
           ),
         );
@@ -425,7 +387,6 @@ class _ExerciseInfoScreenState extends State<ExerciseInfoScreen> {
       MaterialPageRoute(
         builder: (_) => buildExerciseScreen(
           exercise,
-          pitchDifficulty: selectedDifficulty,
         ),
       ),
     );

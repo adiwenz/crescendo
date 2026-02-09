@@ -198,7 +198,6 @@ class _ExerciseListScreenState extends State<ExerciseListScreen> {
       MaterialPageRoute(
         builder: (_) => ExercisePlayerScreen(
           exercise: ex,
-          pitchDifficulty: null,
         ),
       ),
     ).then((_) => setState(() {}));

@@ -1,1145 +1,438 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
 
-import '../../models/last_take.dart';
-import '../../models/pitch_highway_difficulty.dart';
 import '../../models/reference_note.dart';
-import '../../models/vocal_exercise.dart';
-import '../../models/siren_path.dart';
 import '../../models/pitch_frame.dart';
-import '../../services/audio_synth_service.dart';
-import '../../services/review_audio_bounce_service.dart';
-import 'package:audioplayers/audioplayers.dart';
-import '../../audio/midi_playback_config.dart';
-import '../../services/transposed_exercise_builder.dart';
-import '../../services/reference_audio_generator.dart';
-import '../../services/vocal_range_service.dart';
-import '../../utils/pitch_highway_tempo.dart';
-import '../../utils/pitch_math.dart';
-import '../../utils/performance_clock.dart';
-import '../../utils/audio_constants.dart';
-import '../../debug/debug_log.dart' show DebugLog, LogCat;
-import '../../services/sync_diagnostic_service.dart';
-import '../../services/audio_session_service.dart';
-import '../../services/audio_alignment_service.dart'; // NEW
-import '../theme/app_theme.dart';
-import '../widgets/app_background.dart';
-import '../widgets/pitch_contour_painter.dart';
-import '../widgets/pitch_highway_painter.dart';
+import '../../services/pitch_highway_session_controller.dart';
+import '../../services/recording_service.dart';
+import '../../services/audio_offset_estimator.dart';
+import '../../services/vocal_range_service.dart'; // range
+import '../../ui/theme/app_theme.dart';
+import '../../ui/widgets/pitch_highway_painter.dart'; // painter
+import '../../utils/pitch_tail_buffer.dart'; // TailPoint
+import '../../utils/pitch_highway_tempo.dart'; // tempo
+
+import '../../models/pitch_frame.dart'; // Ensure import
 
 class PitchHighwayReviewScreen extends StatefulWidget {
-  final VocalExercise exercise;
-  final LastTake lastTake;
-  final double startTimeSec;
-  final PitchHighwayDifficulty? explicitDifficulty;
+  final List<ReferenceNote> notes;
+  final String referencePath;
+  final String recordingPath;
+  final AudioOffsetResult offsetResult;
+  final double referenceDurationSec;
+  final List<PitchFrame> alignedFrames;
 
   const PitchHighwayReviewScreen({
     super.key,
-    required this.exercise,
-    required this.lastTake,
-    this.startTimeSec = 0.0,
-    this.explicitDifficulty,
+    required this.notes,
+    required this.referencePath,
+    required this.recordingPath,
+    required this.offsetResult,
+    required this.referenceDurationSec,
+    required this.alignedFrames,
   });
 
   @override
   State<PitchHighwayReviewScreen> createState() => _PitchHighwayReviewScreenState();
 }
 
-class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen>
-    with SingleTickerProviderStateMixin {
-  // Enable mixing mode to play both recorded audio and reference notes simultaneously
-  final AudioSynthService _synth = AudioSynthService(enableMixing: true);
-  // No MIDI engine needed - using bounced audio for review playback
-  final VocalRangeService _vocalRangeService = VocalRangeService();
-  final ValueNotifier<double> _time = ValueNotifier<double>(0);
-  final PerformanceClock _clock = PerformanceClock();
-  Ticker? _ticker;
-  bool _playing = false;
-  StreamSubscription<Duration>? _audioPosSub;
-  StreamSubscription<void>? _audioCompleteSub;
-  StreamSubscription<PlayerState>? _playerStateSub;
-  Timer? _positionWatchdog;
-  Timer? _midiOnlyTimer; // Timer for MIDI-only playback when there's no recorded audio
-  int? _lastPositionUpdateMs;
-  double? _audioPositionSec;
-  bool _audioStarted = false;
-  List<ReferenceNote> _notes = const [];
-  SirenPath? _sirenVisualPath; // Visual path for Sirens (separate from audio notes)
-  double _durationSec = 1.0;
-  // Use shared constant for lead-in time
-  static const double _leadInSec = AudioConstants.leadInSec;
-  bool _loggedGraphInfo = false;
-  late final double _pixelsPerSecond;
+class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
+  late PitchHighwaySessionController _controller;
   
-  // Preload state
-  bool _preloadComplete = false;
-  bool _preloading = false;
-  String? _referenceAudioPath;
-  String? _recordedAudioPath;
-  String? _mixedAudioPath; // Bounced mixed WAV (mic + reference)
-  bool _showReference = true; // Toggle: true = mixed (with reference), false = mic only
-  final ReviewAudioBounceService _bounceService = ReviewAudioBounceService();
-  DateTime? _playbackStartEpoch; // Exact moment playback truly starts
-  int _lastSyncLogTime = 0;
-  int _reviewRunId = 0; // Run ID for review MIDI playback
-  int? _midiOnlyStartTime; // Start time for MIDI-only timer (set after MIDI sequence is initialized)
-  
-  // Rebase state
-  List<PitchFrame> _rebasedFrames = const [];
-  double _sliceStartSec = 0.0;
-  double _renderStartSec = 0.0; // Anchor for visual 0.0
-  double _micOffsetSec = 0.0; // Where the mic starts in the replayed file
-  
-  // Y-axis mapping state (fallback if not in LastTake)
+  // Visualization State
   int _midiMin = 48;
   int _midiMax = 72;
+  double _pixelsPerSecond = 100;
+  final ValueNotifier<double> _visualTime = ValueNotifier(0.0);
+  final ValueNotifier<double?> _liveMidi = ValueNotifier(null); // Not used in replay but required by painter
 
   @override
   void initState() {
     super.initState();
-    
-    // Initialize MIDI engine (sets up route change listeners automatically)
-    // No MIDI engine initialization needed - using bounced audio
-    
-    // Set debug context
-    _reviewRunId++;
-    DebugLog.setContext(
-      runId: _reviewRunId,
-      exerciseId: widget.exercise.id,
-      mode: 'replay',
+    _controller = PitchHighwaySessionController(
+      notes: widget.notes,
+      referenceDurationSec: widget.referenceDurationSec,
+      ensureReferenceWav: () async => widget.referencePath,
+      ensureRecordingPath: () async => widget.recordingPath,
+      recorderFactory: () => RecordingService(owner: 'review_v2', bufferSize: 1024),
     );
     
-    // Use explicit difficulty if available (passed from route)
-    // Fallback to persisted difficulty from attempt
-    // Final fallback to easy (safety default)
-    PitchHighwayDifficulty difficulty;
-    String source;
-
-    if (widget.explicitDifficulty != null) {
-      difficulty = widget.explicitDifficulty!;
-      source = 'Route';
-    } else if (widget.lastTake.pitchDifficulty != null) {
-      final parsed = pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty!);
-      if (parsed != null) {
-        difficulty = parsed;
-        source = 'LastTake';
-      } else {
-        difficulty = PitchHighwayDifficulty.easy;
-        source = 'Fallback (Parse Fail)';
+    // Hydrate state for replay
+    _controller.state.value = _controller.state.value.copyWith(
+      phase: PitchHighwaySessionPhase.replay,
+      referencePath: widget.referencePath,
+      recordingPath: widget.recordingPath,
+      offsetResult: widget.offsetResult,
+      applyOffset: true,
+      alignedFrames: widget.alignedFrames,
+      capturedFrames: widget.alignedFrames,
+    );
+    
+    _loadData();
+  }
+  
+  Future<void> _loadData() async {
+    // Calculate range from notes
+    int minMidi = 127;
+    int maxMidi = 0;
+    
+    if (widget.notes.isNotEmpty) {
+      for (final n in widget.notes) {
+        if (n.midi < minMidi) minMidi = n.midi;
+        if (n.midi > maxMidi) maxMidi = n.midi;
       }
     } else {
-      difficulty = PitchHighwayDifficulty.easy;
-      source = 'Fallback (Missing)';
+       // Fallback defaults
+       minMidi = 48;
+       maxMidi = 72;
     }
 
-    if (kDebugMode) {
-      debugPrint('[Review] difficultySource=$source difficulty=${difficulty.name}');
-    }
-    _pixelsPerSecond = PitchHighwayTempo.pixelsPerSecondFor(difficulty);
-    _ticker = createTicker(_onTick);
-    _clock.setAudioPositionProvider(() => _audioPositionSec);
-    // In review mode, audio position is already accurate (from playback), so no latency compensation needed
-    _clock.setLatencyCompensationMs(0);
+    // Add padding (e.g. +/- 3 semitones)
+    minMidi -= 3;
+    maxMidi += 3;
 
-    // --- REBASE LOGIC ---
-    // Use the explicit recorder start time from the take
-    _sliceStartSec = widget.lastTake.recorderStartSec ?? 0.0;
-
-    // Determine the anchor for all visuals and audio (0.0 in the rebased domain)
-    // We prioritize providing the 2s lead-in before the recording start.
-    // If a specific startTimeSec was requested (e.g. 26s for a 28s segment), we use it.
-    _renderStartSec = widget.startTimeSec;
-    if (_renderStartSec > _sliceStartSec) {
-      // If requested start is AFTER recording, we still rebase to show context if possible
-      // but typical case is segment_start - 2s.
-    }
-    
-    _micOffsetSec = math.max(0.0, _sliceStartSec - _renderStartSec);
-
-    // Shift frames to be relative to renderStartSec
-    // widget.lastTake.frames are natively 0-based relative to recorder start
-    _rebasedFrames = widget.lastTake.frames.map<PitchFrame>((f) => PitchFrame(
-      time: f.time + _micOffsetSec,
-      hz: f.hz,
-      midi: f.midi,
-      voicedProb: f.voicedProb,
-      rms: f.rms,
-    )).toList();
-    
-    _time.value = 0.0; // Replayed domain always starts at 0.0
-    // ----------------------
-
-    // Step 2: Check recorded audio path
-    _recordedAudioPath = widget.lastTake.audioPath;
-    
-    // Log replay start (now with assigned paths)
-    unawaited(_logReplayStart());
-    
-    // Load vocal range if metadata is missing (backward compatibility)
-    if (widget.lastTake.minMidi == null || widget.lastTake.maxMidi == null) {
-      unawaited(_loadUserVocalRange());
-    }
-    
-    _preloadEverything(difficulty);
-  }
-  
-  Future<void> _loadUserVocalRange() async {
-    try {
-      final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-      if (mounted) {
-        setState(() {
-          // Add 3 semitones of visual padding (matches ExercisePlayerScreen)
-          const paddingMidi = 3;
-          _midiMin = lowestMidi - paddingMidi;
-          _midiMax = highestMidi + paddingMidi;
-        });
-      }
-    } catch (e) {
-      debugPrint('[Review] Error loading vocal range: $e');
-    }
-  }
-
-  /// Log replay start
-  Future<void> _logReplayStart() async {
-    DebugLog.event(
-      LogCat.replay,
-      'replay_start',
-      runId: _reviewRunId,
-      fields: {
-        'recordingDurationSec': widget.lastTake.durationSec,
-        'recordedFilePath': widget.lastTake.audioPath,
-        'willPlayRecording': _recordedAudioPath != null,
-        'willPlayReference': _notes.isNotEmpty,
-        'initialSeekSec': widget.startTimeSec,
-      },
-    );
-  }
-  
-  /// Preload everything before allowing playback
-  Future<void> _preloadEverything(PitchHighwayDifficulty difficulty) async {
-    if (_preloading) return;
-    _preloading = true;
-    
-    final tapTime = DateTime.now().millisecondsSinceEpoch;
-    if (kDebugMode) {
-      debugPrint('[Review Preload] tapTime=$tapTime (preload started)');
-    }
-    
-    // Step 1: Load transposed notes
-    await _loadTransposedNotes(difficulty);
-    
-    // Step 2: Check recorded audio (fast file check)
-    final audioPath = widget.lastTake.audioPath;
-    if (audioPath != null && audioPath.isNotEmpty) {
-      final file = File(audioPath);
-      if (await file.exists()) {
-        _recordedAudioPath = audioPath;
-        if (kDebugMode) {
-          debugPrint('[Review Preload] Recorded audio found: ${_recordedAudioPath}');
-        }
-      }
-    }
-    
-    // Step 3: Render and mix audio (bounce MIDI to WAV, then mix with recorded audio)
-    // This eliminates timer-based real-time MIDI scheduling for route-change resilience
-    if (_notes.isNotEmpty && _recordedAudioPath != null) {
-      await _bounceAndMixAudio(difficulty);
-    } else if (_notes.isNotEmpty) {
-      // No recorded audio, just render reference WAV
-      await _bounceReferenceAudio(difficulty);
-    }
-    
-    final preloadCompleteTime = DateTime.now().millisecondsSinceEpoch;
-    if (kDebugMode) {
-      debugPrint('[Review Preload] preloadCompleteTime=$preloadCompleteTime (preload finished, took ${preloadCompleteTime - tapTime}ms)');
-    }
-    
     if (mounted) {
       setState(() {
-        _preloadComplete = true;
-        _preloading = false;
+        _midiMin = minMidi;
+        _midiMax = maxMidi;
+        
+        // Use standard speed
+        _pixelsPerSecond = 100;
       });
-      
-      // Auto-start playback immediately once preload is complete
-      // Use SchedulerBinding to ensure this runs after the frame is built
-      if (_notes.isNotEmpty && !_playing) {
-        if (kDebugMode) {
-          debugPrint('[Review] Preload complete, attempting auto-start: notes=${_notes.length}, playing=$_playing');
-        }
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_playing && _preloadComplete && _notes.isNotEmpty) {
-            if (kDebugMode) {
-              debugPrint('[Review] Auto-starting playback: notes=${_notes.length}, preloadComplete=$_preloadComplete');
-            }
-            _start();
-          } else if (kDebugMode) {
-            debugPrint('[Review] Auto-start skipped: mounted=$mounted, playing=$_playing, preloadComplete=$_preloadComplete, notesEmpty=${_notes.isEmpty}');
-          }
-        });
-      } else if (kDebugMode && _notes.isEmpty) {
-        debugPrint('[Review] WARNING: Preload complete but notes are empty!');
-      }
-    }
-  }
-  
-  /// Bounce reference audio and mix with recorded audio
-  Future<void> _bounceAndMixAudio(PitchHighwayDifficulty difficulty) async {
-    try {
-      // Generate cache key
-      final takeFileName = p.basename(_recordedAudioPath ?? '');
-      final reviewConfig = MidiPlaybackConfig.review();
-      
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Notes count: ${_notes.length}, duration=${_durationSec.toStringAsFixed(2)}s, renderStart=${_renderStartSec.toStringAsFixed(2)}s, micOffset=${_micOffsetSec.toStringAsFixed(2)}s');
-      }
-      
-      final cacheKey = ReviewAudioBounceService.generateCacheKey(
-        takeFileName: takeFileName,
-        exerciseId: widget.exercise.id,
-        transposeSemitones: 0, // Review doesn't transpose
-        sampleRate: ReviewAudioBounceService.defaultSampleRate,
-        renderStartSec: _renderStartSec,
-      );
-      
-      
-      // Check cache first
-      // DEBUG: Disable cache for sync test
-      // final cachedMixed = await ReviewAudioBounceService.getCachedMixedWav(cacheKey);
-      // if (cachedMixed != null) { ... }
-      debugPrint('[Review Bounce DEBUG] Cache bypassed for chirp sync test');
-      
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Cache miss, mixing audio...');
-      }
-      
-      // 1. Get reference WAV
-      File referenceWav;
-      if (widget.lastTake.referenceWavPath != null && 
-          await File(widget.lastTake.referenceWavPath!).exists()) {
-        referenceWav = File(widget.lastTake.referenceWavPath!);
-        if (kDebugMode) {
-          debugPrint('[Review Bounce] Using persisted reference WAV from exercise: ${referenceWav.path}');
-        }
-      } else {
-        // Fallback: Get canonical reference WAV from generator
-        final plan = await ReferenceAudioGenerator.instance.prepare(
-          widget.exercise,
-          difficulty,
-        );
-        referenceWav = File(plan.wavFilePath);
-        if (kDebugMode) {
-          debugPrint('[Review Bounce] Persisted ref missing, using generated canonical WAV: ${referenceWav.path}');
-        }
-      }
-      
-      // Mix with recorded audio
-      final micWav = File(_recordedAudioPath!);
-      
-      // 3. FORCE ZERO OFFSETS (Sample-Domain Alignment already applied in PitchHighwayScreen)
-      _micOffsetSec = 0.0;
-      
-      debugPrint('[Review Bounce DEBUG] Using Pre-Aligned Audio. Forcing offsets to 0.0');
-      debugPrint('  micOffsetSec=$_micOffsetSec');
-      debugPrint('  refOffsetSec=0.0');
-      debugPrint('  renderStartSec=$_renderStartSec');
-      debugPrint('  durationSec=$_durationSec');
-      
-      final mixedWav = await _bounceService.mixWavs(
-        micWav: micWav,
-        referenceWav: referenceWav,
-        micGain: 1.0,
-        refGain: 1.0,
-        renderStartSec: _renderStartSec,
-        durationSec: _durationSec,
-        micOffsetSec: 0.0, // Force 0
-        refOffsetSec: 0.0, // Force 0
-        duckMicWhileRef: false,
-      );
-      
-      // Save to cache
-      final cacheDir = await ReviewAudioBounceService.getCacheDirectory();
-      final cachedFile = File(p.join(cacheDir.path, '${cacheKey}_mixed.wav'));
-      await mixedWav.copy(cachedFile.path);
-      
-      _mixedAudioPath = cachedFile.path;
-      
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Mixed WAV created and cached: ${_mixedAudioPath}');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Error bouncing/mixing audio: $e');
-      }
-      // Fallback: continue without mixed audio (will use real-time MIDI)
-    }
-  }
-  
-  /// Bounce reference audio only (no recorded audio)
-  Future<void> _bounceReferenceAudio(PitchHighwayDifficulty difficulty) async {
-    try {
-      if (widget.lastTake.referenceWavPath != null && 
-          await File(widget.lastTake.referenceWavPath!).exists()) {
-        _referenceAudioPath = widget.lastTake.referenceWavPath;
-        if (kDebugMode) {
-           debugPrint('[Review Bounce] Using persisted reference WAV from exercise: $_referenceAudioPath');
-        }
-      } else {
-        // Get canonical reference WAV (same as used in ExercisePlayer)
-        final plan = await ReferenceAudioGenerator.instance.prepare(
-          widget.exercise,
-          difficulty,
-        );
-        _referenceAudioPath = plan.wavFilePath;
-        if (kDebugMode) {
-          debugPrint('[Review Bounce] Persisted ref missing, using generated canonical WAV: $_referenceAudioPath');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[Review Bounce] Error bouncing reference audio: $e');
-      }
     }
   }
 
-  /// Filter and adjust notes for segment playback
-  /// Returns notes that start at or after startOffsetSec, with their timing adjusted
-  List<ReferenceNote> _filterAndAdjustNotesForSegment(List<ReferenceNote> allNotes, double startOffsetSec) {
-    if (startOffsetSec <= 0) {
-      // No offset - return all notes as-is
-      return allNotes;
-    }
-    
-    // Filter notes that start at or after the segment start time
-    // Adjust their startSec and endSec to be relative to the playback start (0.0)
-    final filteredNotes = <ReferenceNote>[];
-    for (final note in allNotes) {
-      // Only include notes that start at or after startOffsetSec
-      if (note.startSec >= startOffsetSec) {
-        // Adjust timing to be relative to playback start (subtract startOffsetSec)
-        filteredNotes.add(ReferenceNote(
-          midi: note.midi,
-          startSec: note.startSec - startOffsetSec,
-          endSec: note.endSec - startOffsetSec,
-          isGlideStart: note.isGlideStart,
-          isGlideEnd: note.isGlideEnd,
-        ));
-      } else if (note.endSec > startOffsetSec) {
-        // Note starts before segment but ends during segment - include it but clip the start
-        filteredNotes.add(ReferenceNote(
-          midi: note.midi,
-          startSec: 0.0, // Start immediately (note was already playing)
-          endSec: note.endSec - startOffsetSec,
-          isGlideStart: note.isGlideStart,
-          isGlideEnd: note.isGlideEnd,
-        ));
-      }
-    }
-    
-    if (kDebugMode && startOffsetSec > 0) {
-      debugPrint('[Review] Filtered notes for segment: ${allNotes.length} -> ${filteredNotes.length} '
-          '(startOffsetSec=$startOffsetSec)');
-      if (filteredNotes.isNotEmpty) {
-        debugPrint('[Review] First filtered note: MIDI=${filteredNotes.first.midi}, '
-            'startSec=${filteredNotes.first.startSec.toStringAsFixed(2)}');
-      }
-    }
-    
-    return filteredNotes;
-  }
-
-  Future<void> _loadTransposedNotes(PitchHighwayDifficulty difficulty) async {
-    final (lowestMidi, highestMidi) = await _vocalRangeService.getRange();
-    
-    // Special handling for Sirens: use buildSirensWithVisualPath to get both audio notes and visual path
-    final List<ReferenceNote> notes;
-    SirenPath? sirenPath;
-    if (widget.exercise.id == 'sirens') {
-      final sirenResult = TransposedExerciseBuilder.buildSirensWithVisualPath(
-        exercise: widget.exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: _leadInSec,
-        difficulty: difficulty,
-      );
-      notes = sirenResult.audioNotes; // Get the 3 audio notes for playback
-      sirenPath = sirenResult.visualPath; // Get the visual bell curve path
-    } else {
-      notes = TransposedExerciseBuilder.buildTransposedSequence(
-        exercise: widget.exercise,
-        lowestMidi: lowestMidi,
-        highestMidi: highestMidi,
-        leadInSec: _leadInSec,
-        difficulty: difficulty,
-      );
-      sirenPath = null;
-    }
-        // --- REBASE NOTES ---
-      final rebasedNotes = notes.map<ReferenceNote>((n) => ReferenceNote(
-        midi: n.midi,
-        startSec: math.max(0, n.startSec - _renderStartSec),
-        endSec: math.max(0, n.endSec - _renderStartSec),
-        lyric: n.lyric,
-        isGlideStart: n.isGlideStart,
-        isGlideEnd: n.isGlideEnd,
-      )).where((n) => n.endSec > 0).toList();
-
-      final rebasedSirenPath = sirenPath != null ? SirenPath(
-        points: sirenPath.points.map<SirenPoint>((p) => SirenPoint(
-          tSec: math.max(0, p.tSec - _renderStartSec),
-          midiFloat: p.midiFloat,
-        )).where((p) => p.tSec >= 0).toList()
-      ) : null;
-      // --------------------
-
-      if (!mounted) return;
-      setState(() {
-        _notes = rebasedNotes;
-        _sirenVisualPath = rebasedSirenPath;
-        _durationSec = widget.lastTake.durationSec + _micOffsetSec;
-      });
-      
-      // Try to auto-start if preload is already complete
-      // Otherwise, preload completion will trigger auto-start
-      if (rebasedNotes.isNotEmpty && !_playing && _preloadComplete) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _start();
-        });
-      }
-  }
-
-
-  // Route change handlers removed - ReferenceMidiEngine handles route changes automatically
-  // The engine will automatically resume playback using the registered playback context
-  
   @override
   void dispose() {
-    DebugLog.event(
-      LogCat.replay,
-      'replay_dispose',
-      runId: _reviewRunId,
-      fields: {
-        'wasPlaying': _playing,
-      },
-    );
-    DebugLog.resetContext();
-    
-    // Dispose route change listeners
-    // Audio session service doesn't need disposal
-    
-    _ticker?.dispose();
-    _audioPosSub?.cancel();
-    _audioCompleteSub?.cancel();
-    _playerStateSub?.cancel();
-    _positionWatchdog?.cancel();
-    _synth.stop();
-    // No MIDI engine cleanup needed - using bounced audio, not real-time MIDI
-    _time.dispose();
+    _controller.dispose();
+    _visualTime.dispose();
+    _liveMidi.dispose();
     super.dispose();
   }
 
-  void _onTick(Duration elapsed) {
-    if (!_playing) return;
-    
-    // Use audio position as master clock - visuals MUST follow audio
-    // If audio position is not available, freeze visuals
-    if (_audioPositionSec == null) {
-      // Don't advance visuals until audio starts
-      return;
-    }
-    
-    // Visual time is driven directly by audio position (master clock)
-    _time.value = _audioPositionSec!;
-    
-    if (_audioPositionSec! >= _durationSec) {
-      _onPlaybackComplete();
-    }
-  }
-
-  Future<void> _start() async {
-    if (_playing || !_preloadComplete) return;
-    
-    // Increment runId to cancel any in-flight operations
-    _reviewRunId++;
-    final currentRunId = _reviewRunId;
-    
-    final tapTime = DateTime.now().millisecondsSinceEpoch;
-    // Current rendered file already includes requested lead-in and starts at _renderStartSec.
-    // Visual domain 0.0 = audio file 0.0 = Exercise time _renderStartSec.
-    final startOffsetSec = 0.0;
-    
-    DebugLog.event(
-      LogCat.replay,
-      'replay_playback_start',
-      runId: currentRunId,
-      fields: {
-        'tapTime': tapTime,
-        'renderStartSec': _renderStartSec,
-        'micOffsetSec': _micOffsetSec,
-        'durationSec': _durationSec,
-      },
-    );
-    
-    _time.value = 0.0;
-    
-    _playing = true;
-    _audioPositionSec = 0.0;
-    _audioStarted = false;
-    
-    // Reset clock - visuals will be driven directly by audio position
-    _clock.setLatencyCompensationMs(0);
-    _clock.start(offsetSec: startOffsetSec, freezeUntilAudio: true);
-    
-    // Start ticker - it will update visuals from audio position
-    _ticker?.start();
-    
-    // Ensure iOS audio session is configured for MIDI playback (especially with headphones)
-    // This must be called BEFORE starting audio/MIDI playback
-    await AudioSessionService.applyReviewSession(tag: 'review_start');
-    
-    // Start audio playback immediately (everything is preloaded)
-    // Audio will be sought to startOffsetSec in _playAudio()
-    // Capture exact playback start moment AFTER seek completes (this is the master clock anchor)
-    await _playAudio();
-    
-    // Capture playback start epoch AFTER audio has been sought and started
-    // This ensures MIDI notes use the same timeline anchor as recorded audio
-    _playbackStartEpoch = DateTime.now();
-    final playbackStartTime = _playbackStartEpoch!.millisecondsSinceEpoch;
-    
-    if (kDebugMode) {
-      debugPrint('[Review Start] playbackStartEpoch=$playbackStartTime (captured after seek), '
-          'startOffsetSec=$startOffsetSec, LEAD_IN_MS=${AudioConstants.leadInMs}');
-    }
-    
-    // Check runId after async call
-    if (!mounted || currentRunId != _reviewRunId) return;
-    
-    // NO REAL-TIME MIDI: We use bounced/mixed WAV instead
-    // This eliminates timer-based scheduling and route change issues
-    if (kDebugMode) {
-      debugPrint('[Review Start] Using bounced audio (no real-time MIDI): mixed=${_mixedAudioPath != null}, ref=${_referenceAudioPath != null}');
-    }
-    
-    // For reference-only playback (no recorded audio), use a timer to drive visuals
-    // if we don't have bounced reference WAV
-    if (_recordedAudioPath == null && _referenceAudioPath == null && _midiOnlyTimer == null) {
-      _midiOnlyStartTime = DateTime.now().millisecondsSinceEpoch;
-      final startOffsetSec = widget.startTimeSec;
-      _midiOnlyTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (!_playing || _reviewRunId != currentRunId) {
-          timer.cancel();
-          _midiOnlyTimer = null;
-          return;
-        }
-        
-        // Calculate elapsed time since MIDI playback started
-        final elapsedMs = DateTime.now().millisecondsSinceEpoch - (_midiOnlyStartTime ?? 0);
-        final newPositionSec = (elapsedMs / 1000.0) + startOffsetSec;
-        
-        _audioPositionSec = newPositionSec;
-        _time.value = newPositionSec;
-      });
-      
-      if (kDebugMode) {
-        debugPrint('[Review] Started MIDI-only timer for visual updates');
-      }
-    }
-    
-    final midiEngineStartTime = DateTime.now().millisecondsSinceEpoch;
-    if (kDebugMode) {
-      debugPrint('[Review Start] midiEngineStartTime=$midiEngineStartTime, '
-          'latency=${midiEngineStartTime - playbackStartTime}ms');
-      if (_notes.isNotEmpty) {
-        // Find first note that's >= startOffsetSec
-        final relevantNotes = _notes.where((n) => n.startSec >= startOffsetSec).toList();
-        if (relevantNotes.isNotEmpty) {
-          final firstNoteStartMs = relevantNotes.first.startSec * 1000.0;
-          debugPrint('[Review Start] firstMidiNoteAfterOffset=${firstNoteStartMs}ms (offset=$startOffsetSec)');
-        }
-      }
-    }
-    
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _stop() async {
-    if (!_playing) return;
-    _playing = false;
-    _ticker?.stop();
-    _clock.pause();
-    // Stop audio immediately - this will stop audio position updates
-    await _synth.stop();
-    // No MIDI to stop - we use bounced WAV, not real-time MIDI
-    await _audioPosSub?.cancel();
-    _audioPosSub = null;
-    await _audioCompleteSub?.cancel();
-    _audioCompleteSub = null;
-    _audioPositionSec = null;
-    _audioStarted = false;
-    if (mounted) setState(() {});
-  }
-  
-  /// Called when primary recording playback completes
-  Future<void> _onPlaybackComplete() async {
-    if (kDebugMode) {
-      debugPrint('[Review] Primary recording playback completed');
-    }
-    // Stop both MIDI and recorded audio
-    await _stop();
-    // Navigate back to previous screen
-    if (mounted && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _playAudio() async {
-    final currentRunId = _reviewRunId;
-    
-    // Ensure iOS audio session is configured before starting playback
-    // This is especially important for MIDI playback with headphones
-    await AudioSessionService.applyReviewSession(tag: 'play_audio');
-    
-    // Seek to the start time before playing (if startTimeSec > 0)
-    final startOffsetSec = widget.startTimeSec;
-    
-    if (kDebugMode) {
-      debugPrint('[Review] startOffsetSec=$startOffsetSec');
-    }
-    
-    // Use bounced/mixed WAV if available, otherwise fall back to recorded audio only
-    String? audioToPlay;
-    if (_showReference && _mixedAudioPath != null) {
-      // Play mixed WAV (mic + reference)
-      audioToPlay = _mixedAudioPath;
-      if (kDebugMode) {
-        debugPrint('[Review] SUCCESS: Playing MIXED WAV (piano + voice): ${audioToPlay}');
-      }
-    } else if (_showReference && _referenceAudioPath != null) {
-      if (_recordedAudioPath != null) {
-        // FALLBACK: Mixing failed or not ready, but we have both files.
-        // Play them in parallel using dual players.
-        // This ensures the user hears their recording even if the bounce service failed.
-        if (kDebugMode) {
-          debugPrint('[Review] WARNING: Mixed file missing. Fallback to DUAL PLAYBACK (Ref + Mic).');
-        }
-        
-        // 1. Play Reference (Primary)
-        await _synth.playFile(_referenceAudioPath!);
-        
-        // 2. Play Mic (Secondary)
-        // Ensure secondary player is prepared if possible (though playSecondaryFile handles it)
-        await _synth.ensureSecondaryPrepared(_recordedAudioPath!, runId: currentRunId);
-        await _synth.playSecondaryFile(_recordedAudioPath!);
-        
-        audioToPlay = _referenceAudioPath; // Primary governs the clock
-      } else {
-        // Play reference-only WAV (no recorded audio)
-        audioToPlay = _referenceAudioPath;
-        if (kDebugMode) {
-           debugPrint('[Review] INFO: Playing REFERENCE-ONLY WAV: ${audioToPlay}');
-        }
-      }
-    } else {
-      // Play recorded audio only (reference toggle off or mixing failed)
-      audioToPlay = _recordedAudioPath;
-      if (kDebugMode) {
-        if (_showReference) {
-           debugPrint('[Review] WARNING: Mixing failed/Reference missing. Falling back to MIC-ONLY: ${audioToPlay}');
-        } else {
-           debugPrint('[Review] INFO: Playing MIC-ONLY (reference toggled off): ${audioToPlay}');
-        }
-      }
-    }
-    
-    // If we did dual playback, audioToPlay is already set to reference for tracking,
-    // and playFile was already called. Avoid double-calling.
-    // However, the original logic calls _synth.playFile(audioToPlay) below.
-    // We need to restructure.
-    
-    if (audioToPlay != null && !(_showReference && _referenceAudioPath != null && _recordedAudioPath != null && _mixedAudioPath == null)) {
-       // Standard single-file playback logic
-       await _synth.playFile(audioToPlay);
-    }
-    
-    if (audioToPlay != null) {
-      // Play the bounced/mixed WAV or recorded audio
-      // We play from the BEGINNING of this file as it's already pre-rendered for this review session.
-      await _synth.playFile(audioToPlay);
-      
-      // Check runId after async call
-      if (!mounted || currentRunId != _reviewRunId) return;
-      
-      // No internal seek needed - file starts at rebased 0.0
-      
-      // Set up position listener for visuals
-      await _audioPosSub?.cancel();
-      _audioPosSub = _synth.onPositionChanged.listen((pos) {
-        if (!_audioStarted && pos > Duration.zero) {
-          _audioStarted = true;
-          if (kDebugMode) {
-            debugPrint('[Review] Audio started, position stream active');
-          }
-        }
-        _audioPositionSec = pos.inMilliseconds / 1000.0;
-        _lastPositionUpdateMs = DateTime.now().millisecondsSinceEpoch;
-      });
-      
-      // Set up completion listener
-      await _audioCompleteSub?.cancel();
-      _audioCompleteSub = _synth.onComplete.listen((_) {
-        _onPlaybackComplete();
-      });
-    } else {
-      // No audio file available - fallback to MIDI-only (shouldn't happen with bounced audio)
-      if (kDebugMode) {
-        debugPrint('[Review] WARNING: No audio file available, falling back to MIDI-only');
-      }
-      // No recorded audio - MIDI-only playback
-      // Skip recording seek if we're not playing recording
-      if (startOffsetSec > 0) {
-        DebugLog.event(
-          LogCat.seek,
-          'skip_recording_seek',
-          runId: currentRunId,
-          fields: {
-            'targetSec': startOffsetSec,
-            'reason': 'willPlayRecording=false',
-          },
-        );
-      }
-      
-      // Debug: log when audio actually starts
-      if (kDebugMode) {
-        final t0AudioStart = DateTime.now().millisecondsSinceEpoch;
-        debugPrint('[Review Start] t0_audioStart=$t0AudioStart (MIDI-only playback, no recorded audio)');
-      }
-      
-      // For MIDI-only playback, use a timer-based clock since there's no audio player
-      await _audioPosSub?.cancel();
-      await _playerStateSub?.cancel();
-      _positionWatchdog?.cancel();
-      _lastPositionUpdateMs = null;
-      _audioPositionSec = startOffsetSec; // Initialize to start offset
-      _audioStarted = true;
-      
-      // Timer for visual updates (no audio file available)
-      
-      // Watchdog: if position hasn't updated in 500ms, poll manually
-      _positionWatchdog = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-        if (!_playing) {
-          timer.cancel();
-          return;
-        }
-        
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (_lastPositionUpdateMs != null && (now - _lastPositionUpdateMs!) > 1000) {
-          // Position stream appears stuck, poll manually
-          _synth.getCurrentPosition().then((pos) {
-            if (pos != null && _playing) {
-              final newPositionSec = (pos.inMilliseconds / 1000.0) + startOffsetSec;
-              if (_audioPositionSec == null || (newPositionSec - _audioPositionSec!).abs() > 0.01) {
-                DebugLog.event(
-                  LogCat.audio,
-                  'audio_position_polled',
-                  runId: _reviewRunId,
-                  fields: {
-                    'oldPosSec': _audioPositionSec,
-                    'newPosSec': newPositionSec,
-                    'posMs': pos.inMilliseconds,
-                    'streamStuck': true,
-                  },
-                );
-                _audioPositionSec = newPositionSec;
-                _lastPositionUpdateMs = now;
-              }
-            }
-          });
-        }
-      });
-      
-      // Listen for primary recording completion
-      await _audioCompleteSub?.cancel();
-      _audioCompleteSub = _synth.onComplete.listen((_) {
-        _onPlaybackComplete();
-      });
-    }
-    
-    if (kDebugMode) {
-      debugPrint('[Review] playbackStartedAt=${startOffsetSec.toStringAsFixed(2)}s');
-    }
-  }
-
-  // _playReference method removed - we use bounced WAV instead of real-time MIDI
-
-  double _computeDuration(List<ReferenceNote> notes) {
-    final specDuration =
-        notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).fold(0.0, math.max);
-    return math.max(widget.lastTake.durationSec, specDuration) +
-        AudioSynthService.tailSeconds;
-  }
-
-
   @override
   Widget build(BuildContext context) {
-    final colors = AppThemeColors.of(context);
-    final noteMidis = _notes.map((n) => n.midi.toDouble()).toList();
-    final contourMidis = widget.lastTake.frames
-        .map((f) => f.midi ?? (f.hz != null ? PitchMath.hzToMidi(f.hz!) : null))
-        .whereType<double>()
-        .toList();
-    
-    // Use persisted Y-axis mapping if available, otherwise use loaded user range (or defaults)
-    final minMidi = widget.lastTake.minMidi ?? _midiMin;
-    final maxMidi = widget.lastTake.maxMidi ?? _midiMax;
-    assert(() {
-      debugPrint('[Review] exerciseId: ${widget.lastTake.exerciseId}');
-      if (noteMidis.isNotEmpty) {
-        debugPrint('[Review] note midi range: '
-            '${noteMidis.reduce(math.min)}..${noteMidis.reduce(math.max)}');
-      }
-      if (contourMidis.isNotEmpty) {
-        debugPrint('[Review] contour midi range: '
-            '${contourMidis.reduce(math.min)}..${contourMidis.reduce(math.max)}');
-      }
-      debugPrint('[Review] viewport midi: $minMidi..$maxMidi');
-      return true;
-    }());
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: const Color(0xFFF9F9FC), // Soft lavender/white tint
       appBar: AppBar(
-        leading: const BackButton(),
-        title: const Text('Review last take'),
-        actions: [
-          // Reference toggle button
-          if (_mixedAudioPath != null || _referenceAudioPath != null)
-            IconButton(
-              icon: Icon(_showReference ? Icons.music_note : Icons.mic),
-              tooltip: _showReference ? 'Show reference (mixed)' : 'Show mic only',
-              onPressed: () {
-                setState(() {
-                  _showReference = !_showReference;
-                });
-                // Restart playback with new audio source
-                if (_playing) {
-                  _stop();
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    if (mounted && _preloadComplete) {
-                      _start();
-                    }
-                  });
-                }
-              },
-            ),
-          // Force re-render button (debug only)
-          if (kDebugMode)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Force re-render (clear cache)',
-              onPressed: () async {
-                // Clear cache and re-render
-                final reviewConfig = MidiPlaybackConfig.review();
-                final takeFileName = p.basename(_recordedAudioPath ?? '');
-                final cacheKey = ReviewAudioBounceService.generateCacheKey(
-                  takeFileName: takeFileName,
-                  exerciseId: widget.exercise.id,
-                  transposeSemitones: 0,
-                  sampleRate: ReviewAudioBounceService.defaultSampleRate,
-                );
-                final cacheDir = await ReviewAudioBounceService.getCacheDirectory();
-                final cachedFile = File(p.join(cacheDir.path, '${cacheKey}_mixed.wav'));
-                if (await cachedFile.exists()) {
-                  await cachedFile.delete();
-                  if (kDebugMode) {
-                    debugPrint('[Review] Cleared cached mixed WAV: ${cachedFile.path}');
-                  }
-                }
-                _mixedAudioPath = null;
-                _referenceAudioPath = null;
-                // Re-bounce
-                final difficulty = pitchHighwayDifficultyFromName(widget.lastTake.pitchDifficulty) ?? PitchHighwayDifficulty.medium;
-                await _bounceAndMixAudio(difficulty);
-                if (mounted) setState(() {});
-              },
-            ),
-        ],
+        title: const Text('Review Take', style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.w600)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          color: const Color(0xFF1A1A1A),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
-      body: AppBackground(
-        child: SafeArea(
-          bottom: false,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _playing
-                ? _stop
-                : (_preloadComplete ? _start : () {}), // Disabled until preload complete
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (kDebugMode && !_loggedGraphInfo) {
-                  debugPrint(
-                    'REVIEW GRAPH: height=${constraints.maxHeight} '
-                    'topPad=0.0 bottomPad=0.0 '
-                    'viewportMinMidi=$minMidi viewportMaxMidi=$maxMidi',
-                  );
-                  _loggedGraphInfo = true;
-                }
-                return Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: PitchHighwayPainter(
-                          notes: _notes,
-                          pitchTail: widget.lastTake.frames,
-                          time: _time,
-                          pixelsPerSecond: _pixelsPerSecond,
-                          playheadFraction: 0.45,
-                          smoothingWindowSec: 0.12,
-                          drawBackground: false,
-                          showLivePitch: false,
-                          showPlayheadLine: false,
-                          midiMin: minMidi,
-                          midiMax: maxMidi,
-                          colors: colors,
-                          debugLogMapping: true,
-                          sirenPath: _sirenVisualPath, // Pass visual path for Sirens bell curve
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: PitchContourPainter(
-                          frames: _rebasedFrames,
-                          time: _time,
-                          pixelsPerSecond: _pixelsPerSecond,
-                          playheadFraction: 0.45,
-                          midiMin: minMidi,
-                          midiMax: maxMidi,
-                          glowColor: colors.goldAccent,
-                          coreColor: colors.goldAccent,
-                          debugLogMapping: true,
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _PlayheadPainter(
-                          playheadFraction: 0.45,
-                          lineColor: colors.blueAccent.withOpacity(0.7),
-                          shadowColor: Colors.black.withOpacity(0.3),
-                        ),
-                      ),
-                    ),
-                    if (kDebugMode && _notes.isNotEmpty)
+      body: ValueListenableBuilder<PitchHighwaySessionState>(
+        valueListenable: _controller.state,
+        builder: (context, state, _) {
+          
+          // Update visual time from replay time (which is driven by audio player)
+          _visualTime.value = state.replayVisualTimeSec;
+          
+          final now = _visualTime.value;
+          // Show a slightly wider window for review? or keep same as play?
+          // Play shows 4s. Review could show more? Let's stick to 4s for consistency for now.
+          final visibleFrames = state.alignedFrames.where((f) => f.time > now - 4.0 && f.time <= now);
+          
+          return Column(
+            children: [
+              // --- 1. Top Section: Pitch Lane (65%) ---
+              Expanded(
+                flex: 65,
+                child: Container(
+                  color: Colors.transparent, // Let scaffold bg show through
+                  child: Stack(
+                    children: [
+                      // Pitch Highway
                       Positioned.fill(
-                        child: CustomPaint(
-                          painter: _DebugYLinePainter(
-                            midi: _notes.first.midi.toDouble(),
-                            midiMin: minMidi,
-                            midiMax: maxMidi,
-                            color: Colors.red.withOpacity(0.5),
-                          ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                             // Map frames to visual points
+                             final points = visibleFrames.map((f) {
+                                final midi = f.midi ?? 0;
+                                // Map MIDI to Y. High MIDI = Low Y (Top).
+                                final y = (constraints.maxHeight) - ((midi - _midiMin) / (_midiMax - _midiMin)) * constraints.maxHeight;
+                                return TailPoint(tSec: f.time, yPx: y, voiced: (f.voicedProb??0) > 0.5); 
+                             }).toList();
+  
+                             return CustomPaint(
+                               painter: PitchHighwayPainter(
+                                 notes: widget.notes,
+                                 pitchTail: const [], // We use tailPoints for pre-recorded
+                                 tailPoints: points,
+                                 time: _visualTime,
+                                 liveMidi: _liveMidi, // Not used in review but required
+                                 pitchTailTimeOffsetSec: 0,
+                                 pixelsPerSecond: _pixelsPerSecond,
+                                 playheadFraction: 0.45,
+                                 drawBackground: true, // Grid
+                                 midiMin: _midiMin,
+                                 midiMax: _midiMax,
+                                 isReviewMode: true, // NEW param to add to painter
+                                 colors: AppThemeColors.light, // Light theme for canvas
+                               ),
+                             );
+                          }
                         ),
                       ),
-                    // Loading overlay
-                    if (!_preloadComplete)
-                      Positioned.fill(
+                      
+                      // Top Ruler (Simple overlay for now)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 24,
                         child: Container(
-                          color: Colors.black.withOpacity(0.7),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const CircularProgressIndicator(),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Loading...',
-                                  style: TextStyle(
-                                    color: colors.textPrimary,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ],
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.white.withOpacity(0.9), Colors.white.withOpacity(0.0)],
+                            ),
+                          ),
+                          child: CustomPaint(
+                            painter: _TimeRulerPainter(
+                              time: now, 
+                              pixelsPerSecond: _pixelsPerSecond, 
+                              playheadFraction: 0.45
                             ),
                           ),
                         ),
                       ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // --- 2. Bottom Section: Controls (35%) ---
+              Expanded(
+                flex: 35,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 20,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Time Transport
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Time Display
+                          Text(
+                            _formatTime(now),
+                            style: const TextStyle(
+                              color: Color(0xFF1A1A1A), 
+                              fontSize: 32, 
+                              fontWeight: FontWeight.w300,
+                              letterSpacing: -1.0,
+                            )
+                          ),
+                          const SizedBox(height: 4),
+                          // Scrub Bar
+                          SizedBox(
+                            height: 20,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 4,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                                activeTrackColor: const Color(0xFF8055E3).withOpacity(0.3), // User requested #8055e3
+                                inactiveTrackColor: const Color(0xFFE0E0E0),
+                                thumbColor: const Color(0xFF8055E3),
+                              ),
+                              child: Slider(
+                                value: now.clamp(0.0, widget.referenceDurationSec),
+                                min: 0.0,
+                                max: widget.referenceDurationSec,
+                                onChanged: (v) => _controller.seekTo(v),
+                              ),
+                            ),
+                          ),
+                          // Transport Buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.skip_previous_rounded),
+                                color: const Color(0xFF8055E3),
+                                iconSize: 32,
+                                onPressed: () => _controller.seekTo(0),
+                              ),
+                              const SizedBox(width: 24),
+                              GestureDetector(
+                                onTap: () => _controller.toggleReplay(),
+                                child: Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF8055E3),
+                                    borderRadius: BorderRadius.circular(32),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF8055E3).withOpacity(0.4),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      )
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    state.isPlayingReplay ? Icons.pause_rounded : Icons.play_arrow_rounded, 
+                                    size: 40, 
+                                    color: Colors.white
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 24),
+                              IconButton(
+                                icon: const Icon(Icons.loop_rounded),
+                                color: Colors.black12, 
+                                iconSize: 32,
+                                onPressed: () {},
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 8),
+                      
+                      // Alignment & Mix
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                "Offset: ${widget.offsetResult.offsetMs.toStringAsFixed(1)} ms",
+                                style: const TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                              Row(
+                                children: [
+                                  Text("Align", style: TextStyle(color: state.applyOffset ? const Color(0xFF8055E3) : Colors.black26, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  const SizedBox(width: 8),
+                                  Transform.scale(
+                                    scale: 0.8,
+                                    child: Switch(
+                                      value: state.applyOffset,
+                                      onChanged: (v) => _controller.setApplyOffset(v),
+                                      activeColor: Colors.white,
+                                      activeTrackColor: const Color(0xFF8055E3),
+                                      inactiveThumbColor: Colors.white,
+                                      inactiveTrackColor: Colors.grey.shade300,
+                                      trackOutlineColor: MaterialStateProperty.all(Colors.transparent),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          // Mix Sliders (Compact)
+                          Row(
+                            children: [
+                              const Text("Ref", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 2,
+                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
+                                    thumbColor: const Color(0xFF8055E3),
+                                  ),
+                                  child: Slider(
+                                    value: state.refVolume, 
+                                    onChanged: (v) => _controller.setRefVolume(v),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text("You", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 2,
+                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
+                                    thumbColor: const Color(0xFF8055E3),
+                                  ),
+                                  child: Slider(
+                                    value: state.recVolume, 
+                                    onChanged: (v) => _controller.setRecVolume(v),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
+
+  String _formatTime(double sec) {
+    final int min = sec ~/ 60;
+    final int s = sec.floor() % 60;
+    final int ms = ((sec - sec.floor()) * 100).floor();
+    return "$min:${s.toString().padLeft(2, '0')}.${ms.toString().padLeft(2, '0')}";
+  }
 }
 
-class _PlayheadPainter extends CustomPainter {
+class _TimeRulerPainter extends CustomPainter {
+  final double time;
+  final double pixelsPerSecond;
   final double playheadFraction;
-  final Color lineColor;
-  final Color shadowColor;
 
-  const _PlayheadPainter({
-    required this.playheadFraction,
-    required this.lineColor,
-    required this.shadowColor,
-  });
+  _TimeRulerPainter({required this.time, required this.pixelsPerSecond, required this.playheadFraction});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final x = size.width * playheadFraction;
-    final shadowPaint = Paint()
-      ..color = shadowColor
-      ..strokeWidth = 2.0;
-    canvas.drawLine(Offset(x + 0.5, 0), Offset(x + 0.5, size.height), shadowPaint);
-    final playheadPaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.0;
-    canvas.drawLine(Offset(x, 0), Offset(x, size.height), playheadPaint);
+    final paint = Paint()..color = Colors.black54..strokeWidth = 1.0;
+    final textStyle = const TextStyle(color: Colors.black54, fontSize: 10);
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    
+    // Draw ticks every 1 second
+    final startVisibleTime = time - (size.width * playheadFraction) / pixelsPerSecond;
+    final endVisibleTime = time + (size.width * (1-playheadFraction)) / pixelsPerSecond;
+    
+    final startSec = startVisibleTime.floor();
+    final endSec = endVisibleTime.ceil();
+    
+    for (int s = startSec; s <= endSec; s++) {
+      if (s < 0) continue;
+      final x = (size.width * playheadFraction) + (s - time) * pixelsPerSecond;
+      
+      canvas.drawLine(Offset(x, 0), Offset(x, 10), paint);
+      
+      textPainter.text = TextSpan(text: "$s:00", style: textStyle);
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(x + 4, 0));
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _PlayheadPainter oldDelegate) {
-    return oldDelegate.playheadFraction != playheadFraction;
-  }
-}
-
-class _DebugYLinePainter extends CustomPainter {
-  final double midi;
-  final int midiMin;
-  final int midiMax;
-  final Color color;
-
-  _DebugYLinePainter({
-    required this.midi,
-    required this.midiMin,
-    required this.midiMax,
-    required this.color,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final y = PitchMath.midiToY(
-      midi: midi,
-      height: size.height,
-      midiMin: midiMin,
-      midiMax: midiMax,
-    );
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DebugYLinePainter oldDelegate) {
-    return oldDelegate.midi != midi ||
-        oldDelegate.midiMin != midiMin ||
-        oldDelegate.midiMax != midiMax ||
-        oldDelegate.color != color;
-  }
+  bool shouldRepaint(covariant _TimeRulerPainter old) => old.time != time;
 }

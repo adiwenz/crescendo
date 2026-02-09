@@ -4,7 +4,7 @@ import '../debug/debug_flags.dart';
 import '../models/exercise_plan.dart';
 import '../models/pitch_highway_difficulty.dart';
 import '../models/vocal_exercise.dart';
-import '../screens/exercise/pitch_highway_v2_player_screen.dart';
+import '../ui/screens/pitch_highway_screen.dart';
 import '../services/exercise_repository.dart';
 import '../ui/screens/exercise_player_screen.dart';
 
@@ -34,7 +34,6 @@ class ExerciseRouteRegistry {
         title: ex.name,
         builder: (_) => ExercisePlayerScreen(
           exercise: ex,
-          pitchDifficulty: null,
         ),
       ),
   };
@@ -63,13 +62,11 @@ class ExerciseRouteRegistry {
               ? pitchHighwayDifficultyFromLevel(difficultyLevel)
               : null;
 
-      // START V2 DEBUG ROUTING
-      if (exercise.type == ExerciseType.pitchHighway && 
-          DebugFlags.enablePitchHighwayV2) {
+      if (exercise.type == ExerciseType.pitchHighway) {
          Navigator.push(
             context,
             MaterialPageRoute(
-               builder: (_) => PitchHighwayV2PlayerScreen(
+               builder: (_) => PitchHighwayScreen(
                   exercise: exercise,
                   pitchDifficulty: pitchDifficulty!,
                ),
@@ -77,16 +74,12 @@ class ExerciseRouteRegistry {
          );
          return true;
       }
-      // END V2 DEBUG ROUTING
 
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ExercisePlayerScreen(
             exercise: exercise,
-            pitchDifficulty: pitchDifficulty,
-            exercisePlan: exercisePlan,
-            exercisePlanFuture: exercisePlanFuture,
           ),
         ),
       );

@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../audio/wav_util.dart';
 
-import '../../services/pitch_highway_v2_session_controller.dart';
+import '../../services/pitch_highway_session_controller.dart';
 import '../../services/recording_service.dart';
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
@@ -20,7 +20,7 @@ class PitchHighwayReplayOffsetTestScreen extends StatefulWidget {
 }
 
 class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> {
-  late PitchHighwayV2SessionController _controller;
+  late PitchHighwaySessionController _controller;
   
   // Conf
   static const double _refDurationSec = 5.5;
@@ -39,7 +39,7 @@ class _PitchState extends State<PitchHighwayReplayOffsetTestScreen> {
       ReferenceNote(startSec: 4.0, endSec: 5.0, midi: 67),
     ];
 
-    _controller = PitchHighwayV2SessionController(
+    _controller = PitchHighwaySessionController(
       notes: notes,
       referenceDurationSec: _refDurationSec,
       ensureReferenceWav: _ensureReferenceWav,
