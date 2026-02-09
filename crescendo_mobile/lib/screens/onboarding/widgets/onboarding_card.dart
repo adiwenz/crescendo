@@ -41,7 +41,7 @@ class OnboardingCard extends StatelessWidget {
             child: Column(
               children: [
                 // Top: Title
-                const SizedBox(height: 40), // Top spacing
+                const SizedBox(height: 80), // Top spacing
                 Text(
                   title,
                   style: AppText.h1.copyWith(
@@ -54,7 +54,7 @@ class OnboardingCard extends StatelessWidget {
                 ),
                 
                 // Spacer to push Body to middle
-                const Spacer(),
+                const Spacer(flex: 1),
                 
                 // Middle: Body
                 // We wrap in a container to ensure it doesn't span too wide
@@ -63,7 +63,7 @@ class OnboardingCard extends StatelessWidget {
                   child: bodyWidget ?? Text(
                     body!,
                     style: AppText.body.copyWith(
-                      fontSize: 18, // Slightly larger for readability
+                      fontSize: 22, // Slightly larger for readability
                       height: 1.5,
                       color: AppColors.textPrimary.withOpacity(0.8),
                       // fontWeight: FontWeight.w500,

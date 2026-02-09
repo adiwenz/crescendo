@@ -60,13 +60,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       const Color(0xFFbadbfe),
     ];
 
-    // Brighter version for last screen (Screen 4 visual request)
-    final activeGradient = _currentIndex == 3 
-        ? [const Color(0xFFe8d1ff), const Color(0xFFcce4ff)] 
-        : gradientColors;
+    // Brighter version for last screen (Screen 4 visual request) - REMOVED to match others
+    final activeGradient = gradientColors;
 
     final bodyStyle = AppText.body.copyWith(
-      fontSize: 16, 
+      fontSize: 22, 
+      height: 1.5, 
+      color: AppColors.textPrimary.withOpacity(0.8) // Darker text for better contrast on bullets
+    );
+
+    final bulletPointStyle = AppText.body.copyWith(
+      fontSize: 22, 
       height: 1.5, 
       color: AppColors.textPrimary.withOpacity(0.8) // Darker text for better contrast on bullets
     );
@@ -116,24 +120,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             // const SizedBox(height: 16),
                             // Constrained width container to make left-aligned bullets look centered
                             Container(
-                              constraints: const BoxConstraints(maxWidth: 260),
+                              constraints: const BoxConstraints(maxWidth: 300),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                               'They help your voice:',
                               style: bodyStyle,
-                              textAlign: TextAlign.left,
+                              textAlign: TextAlign.center,
                             ),
-                            const SizedBox(height: 16),
-                                  _buildBulletPoint('find notes faster', bodyStyle),
-                                  _buildBulletPoint('stay in tune with less effort', bodyStyle),
-                                  _buildBulletPoint('reduce tension and fatigue', bodyStyle),
-                                  _buildBulletPoint('learn technique', bodyStyle),
+                            const SizedBox(height: 30),
+                                  _buildBulletPoint('Find notes faster', bulletPointStyle),
+                                  _buildBulletPoint('Stay in tune', bulletPointStyle),
+                                  _buildBulletPoint('Reduce tension', bulletPointStyle),
+                                  _buildBulletPoint('Learn technique', bulletPointStyle),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 30),
                             Text(
                               'So when you sing, it feels more reliable.',
                               style: bodyStyle,
