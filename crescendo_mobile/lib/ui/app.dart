@@ -17,7 +17,6 @@ import 'route_observer.dart';
 import '../screens/onboarding/onboarding_screen.dart';
 import 'widgets/app_background.dart';
 import 'widgets/lazy_indexed_stack.dart';
-import '../debug/transport_clock_test_screen.dart';
 import '../debug/duplex_audio_test_screen.dart';
 import '../debug/one_clock_debug_test_screen.dart';
 
@@ -92,7 +91,6 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 '/settings/subscription': (_) => const SubscriptionScreen(),
                 '/settings/subscription_features': (_) =>
                     const SubscriptionFeaturesScreen(),
-                '/debug/transport_clock': (_) => const TransportClockTestScreen(),
                 '/debug/duplex_audio': (_) => const DuplexAudioTestScreen(),
                 '/debug/one_clock': (_) => const OneClockDebugTestScreen(),
                 '/onboarding': (_) => const OnboardingScreen(),

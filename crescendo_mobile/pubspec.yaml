@@ -45,7 +45,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon.png
     - assets/
     - assets/audio/piano/
     - assets/audio/previews/
@@ -57,7 +56,9 @@ flutter:
 flutter_launcher_icons:
   image_path: "assets/purple_logo.png"
   remove_alpha_ios: true
-  android: true
+  android: "launcher_icon"
+  adaptive_icon_foreground: "assets/white_logo.png"
+  adaptive_icon_background: "assets/splash_background.png"
   ios: true
   web:
     generate: true
