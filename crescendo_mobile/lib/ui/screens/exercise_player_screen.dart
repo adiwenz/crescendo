@@ -59,6 +59,7 @@ import '../../services/pattern_visual_note_builder.dart';
 import '../../services/exercise_audio_controller.dart';
 import '../../models/pattern_spec.dart';
 import 'pitch_matching_screen.dart';
+import 'sustained_hold_screen.dart';
 
 /// Buffer size for recording service.
 /// 1024 samples (~23ms at 44.1kHz) is needed for reliable low-frequency pitch detection.
@@ -109,7 +110,7 @@ class ExercisePlayerScreen extends StatelessWidget {
       ExerciseType.breathTimer => BreathTimerPlayer(exercise: exercise),
       ExerciseType.sovtTimer => SovtTimerPlayer(exercise: exercise),
       ExerciseType.sustainedPitchHold =>
-        SustainedPitchHoldPlayer(exercise: exercise),
+        SustainedHoldScreen(exercise: exercise),
       ExerciseType.pitchMatchListening =>
         PitchMatchingScreen(exercise: exercise),
       ExerciseType.articulationRhythm =>
