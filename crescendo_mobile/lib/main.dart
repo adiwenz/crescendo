@@ -61,7 +61,7 @@ Future<void> main() async {
   // Check onboarding state
   final prefs = await SharedPreferences.getInstance();
   final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
-  final initialRoute = seenOnboarding ? '/' : '/onboarding';
+  final initialRoute = '/onboarding'; // seenOnboarding ? '/' : '/onboarding';
 
   runApp(CrescendoApp(initialRoute: initialRoute));
 }

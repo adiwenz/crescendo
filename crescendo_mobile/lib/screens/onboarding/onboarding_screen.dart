@@ -168,16 +168,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(4, (index) {
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        height: 8,
-                        width: _currentIndex == index ? 24 : 8,
-                        decoration: BoxDecoration(
-                          color: _currentIndex == index 
-                              ? AppColors.textPrimary.withOpacity(0.5) 
-                              : AppColors.textPrimary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
+                      return GestureDetector(
+                        onTap: () {
+                          _pageController.animateToPage(
+                            index,
+                            duration: const Duration(milliseconds: 600),
+                            curve: Curves.easeInOutCubic,
+                          );
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          height: 8,
+                          width: _currentIndex == index ? 24 : 8,
+                          decoration: BoxDecoration(
+                            color: _currentIndex == index 
+                                ? AppColors.textPrimary.withOpacity(0.5) 
+                                : AppColors.textPrimary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       );
                     }),

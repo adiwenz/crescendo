@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+import '../../../../design/app_colors.dart';
+import '../../../../design/app_text.dart';
+
+class OnboardingCard extends StatelessWidget {
+  final String title;
+  final String? body;
+  final Widget? bodyWidget;
+  final VoidCallback onContinue;
+  final String ctaText;
+
+  const OnboardingCard({
+    super.key,
+    required this.title,
+    this.body,
+    this.bodyWidget,
+    required this.onContinue,
+    this.ctaText = 'Continue',
+  }) : assert(body != null || bodyWidget != null, 'Must provide either body text or bodyWidget');
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        children: [
+          // Upper Third Title
+          const Spacer(flex: 3),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              title,
+              style: AppText.h1.copyWith(
+                fontSize: 32,
+                height: 1.1,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          
+          const Spacer(flex: 2),
+          
+          // Centered Body (Narrow width)
+          Container(
+            constraints: const BoxConstraints(maxWidth: 280), // ~26 chars
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: bodyWidget ?? Text(
+              body!,
+              style: AppText.body.copyWith(
+                fontSize: 20, 
+                height: 1.4,
+                color: AppColors.textPrimary.withOpacity(0.9),
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          const Spacer(flex: 4),
+
+          // CTA Anchored to bottom/wave
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: onContinue,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5669FF), // Vivid "Crescendo Blue" from design
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16), // Taller button
+                ),
+                child: Text(
+                  ctaText,
+                  style: const TextStyle(
+                    fontSize: 18, // Larger text
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 80), // Space for dots
+        ],
+      ),
+    );
+  }
+}
