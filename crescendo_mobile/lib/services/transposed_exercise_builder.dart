@@ -148,8 +148,8 @@ class TransposedExerciseBuilder {
         ? 0
         : scaledSegments.map((s) => s.endMs).reduce(math.max);
     final patternDurationSec = patternDurationMs / 1000.0;
-    // Gap between repetitions
-    const gapBetweenRepetitionsSec = 0.75;
+    // Gap between repetitions - increased to 1.0s to fit two modulation chords
+    const gapBetweenRepetitionsSec = 1.0;
 
     // Build all transposed repetitions
     final allNotes = <ReferenceNote>[];
@@ -195,6 +195,54 @@ class TransposedExerciseBuilder {
       }
       
       
+      // MODULATION CHORDS: Current Key -> New Key
+      // This gives a strong harmonic pull to the new key.
+      final nextRootMidi = rootMidi + 1; 
+      final nextHigh = nextRootMidi + patternMax; // Check if next pattern fits
+      
+      // Only play modulation chords if the NEXT repetition is valid (fits in range)
+      // AND we are not at the final break condition
+      if (nextHigh <= effectiveHighest) {
+        final gapStartSec = currentTimeSec + patternDurationSec;
+        
+        // Chord 1: Current Key (I Major)
+        // Reinforces where we are before moving
+        final chord1Start = gapStartSec + 0.1;
+        final chord1Dur = 0.3;
+        final chord1Notes = HarmonicFunctions.getChordNotes(
+          chord: Chord.I_Major,
+          keyRootMidi: rootMidi, // Current root
+          isMinorKey: false, 
+          octaveOffset: -1, 
+        );
+        for (final midi in chord1Notes) {
+          allHarmony.add(ReferenceNote(
+            startSec: chord1Start,
+            endSec: chord1Start + chord1Dur,
+            midi: midi,
+          ));
+        }
+
+        // Chord 2: New Key (I Major)
+        // Leads into the new key (Dominant function relative to old key often, or just direct pivot)
+        // Just playing the new Tonic is very clear for vocal exercises.
+        final chord2Start = gapStartSec + 0.5; // 0.1 start + 0.3 dur + 0.1 gap
+        final chord2Dur = 0.3;
+        final chord2Notes = HarmonicFunctions.getChordNotes(
+          chord: Chord.I_Major,
+          keyRootMidi: nextRootMidi, // Next root
+          isMinorKey: false, 
+          octaveOffset: -1, 
+        );
+        for (final midi in chord2Notes) {
+          allHarmony.add(ReferenceNote(
+            startSec: chord2Start,
+            endSec: chord2Start + chord2Dur,
+            midi: midi,
+          ));
+        }
+      }
+
       // Update time for next repetition - add pattern duration plus gap
       currentTimeSec += patternDurationSec + gapBetweenRepetitionsSec;
 
