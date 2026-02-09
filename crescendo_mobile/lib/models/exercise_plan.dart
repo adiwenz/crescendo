@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'reference_note.dart';
+import 'harmonic_models.dart';
 
 /// Represents a fully prepared exercise timeline with an associated reference WAV file.
 /// This is the single source of truth for the Exercise Player and Review screens.
@@ -21,6 +22,12 @@ class ExercisePlan {
 
   /// Sequence of harmony notes (chords) for background audio
   final List<ReferenceNote> harmonyNotes;
+  
+  /// Tick-based chord events for precise audio generation
+  final List<TickChordEvent> chordEvents;
+  
+  /// Tick-based modulation events for precise audio generation
+  final List<TickModulationEvent> modEvents;
 
   /// Sample rate used for the WAV synthesis (typically 48000)
   final int sampleRate;
@@ -46,6 +53,9 @@ class ExercisePlan {
   /// Lead-in time added to the start of the exercise in seconds
   final double leadInSec;
 
+  /// The starting root MIDI note for the sequence
+  final int initialRootMidi;
+
   ExercisePlan({
     required this.id,
     required this.title,
@@ -53,6 +63,8 @@ class ExercisePlan {
     required this.wavFilePath,
     required this.notes,
     this.harmonyNotes = const [],
+    this.chordEvents = const [],
+    this.modEvents = const [],
     required this.sampleRate,
     required this.durationMs,
     this.gapSec = 0.0,
@@ -61,6 +73,7 @@ class ExercisePlan {
     required this.rangeHash,
     required this.patternHash,
     required this.leadInSec,
+    required this.initialRootMidi,
   });
 
   File get wavFile => File(wavFilePath);
@@ -83,6 +96,7 @@ class ExercisePlan {
       rangeHash: '',
       patternHash: '',
       leadInSec: 0,
+      initialRootMidi: 60,
     );
   }
 
@@ -93,6 +107,8 @@ class ExercisePlan {
     String? wavFilePath,
     List<ReferenceNote>? notes,
     List<ReferenceNote>? harmonyNotes,
+    List<TickChordEvent>? chordEvents,
+    List<TickModulationEvent>? modEvents,
     int? sampleRate,
     int? durationMs,
     double? gapSec,
@@ -102,6 +118,7 @@ class ExercisePlan {
     String? patternHash,
     double? leadInSec,
     double? durationSec, // Allow passing seconds directly or use milliseconds
+    int? initialRootMidi,
   }) {
     return ExercisePlan(
       id: id ?? this.id,
@@ -110,6 +127,8 @@ class ExercisePlan {
       wavFilePath: wavFilePath ?? this.wavFilePath,
       notes: notes ?? this.notes,
       harmonyNotes: harmonyNotes ?? this.harmonyNotes,
+      chordEvents: chordEvents ?? this.chordEvents,
+      modEvents: modEvents ?? this.modEvents,
       sampleRate: sampleRate ?? this.sampleRate,
       durationMs: durationMs ?? (durationSec != null ? (durationSec * 1000).round() : this.durationMs),
       gapSec: gapSec ?? this.gapSec,
@@ -118,6 +137,7 @@ class ExercisePlan {
       rangeHash: rangeHash ?? this.rangeHash,
       patternHash: patternHash ?? this.patternHash,
       leadInSec: leadInSec ?? this.leadInSec,
+      initialRootMidi: initialRootMidi ?? this.initialRootMidi,
     );
   }
 }

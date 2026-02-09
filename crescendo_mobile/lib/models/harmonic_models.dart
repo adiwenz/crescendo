@@ -86,3 +86,76 @@ class ChordEvent {
     );
   }
 }
+
+/// A specific chord event scheduled by tick.
+class TickChordEvent {
+  final int startTick;
+  final int durationTicks;
+  final Chord chord;
+  final int octaveOffset; // e.g. -1 for bass, 0 for mid
+
+  const TickChordEvent({
+    required this.startTick,
+    required this.durationTicks,
+    required this.chord,
+    this.octaveOffset = 0,
+  });
+
+  int get endTick => startTick + durationTicks;
+}
+
+/// A specific key change/modulation scheduled by tick.
+class TickModulationEvent {
+  final int tick;
+  final int semitoneDelta; // Relative change (+1 semitone)
+  
+  const TickModulationEvent({
+    required this.tick,
+    required this.semitoneDelta,
+  });
+}
+
+/// Helper for musical time conversions (Tick <-> Seconds/Samples).
+class MusicalClock {
+  final int bpm;
+  final int timeSignatureTop; // Beats per bar
+  final int sampleRate;
+  
+  static const int ppq = 480; // Pulses Per Quarter note (Standard resolution)
+
+  const MusicalClock({
+    required this.bpm,
+    required this.timeSignatureTop,
+    required this.sampleRate,
+  });
+
+  /// Calculates the number of samples per tick.
+  double get samplesPerTick {
+    // Minutes per tick = 1 / (BPM * PPQ)
+    // Seconds per tick = 60 / (BPM * PPQ)
+    // Samples per tick = (60 * SampleRate) / (BPM * PPQ)
+    return (60.0 * sampleRate) / (bpm * ppq);
+  }
+
+  /// Calculates the tick for a specific bar/beat location.
+  /// [bar] 1-based bar index (starts at 1)
+  /// [beat] 1-based beat index (starts at 1)
+  int tickFor({required int bar, required int beat, int subdivision = 0}) {
+    // (bar-1) * (beatsPerBar * PPQ) + (beat-1) * PPQ + subdivision
+    // Assuming 4/4 or X/4 time where beat is a quarter note
+    final barTicks = (bar - 1) * timeSignatureTop * ppq;
+    final beatTicks = (beat - 1) * ppq;
+    return barTicks + beatTicks + subdivision;
+  }
+  
+  /// Converts ticks to seconds.
+  double ticksToSeconds(int ticks) {
+    // Seconds per tick = 60 / (BPM * PPQ)
+    return ticks * (60.0 / (bpm * ppq));
+  }
+  
+  /// Converts seconds to ticks.
+  int secondsToTicks(double seconds) {
+    return (seconds * (bpm * ppq) / 60.0).round();
+  }
+}

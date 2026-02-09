@@ -22,7 +22,7 @@ class ReferenceAudioGenerator {
   factory ReferenceAudioGenerator() => instance;
 
   static const int defaultSampleRate = AudioConstants.audioSampleRate;
-  static const String cacheVersion = 'v5';
+  static const String cacheVersion = 'v6';
 
   final _bounceService = ReviewAudioBounceService();
   final _vocalRangeService = VocalRangeService();
@@ -125,13 +125,26 @@ class ReferenceAudioGenerator {
       // 2. Synthesis (PCM generation and WAV writing)
       final tempWavPath = '${wavPath}.tmp';
       final bounceService = ReviewAudioBounceService();
-      await bounceService.renderReferenceWav(
-        notes: internalPlan.notes,
-        harmonyNotes: internalPlan.harmonyNotes,
-        durationSec: internalPlan.durationSec,
-        sampleRate: AudioConstants.audioSampleRate,
-        savePath: tempWavPath,
-      );
+      
+      if (internalPlan.chordEvents.isNotEmpty) {
+         await bounceService.renderTickBasedWav(
+            melodyNotes: internalPlan.notes,
+            chordEvents: internalPlan.chordEvents,
+            modEvents: internalPlan.modEvents,
+            initialRootMidi: internalPlan.initialRootMidi,
+            durationSec: internalPlan.durationSec,
+            sampleRate: AudioConstants.audioSampleRate,
+            savePath: tempWavPath,
+         );
+      } else {
+          await bounceService.renderReferenceWav(
+            notes: internalPlan.notes,
+            harmonyNotes: internalPlan.harmonyNotes,
+            durationSec: internalPlan.durationSec,
+            sampleRate: AudioConstants.audioSampleRate,
+            savePath: tempWavPath,
+          );
+      }
 
       // Atomic rename
       await File(tempWavPath).rename(wavPath);

@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/reference_note.dart';
+import '../models/harmonic_models.dart';
+import '../services/harmonic_functions.dart';
 import '../audio/wav_writer.dart';
 import '../utils/audio_constants.dart';
 
@@ -130,7 +132,310 @@ class ReviewAudioBounceService {
     
     return File(finalPath);
   }
-  
+
+  /// Render audio using tick-based scheduling for precise rhythm and modulation.
+  Future<File> renderTickBasedWav({
+    required List<ReferenceNote> melodyNotes,
+    required List<TickChordEvent> chordEvents,
+    required List<TickModulationEvent> modEvents,
+    required int initialRootMidi,
+    required double durationSec,
+    required int sampleRate,
+    String? savePath,
+  }) async {
+    final startTime = DateTime.now();
+
+    // 0. Constants for Sync Signal
+    final syncToneDuration = AudioConstants.chirpDurationSec;
+    final totalSyncOffset = AudioConstants.totalChirpOffsetSec;
+
+    // 1. Generate float samples
+    final samples = _generateTickBasedSamples(
+      melodyNotes: melodyNotes,
+      chordEvents: chordEvents,
+      modEvents: modEvents,
+      initialRootMidi: initialRootMidi,
+      sampleRate: sampleRate,
+      durationSec: durationSec + totalSyncOffset,
+      timeOffsetSec: totalSyncOffset,
+    );
+
+    // 1b. Inject Sync Tone
+    _injectSyncTone(samples, sampleRate, syncToneDuration);
+
+    // 2. Convert to 16-bit PCM
+    final pcmSamples = Int16List(samples.length);
+    for (var i = 0; i < samples.length; i++) {
+      final s = samples[i];
+      if (s >= 1.0) {
+        pcmSamples[i] = 32767;
+      } else if (s <= -1.0) {
+        pcmSamples[i] = -32768;
+      } else {
+        pcmSamples[i] = (s * 32767.0).toInt();
+      }
+    }
+
+    // 3. Write WAV
+    final String finalPath;
+    if (savePath != null) {
+      finalPath = savePath;
+    } else {
+      final cacheDir = await getCacheDirectory();
+      finalPath = p.join(cacheDir.path, 'reference_tick_${DateTime.now().millisecondsSinceEpoch}.wav');
+    }
+
+    await WavWriter.writePcm16Mono(
+      samples: pcmSamples,
+      sampleRate: sampleRate,
+      path: finalPath,
+    );
+    
+    debugPrint('[ReviewBounce] Tick-Based WAV rendered in ${DateTime.now().difference(startTime).inMilliseconds}ms');
+    return File(finalPath);
+  }
+
+  Float32List _generateTickBasedSamples({
+    required List<ReferenceNote> melodyNotes,
+    required List<TickChordEvent> chordEvents,
+    required List<TickModulationEvent> modEvents,
+    required int initialRootMidi,
+    required int sampleRate,
+    required double durationSec,
+    required double timeOffsetSec,
+  }) {
+    final totalFrames = (durationSec * sampleRate).ceil();
+    final samples = Float32List(totalFrames);
+    
+    // Setup Musical Clock (Hardcoded to 120 BPM for now as per plan)
+    const bpm = 120;
+    const clock = MusicalClock(bpm: bpm, timeSignatureTop: 4, sampleRate: AudioConstants.audioSampleRate);
+    final samplesPerTick = clock.samplesPerTick;
+
+    // --- 1. Render Melody (Existing time-based approach is fine for melody which allows free movement) ---
+    // We render melody first directly into buffer
+    // Helper to mix notes into buffer
+    void mixMelody(List<ReferenceNote> layerNotes, double amplitudeScale) {
+        final fadeFrames = ((fadeInOutMs / 1000.0) * sampleRate).toInt();
+        final invSampleRate = 1.0 / sampleRate;
+        
+        for (final note in layerNotes) {
+          final startFrame = ((note.startSec + timeOffsetSec) * sampleRate).toInt();
+          final endFrame = math.min(((note.endSec + timeOffsetSec) * sampleRate).toInt(), totalFrames);
+          final noteFrames = endFrame - startFrame;
+          
+          if (noteFrames <= 0 || startFrame >= totalFrames) continue;
+          
+          final hz = 440.0 * math.pow(2.0, (note.midi - 69.0) / 12.0);
+          
+          // Phases
+          var p1 = 0.0, p2 = 0.0, p3 = 0.0, p4 = 0.0;
+          final p1Cr = hz * invSampleRate;
+          
+          for (var f = 0; f < noteFrames; f++) {
+            final frameIndex = startFrame + f;
+            if (frameIndex >= totalFrames) break;
+            
+            final noteTime = f * invSampleRate;
+            final fundamental = _fastSin(p1);
+            final harmonic2 = 0.6 * _fastSin(p2);
+            final harmonic3 = 0.3 * _fastSin(p3);
+            final harmonic4 = 0.15 * _fastSin(p4); // Thinner melody
+            
+            p1 += p1Cr; p1 -= p1.floor();
+            p2 += p1Cr * 2; p2 -= p2.floor();
+            p3 += p1Cr * 3; p3 -= p3.floor();
+            p4 += p1Cr * 4; p4 -= p4.floor();
+
+            final attack = (noteTime * 50.0);
+            final env = (attack < 1.0 ? attack : 1.0) * math.exp(-3.0 * noteTime);
+            final val = amplitudeScale * env * (fundamental + harmonic2 + harmonic3 + harmonic4);
+            
+            double fade = 1.0;
+            if (f < fadeFrames) fade = f / fadeFrames;
+            else if (f >= noteFrames - fadeFrames) fade = (noteFrames - f) / fadeFrames;
+            
+            samples[frameIndex] += (val * fade);
+          }
+        }
+    }
+    mixMelody(melodyNotes, 0.45);
+
+    // --- 2. Render Harmony (Tick-Based) ---
+    // State
+    var currentRootMidi = initialRootMidi; // Starts here
+    final activeVoices = <int, _VoiceState>{}; // midi -> state
+    
+    // Sort events by tick
+    chordEvents.sort((a, b) => a.startTick.compareTo(b.startTick));
+    modEvents.sort((a, b) => a.tick.compareTo(b.tick));
+    
+    int chordEventIdx = 0;
+    int modEventIdx = 0;
+    
+    // Offset in ticks to account for the sync chirp time
+    // We need to shift musical time forward so tick 0 aligns with timeOffsetSec in the buffer
+    final offsetSamples = (timeOffsetSec * sampleRate).round();
+
+    for (var i = 0; i < totalFrames; i++) {
+      // Calculate current tick relative to music start
+      // i = buffer index
+      // music sample index = i - offsetSamples
+      final musicSampleIdx = i - offsetSamples;
+      
+      // Don't render harmony during lead-in silence before music starts
+      if (musicSampleIdx < 0) continue; 
+      
+      final currentTick = (musicSampleIdx / samplesPerTick).floor();
+      
+      // 1. Process Modulations (Instantaneous at tick boundary)
+      while (modEventIdx < modEvents.length && modEvents[modEventIdx].tick <= currentTick) {
+        final mod = modEvents[modEventIdx];
+        // Only apply if this is the *first* sample of this tick or we passed it
+        // To prevent re-applying, we track index. 
+        // Logic: if event.tick <= currentTick, apply it.
+        // Wait, currentKey is stateful. We must apply strictly when tick transitions.
+        // Actually, sorting and applying as we pass the tick is correct.
+        // But we iterate per sample. 
+        // Optimization: checking "modEvents[modEventIdx].tick == currentTick" is safer if we want to apply ONCE.
+        // But if we skip samples (unlikely here), we might miss it.
+        // Better: Process events that are "due".
+        
+        // Since we are iterating strictly monotonic i, we can just check if we reached the tick.
+        // However, "currentTick" stays same for many samples.
+        // We need to apply ONLY when we first enter the tick.
+        
+        // Check if this is the first sample of the tick
+        final tickStartSample = (currentTick * samplesPerTick).ceil();
+        if (musicSampleIdx == tickStartSample) {
+            currentRootMidi += mod.semitoneDelta;
+            // Also need to re-voice active chords? 
+            // Usually modulations happen between chords or on chord changes.
+            // If a chord is holding, shifting key underneath it is weird unless intended.
+            // For now, assume chord events align with modulations.
+        }
+        
+        // Advance index only after the tick is fully passed? 
+        // No, we just need to ensure we don't re-process.
+        // The issue is: currentTick increments.
+        // If we process modEvents[idx] when currentTick >= event.tick, we increment idx.
+        // But we are in a loop for samples. We only want to increment idx ONCE.
+        
+        // Correct Logic:
+        // We only process events whose tick == currentTick AND we are at the start of that tick.
+        // OR we simply maintain state outside the loop and update when constraints met.
+        // Simpler: Pre-calculate "events at sample X".
+        // Or check `if (musicSampleIdx == (modEvents[modEventIdx].tick * samplesPerTick).ceil())`
+        
+        // Let's use the explicit sample check for robustness
+        final triggerSample = (mod.tick * samplesPerTick).ceil();
+        if (musicSampleIdx == triggerSample) {
+           currentRootMidi += mod.semitoneDelta;
+           modEventIdx++;
+        } else if (musicSampleIdx > triggerSample) {
+           // We somehow missed it (shouldn't happen in single step loop), apply and move on
+            currentRootMidi += mod.semitoneDelta;
+            modEventIdx++;
+        } else {
+           break; // Not yet
+        }
+      }
+
+      // 2. Process Chord Events
+      // We manage active voices based on active chord events
+      // This might be expensive to search every sample.
+      // Better: Maintain list of "active chord notes".
+      // When `musicSampleIdx` hits a chord start/end, update active notes.
+      
+      // Clean up finished chords
+      // This is also event based. 
+      // Better approach: Pre-calculate all note-on/note-off events in samples.
+      
+      // Refactoring slightly for performance:
+      // Inside this loop is too slow for logic. 
+      // Let's just synthesize "active voices" and update the set of active voices when events trigger.
+      
+      // Check for New Chords
+      while (chordEventIdx < chordEvents.length) {
+         final event = chordEvents[chordEventIdx];
+         final startSample = (event.startTick * samplesPerTick).ceil();
+         
+         if (musicSampleIdx == startSample) {
+            // Chord Starting!
+            // Calculate actual MIDI notes based on CURRENT key
+            final midiNotes = HarmonicFunctions.getChordNotes(
+               chord: event.chord,
+               keyRootMidi: currentRootMidi,
+               isMinorKey: false,
+               octaveOffset: event.octaveOffset
+            );
+            
+            final endSample = ((event.startTick + event.durationTicks) * samplesPerTick).ceil();
+            
+            for (final midi in midiNotes) {
+               final key = midi; // voice key
+               // Overwrite/Add voice
+               activeVoices[key] = _VoiceState(
+                 midi: midi,
+                 startSample: musicSampleIdx,
+                 endSample: endSample,
+                 phase: activeVoices[key]?.phase ?? 0.0, // Continue phase if same note (legato)
+               );
+            }
+            chordEventIdx++;
+         } else if (musicSampleIdx > startSample) {
+            chordEventIdx++; // Catchup
+         } else {
+            break;
+         }
+      }
+      
+      // 3. Synthesize Active Voices
+      final invSampleRate = 1.0 / sampleRate;
+      
+      // Use toList to allow removal
+      final keys = activeVoices.keys.toList();
+      for (final key in keys) {
+         final voice = activeVoices[key]!;
+         
+         // Remove if finished
+         if (musicSampleIdx >= voice.endSample) {
+            activeVoices.remove(key);
+            continue;
+         }
+         
+         // Synthesize
+         final hz = 440.0 * math.pow(2.0, (voice.midi - 69.0) / 12.0);
+         final phaseInc = hz * invSampleRate;
+         
+         final fundamental = _fastSin(voice.phase);
+         final h2 = 0.5 * _fastSin((voice.phase * 2) % 1.0);
+         final h3 = 0.25 * _fastSin((voice.phase * 3) % 1.0);
+         
+         voice.phase = (voice.phase + phaseInc);
+         voice.phase -= voice.phase.floor();
+         
+         // Envelope (ADSR ish)
+         double amp = 0.15; // Background level
+         
+         // Attack (20ms)
+         final samplesSinceStart = musicSampleIdx - voice.startSample;
+         if (samplesSinceStart < (0.02 * sampleRate)) {
+            amp *= (samplesSinceStart / (0.02 * sampleRate));
+         }
+         
+         // Release (20ms before end)
+         final samplesUntilEnd = voice.endSample - musicSampleIdx;
+         if (samplesUntilEnd < (0.02 * sampleRate)) {
+            amp *= (samplesUntilEnd / (0.02 * sampleRate));
+         }
+         
+         samples[i] += amp * (fundamental + h2 + h3);
+      }
+    }
+    
+    return samples;
+  }
   /// Optimized samples generation
   Float32List _generateSamples({
     required List<ReferenceNote> notes,
@@ -399,4 +704,18 @@ class ReviewAudioBounceService {
 class _WavInfo {
   final int sampleRate, channels, bitsPerSample, dataOffset, dataSize;
   _WavInfo({required this.sampleRate, required this.channels, required this.bitsPerSample, required this.dataOffset, required this.dataSize});
+}
+
+class _VoiceState {
+  final int midi;
+  final int startSample;
+  final int endSample;
+  double phase;
+  
+  _VoiceState({
+    required this.midi,
+    required this.startSample,
+    required this.endSample,
+    this.phase = 0.0,
+  });
 }

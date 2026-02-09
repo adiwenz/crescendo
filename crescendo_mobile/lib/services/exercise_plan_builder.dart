@@ -30,6 +30,8 @@ class ExercisePlanBuilder {
     );
     final notes = sequence.melody;
     final harmonyNotes = sequence.harmony;
+    final chordEvents = sequence.chordEvents;
+    final modEvents = sequence.modEvents;
 
     // 2. Calculate duration
     final lastNoteEnd = notes.isEmpty ? 0.0 : notes.map((n) => n.endSec).reduce((a, b) => a > b ? a : b);
@@ -49,11 +51,14 @@ class ExercisePlanBuilder {
       wavFilePath: wavFilePath,
       notes: notes,
       harmonyNotes: harmonyNotes,
+      chordEvents: chordEvents,
+      modEvents: modEvents,
       sampleRate: AudioConstants.audioSampleRate,
       durationMs: durationMs,
       rangeHash: rangeHash,
       patternHash: patternHash,
       leadInSec: AudioConstants.leadInSec,
+      initialRootMidi: sequence.initialRootMidi,
     );
   }
 
