@@ -205,13 +205,27 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
                   alignment: Alignment.center,
                   children: [
                     // Target Line
-                    Container(
-                      width: 200,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                    // Target Line
+                    ValueListenableBuilder<bool>(
+                        valueListenable: _controller.isSnapped,
+                        builder: (context, snapped, _) {
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 200,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: snapped ? colors.lavenderGlow : Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(4),
+                                boxShadow: snapped ? [
+                                    BoxShadow(
+                                        color: colors.lavenderGlow.withValues(alpha: 0.5),
+                                        blurRadius: 12,
+                                        spreadRadius: 2
+                                    )
+                                ] : [],
+                              ),
+                            );
+                        }
                     ),
                     
                      // Pitch Ball
