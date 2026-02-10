@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../../models/reference_note.dart';
 import '../../utils/pitch_math.dart';
 import '../widgets/pitch_contour_card.dart';
+import '../../core/app_config.dart'; // Import AppConfig
 
 class SustainedHoldScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -102,6 +103,13 @@ class _SustainedHoldScreenState extends State<SustainedHoldScreen> {
   Future<void> _finishSet() async {
       _stopListening();
       _synth.stop();
+
+      // V0: Skip review
+      if (AppConfig.isV0) {
+        Navigator.of(context).pop();
+        return;
+      }
+
       // Calculate overall score?
       // Use average stability
       

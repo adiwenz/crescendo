@@ -7,6 +7,7 @@ import '../models/vocal_exercise.dart';
 import '../ui/screens/pitch_highway_screen.dart';
 import '../services/exercise_repository.dart';
 import '../ui/screens/exercise_player_screen.dart';
+import '../core/app_config.dart';
 
 class ExerciseRouteEntry {
   final String id;
@@ -24,6 +25,12 @@ class ExerciseRouteEntry {
 
 class ExerciseRouteRegistry {
   ExerciseRouteRegistry._();
+
+  static const List<String> _v0AllowedIds = [
+    'sustained_pitch_holds',
+    'five_tone_scales',
+    'ng_slides',
+  ];
 
   static final ExerciseRepository _repo = ExerciseRepository();
   static final Map<String, ExerciseRouteEntry> _entries = {
@@ -50,6 +57,12 @@ class ExerciseRouteRegistry {
     ExercisePlan? exercisePlan,
     Future<ExercisePlan>? exercisePlanFuture,
   }) {
+    if (AppConfig.isV0 && !_v0AllowedIds.contains(exerciseId)) {
+      debugPrint('[V0] Blocked navigation to non-V0 exercise: $exerciseId');
+      // Optionally show a toast here
+      return false;
+    }
+
     final entry = entryFor(exerciseId);
     if (entry == null) return false;
     if (difficultyLevel != null) {

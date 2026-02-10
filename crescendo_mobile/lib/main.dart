@@ -12,6 +12,7 @@ import 'services/storage/db.dart';
 import 'utils/daily_completion_utils.dart';
 
 import 'core/locator.dart';
+import 'core/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -60,8 +61,19 @@ Future<void> main() async {
 
   // Check onboarding state
   final prefs = await SharedPreferences.getInstance();
+
   final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
-  final initialRoute = '/onboarding'; // seenOnboarding ? '/' : '/onboarding';
+  
+  String initialRoute;
+  if (AppConfig.isV0) {
+    initialRoute = '/v0_home';
+    debugPrint('[AppConfig] V0 Mode ACTIVE');
+  } else {
+    // Force onboarding or home based on legacy logic if needed, 
+    // but complying with "update app start routing"
+    // The user requested: "if isV0 => show V0HomeScreen as the root (no bottom nav)"
+    initialRoute = '/onboarding'; // seenOnboarding ? '/' : '/onboarding';
+  }
 
   runApp(CrescendoApp(initialRoute: initialRoute));
 }

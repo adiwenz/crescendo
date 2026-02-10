@@ -25,6 +25,7 @@ import '../../ui/widgets/app_background.dart';
 import '../../ui/widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/pitch_highway_tempo.dart';
+import '../../core/app_config.dart'; // Import AppConfig
 import 'pitch_highway_review_screen.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
@@ -190,6 +191,15 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
              // Only navigate if we have results
              if (state.offsetResult != null && state.referencePath != null && state.recordingPath != null) {
                  _navigatedToReview = true;
+                 
+                 // V0: Skip review, just finish
+                 if (AppConfig.isV0) {
+                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                     if (context.mounted) Navigator.of(context).pop();
+                   });
+                   return Container(); // Return empty to avoid painting review logic
+                 }
+
                  WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (context.mounted) {
                        Navigator.of(context).pushReplacement(
@@ -266,10 +276,11 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
               // 4. Overlays / Start Button (Idle) -> REMOVED
               
               // Debug Text
-              Positioned(
-                 top: 40, right: 10,
-                 child: Text("${state.phase.name}", style: TextStyle(color: Colors.white.withOpacity(0.5))),
-              ),
+              if (!AppConfig.isV0)
+                Positioned(
+                   top: 40, right: 10,
+                   child: Text("${state.phase.name}", style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                ),
               
               // Close Button (Explicit Exit)
               Positioned(
@@ -282,7 +293,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
               ),
 
               // Clear Cache Button (Debug)
-              if (state.phase == PitchHighwaySessionPhase.idle)
+              if (!AppConfig.isV0 && state.phase == PitchHighwaySessionPhase.idle)
                 Positioned(
                   top: 80,
                   right: 10,

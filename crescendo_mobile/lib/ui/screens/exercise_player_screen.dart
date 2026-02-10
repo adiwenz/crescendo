@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart';
 import '../../models/exercise_plan.dart';
+import '../../core/app_config.dart'; // Import AppConfig
 
 import '../../models/pitch_frame.dart';
 
@@ -120,7 +121,7 @@ class ExercisePlayerScreen extends StatelessWidget {
         CooldownRecoveryPlayer(exercise: exercise),
     };
     return Scaffold(
-      appBar: isPitchHighway
+      appBar: (isPitchHighway || AppConfig.isV0)
           ? null
           : AppBar(
               leading: IconButton(

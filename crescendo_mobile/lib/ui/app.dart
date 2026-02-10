@@ -10,6 +10,9 @@ import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/v0/v0_home_screen.dart';
+import '../screens/v0/v0_session_screen.dart';
+import '../screens/v0/v0_complete_screen.dart';
 import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
@@ -94,6 +97,8 @@ class _CrescendoAppState extends State<CrescendoApp> {
                 '/debug/duplex_audio': (_) => const DuplexAudioTestScreen(),
                 '/debug/one_clock': (_) => const OneClockDebugTestScreen(),
                 '/onboarding': (_) => const OnboardingScreen(),
+                '/v0_home': (_) => const V0HomeScreen(),
+                '/v0_session': (_) => const V0SessionScreen(),
               },
             );
           },
