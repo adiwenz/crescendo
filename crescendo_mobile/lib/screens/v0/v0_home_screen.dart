@@ -35,8 +35,8 @@ class V0HomeScreen extends StatelessWidget {
                   
                   // Header Title
                   Text(
-                    "BALLAD",
-                    style: GoogleFonts.spaceGrotesk(
+                    "Ballad",
+                    style: GoogleFonts.notable(
                       fontSize: 64,
                       fontWeight: FontWeight.bold,
                       color: const Color(0xFF2D2A32), // Dark, almost black, soft ink
@@ -53,7 +53,7 @@ class V0HomeScreen extends StatelessWidget {
                     title: "Match the Note",
                     subtitle: "Match the note you hear",
                     icon: Icons.music_note_rounded,
-                    accentColor: const Color(0xFF6B9080), // Muted Green
+                    accentColor: const Color(0xFF4A148C), // Deep Purple
                     onTap: () {
                       // Todo: Navigate to exercise
                     },
@@ -64,7 +64,7 @@ class V0HomeScreen extends StatelessWidget {
                     title: "Follow the Notes",
                     subtitle: "Follow the notes smoothly",
                     icon: Icons.show_chart_rounded,
-                    accentColor: const Color(0xFFE9C46A), // Amber/Orange
+                    accentColor: const Color(0xFF7B1FA2), // Purple
                     onTap: () {
                        // Todo: Navigate to exercise
                     },
@@ -75,7 +75,7 @@ class V0HomeScreen extends StatelessWidget {
                     title: "Easy Slides",
                     subtitle: "Slide comfortably between pitches",
                     icon: Icons.waves_rounded,
-                    accentColor: const Color(0xFF2A9D8F), // Teal
+                    accentColor: const Color(0xFF3F51B5), // Indigo
                     onTap: () {
                        // Todo: Navigate to exercise
                     },
@@ -112,11 +112,11 @@ class V0HomeScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(child: _buildProgressSegment(const Color(0xFF6B9080))), // Green
+                            Expanded(child: _buildProgressSegment(const Color(0xFF4A148C))), // Deep Purple
                             const SizedBox(width: 4),
-                            Expanded(child: _buildProgressSegment(const Color(0xFFE9C46A))), // Amber
+                            Expanded(child: _buildProgressSegment(const Color(0xFF7B1FA2))), // Purple
                             const SizedBox(width: 4),
-                            Expanded(child: _buildProgressSegment(const Color(0xFF2A9D8F))), // Teal
+                            Expanded(child: _buildProgressSegment(const Color(0xFF3F51B5))), // Indigo
                           ],
                         ),
                       ],
@@ -254,12 +254,12 @@ class _RetroStripesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..style = PaintingStyle.fill;
     
-    // Stripe colors inspired by the retro palette
+    // Stripe colors inspired by purple/indigo palette
     final colors = [
-      const Color(0xFF2A9D8F), // Teal
-      const Color(0xFFE9C46A), // Amber
-      const Color(0xFFF4A261), // Orange
-      const Color(0xFF6B9080), // Muted Green
+      const Color(0xFF4A148C), // Deep Purple
+      const Color(0xFF7B1FA2), // Purple
+      const Color(0xFF673AB7), // Deep Purple Accent
+      const Color(0xFF3F51B5), // Indigo
     ];
     
     // Made stripes thicker for visibility
