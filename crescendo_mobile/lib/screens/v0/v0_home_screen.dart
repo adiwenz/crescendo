@@ -295,9 +295,9 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           // Title
           const SizedBox(width: 20),
           Text(
-            "Today's Practice",
-            style: GoogleFonts.manrope(
-              fontSize: 28,
+            "Ballad",
+            style: GoogleFonts.dmSerifDisplay(
+              fontSize: 60,
               fontWeight: FontWeight.w400, // Thin/Light
               color: Colors.white,
               letterSpacing: 0.5,
@@ -324,15 +324,11 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     final isCompleted = exercise.isCompleted;
 
     // Logic: Identify "Next Up" exercise
-    // It's the first exercise in the list that is NOT completed.
-    // If all are completed, no exercise is "Next Up".
     final nextUpExercise = _exercises.firstWhere(
       (e) => !e.isCompleted, 
-      orElse: () => _exercises.last // Fallback (won't matter for glow logic if checking equality)
+      orElse: () => _exercises.last 
     );
     
-    // Check if THIS exercise is the "Next Up" one
-    // Only glow if there is actually a "Next Up" (i.e., not all completed)
     final bool isAllCompleted = _exercises.every((e) => e.isCompleted);
     final bool isNextUp = !isAllCompleted && (exercise.id == nextUpExercise.id);
 
@@ -341,86 +337,123 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     
     return GestureDetector(
       onTap: () => _onCircleTap(exercise),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          // Enhanced 3D Gradient (Radial)
-          gradient: RadialGradient(
-            center: const Alignment(-0.3, -0.3), // Light source top-left
-            radius: 1.2,
-            colors: [
-              exercise.color.withOpacity(0.9), // Highlight
-              exercise.color, // Body
-              Color.lerp(exercise.color, Colors.black, 0.4)!, // Shadow
-            ],
-            // Standard stops for full color
-            stops: const [0.0, 0.6, 1.0],
-          ),
-          boxShadow: [
-            // 1) "Next Up" Bright White Glow
-            if (isNextUp)
-              BoxShadow(
-                color: Colors.white.withOpacity(0.6), // Brighter/Stronger
-                blurRadius: 20,
-                spreadRadius: 4,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // 1. Base Sphere & Shadow
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              // Enhanced 3D Gradient (Radial) - Base
+              gradient: RadialGradient(
+                center: const Alignment(-0.3, -0.3), // Light source top-left
+                radius: 1.3,
+                colors: [
+                  // Highlight (Top Left) -> Body -> Shadow (Bottom Right)
+                  Color.lerp(exercise.color, Colors.white, 0.4)!, // Lighter highlight
+                  exercise.color, // Main Body
+                  Color.lerp(exercise.color, Colors.black, 0.6)!, // Deep Shadow
+                ],
+                stops: const [0.0, 0.5, 1.0],
               ),
-
-             // 2) Standard Selection Glow (if selected but NOT next up, though user didn't specify, likely mutual exclusive or additive)
-             // If selected AND next up, the white glow above covers it. 
-             // If selected and NOT next up (e.g. revisiting completed), maybe subtle glow?
-             if (isSelected && !isNextUp)
-              BoxShadow(
-                color: Colors.white.withOpacity(0.3),
-                blurRadius: 15,
-                spreadRadius: 2,
-              ),
-
-            // 3) Deep Shadow for Depth
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3), // Darker shadow
-              blurRadius: isSelected ? 25 : 10,
-              spreadRadius: isSelected ? 4 : 0,
-              offset: isSelected ? Offset.zero : const Offset(4, 6), // Deep offset
-            )
-          ],
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: isSelected
-              ? GestureDetector(
-                  onTap: _onPlayTap, // Tap again to play
-                  child: Container(
-                    key: const ValueKey("play"),
-                    decoration: const BoxDecoration(
-                      color: Colors.transparent, 
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white.withOpacity(0.95),
-                      size: 38,
-                    ),
+              boxShadow: [
+                // 1) "Next Up" Bright White Glow
+                if (isNextUp)
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.6), // Brighter/Stronger
+                    blurRadius: 20,
+                    spreadRadius: 4,
                   ),
+
+                 // 2) Standard Selection Glow 
+                 if (isSelected && !isNextUp)
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.3),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                  ),
+
+                // 3) Deep Drop Shadow (Environment Shadow)
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4), // Darker shadow
+                  blurRadius: isSelected ? 25 : 12,
+                  spreadRadius: isSelected ? 4 : 0,
+                  offset: isSelected ? Offset.zero : const Offset(4, 6), // Deep offset
                 )
-              : Center(
-                  key: const ValueKey("number"),
-                  child: Text(
-                    "$number",
-                    style: GoogleFonts.manrope(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withOpacity(0.95),
-                      shadows: [
-                        const Shadow(color: Colors.black26, offset: Offset(1,1), blurRadius: 2),
-                      ]
-                    ),
-                  ),
-                ), 
-        ),
+              ],
+            ),
+          ),
+
+          // 2. Inner Glow / Reflected Light (Bottom Right)
+          // Simulates light passing through or reflecting off the bottom inside
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: const Alignment(0.6, 0.6), // Bottom Right
+                radius: 1.0,
+                colors: [
+                  Colors.white.withOpacity(0.2), // Subtle light
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.5],
+              ),
+            ),
+          ),
+
+          // 3. Specular Highlight (Glossy Shine - Top Left)
+          // Removed per user request
+          // Positioned(
+          //   top: size * 0.15,
+          //   left: size * 0.15,
+          //   child: Container( ... ),
+          // ),
+
+          // 4. Content (Icon/Number)
+          SizedBox( // Ensure content is centered and constrained
+            width: size,
+            height: size,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: isSelected
+                  ? GestureDetector(
+                      onTap: _onPlayTap, // Tap again to play
+                      child: Container(
+                        key: const ValueKey("play"),
+                        decoration: const BoxDecoration(
+                          color: Colors.transparent, 
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white.withOpacity(0.95),
+                          size: 38,
+                        ),
+                      ),
+                    )
+                  : Center(
+                      key: const ValueKey("number"),
+                      child: Text(
+                        "$number",
+                        style: GoogleFonts.manrope(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700, // Bolder for clarity against gradients
+                          color: Colors.white.withOpacity(0.95),
+                          shadows: [
+                            const Shadow(color: Colors.black45, offset: Offset(1,1), blurRadius: 3),
+                          ]
+                        ),
+                      ),
+                    ), 
+            ),
+          ),
+        ],
       ),
     );
   }
