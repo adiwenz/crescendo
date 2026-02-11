@@ -310,8 +310,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     final isSelected = _selectedExerciseId == exercise.id;
     final isCompleted = exercise.isCompleted;
 
-    // Dimensions
-    final double size = isSelected ? 72 : 56;
+    // Dimensions (Increased size)
+    final double size = isSelected ? 84 : 64;
     
     return GestureDetector(
       onTap: () => _onCircleTap(exercise),
@@ -322,26 +322,37 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          // Enhanced 3D Gradient (Radial)
+          gradient: RadialGradient(
+            center: const Alignment(-0.3, -0.3), // Light source top-left
+            radius: 1.2,
             colors: isCompleted
                 ? [
-                    exercise.color.withOpacity(0.2),
                     exercise.color.withOpacity(0.4),
+                    exercise.color.withOpacity(0.2),
                   ]
                 : [
-                    exercise.color.withOpacity(0.6), // Lighter/Highlight
-                    exercise.color, // Pure/Shadow
+                    exercise.color.withOpacity(0.9), // Highlight
+                    exercise.color, // Body
+                    Color.lerp(exercise.color, Colors.black, 0.4)!, // Shadow
                   ],
+            stops: isCompleted ? [0.0, 1.0] : [0.0, 0.6, 1.0],
           ),
           boxShadow: [
+            // 1) Slight White Glow (New Request)
+            BoxShadow(
+              color: Colors.white.withOpacity(0.4),
+              blurRadius: 15,
+              spreadRadius: 2,
+            ),
+            // 2) Deep Shadow
             BoxShadow(
               color: (isSelected && !isCompleted) 
                   ? exercise.color.withOpacity(0.6) 
-                  : Colors.transparent,
-              blurRadius: (isSelected && !isCompleted) ? 20 : 0,
-              spreadRadius: (isSelected && !isCompleted) ? 2 : 0,
+                  : Colors.black.withOpacity(0.3), // Darker shadow
+              blurRadius: (isSelected && !isCompleted) ? 25 : 10,
+              spreadRadius: (isSelected && !isCompleted) ? 4 : 0,
+              offset: (isSelected && !isCompleted) ? Offset.zero : const Offset(4, 6), // Deep offset
             )
           ],
         ),
@@ -358,8 +369,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                     ),
                     child: Icon(
                       Icons.play_arrow_rounded,
-                      color: Colors.white.withOpacity(0.9),
-                      size: 32,
+                      color: Colors.white.withOpacity(0.95),
+                      size: 38,
                     ),
                   ),
                 )
@@ -368,9 +379,12 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                   child: Text(
                     "$number",
                     style: GoogleFonts.manrope(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withOpacity(0.95),
+                      shadows: [
+                        const Shadow(color: Colors.black26, offset: Offset(1,1), blurRadius: 2),
+                      ]
                     ),
                   ),
                 ), 
@@ -382,40 +396,76 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
   Widget _buildInfoContent() {
     if (_selectedExercise == null) return const SizedBox.shrink();
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      transitionBuilder: (child, animation) {
-        return FadeTransition(opacity: animation, child: SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
-          child: child,
-        ));
-      },
-      child: Column(
-        key: ValueKey(_selectedExercise!.id), // Key changes triggers animation
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _selectedExercise!.title,
-            style: GoogleFonts.manrope(
-              fontSize: 32,
-              fontWeight: FontWeight.w400,
-              color: Colors.white,
-              height: 1.1,
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Glass Circle Background
+        Container(
+          width: 240,
+          height: 240,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withOpacity(0.08), // Very subtle glass
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withOpacity(0.05),
+                blurRadius: 30,
+                spreadRadius: 10,
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                color: Colors.transparent,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            _selectedExercise!.description,
-            style: GoogleFonts.manrope(
-              fontSize: 18,
-              fontWeight: FontWeight.w300,
-              color: Colors.white.withOpacity(0.9),
-              height: 1.4,
+        ),
+
+        // Text Content
+        Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (child, animation) {
+              return FadeTransition(opacity: animation, child: ScaleTransition(
+                scale: Tween<double>(begin: 0.95, end: 1.0).animate(animation),
+                child: child,
+              ));
+            },
+            child: Column(
+              key: ValueKey(_selectedExercise!.id), // Key changes triggers animation
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center, // Center align for glass circle
+              children: [
+                Text(
+                  _selectedExercise!.title,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                    fontSize: 28, // Slightly smaller to fit circle
+                    fontWeight: FontWeight.w400,
+                    color: Colors.white,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _selectedExercise!.description,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w300,
+                    color: Colors.white.withOpacity(0.9),
+                    height: 1.4,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
