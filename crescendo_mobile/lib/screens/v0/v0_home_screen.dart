@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -199,6 +200,11 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           ),
           
           // Subtle texture/grain could go here (omitted for pure Flutter implementation without assets)
+          
+          // Glow Stars Background
+          const Positioned.fill(
+            child: PulsatingStars(),
+          ),
 
           SafeArea(
             child: Column(
@@ -273,11 +279,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Hamburger Icon
-          // Icon(Icons.menu, color: Colors.white.withOpacity(0.6), size: 28),
-          // Spacer(),
           // Title
-          SizedBox(width: 20),
+          const SizedBox(width: 20),
           Text(
             "Today's Exercises",
             style: GoogleFonts.manrope(
@@ -538,6 +541,146 @@ class _AnimatedFractionallySizedBoxState
     return FractionallySizedBox(
       widthFactor: _widthFactorTween?.evaluate(animation),
       child: widget.child,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. Background Effects
+// ---------------------------------------------------------------------------
+
+class PulsatingStars extends StatelessWidget {
+  const PulsatingStars({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _PulsatingStarsImpl();
+  }
+}
+
+class _PulsatingStarsImpl extends StatefulWidget {
+  const _PulsatingStarsImpl();
+
+  @override
+  State<_PulsatingStarsImpl> createState() => _PulsatingStarsImplState();
+}
+
+class _PulsatingStarsImplState extends State<_PulsatingStarsImpl> {
+  final List<_StarData> _stars = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final random = math.Random();
+    // Generate ~25 stars in the top 35% of the screen
+    for (int i = 0; i < 25; i++) {
+      _stars.add(_StarData(
+        left: random.nextDouble(), // 0.0 - 1.0
+        top: random.nextDouble() * 0.35, // Top 35%
+        size: 2.0 + random.nextDouble() * 4.0, // 2-6px
+        duration: Duration(milliseconds: 1500 + random.nextInt(2000)), // 1.5 - 3.5s
+        initialProgress: random.nextDouble(), // Random start phase
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: _stars.map((star) {
+            return Positioned(
+              left: star.left * constraints.maxWidth,
+              top: star.top * constraints.maxHeight,
+              child: _PulsatingStar(
+                key: ValueKey(star), // Ensure state preservation
+                star: star,
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _StarData {
+  final double left;
+  final double top;
+  final double size;
+  final Duration duration;
+  final double initialProgress;
+
+  _StarData({
+    required this.left,
+    required this.top,
+    required this.size,
+    required this.duration,
+    required this.initialProgress,
+  });
+}
+
+class _PulsatingStar extends StatefulWidget {
+  final _StarData star;
+
+  const _PulsatingStar({super.key, required this.star});
+
+  @override
+  State<_PulsatingStar> createState() => _PulsatingStarState();
+}
+
+class _PulsatingStarState extends State<_PulsatingStar> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.star.duration,
+      value: widget.star.initialProgress, // Start at random phase
+    );
+
+    _opacityAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.2, end: 1.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.2), weight: 50),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _opacityAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _opacityAnimation.value,
+          child: Container(
+            width: widget.star.size,
+            height: widget.star.size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.8),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                )
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
