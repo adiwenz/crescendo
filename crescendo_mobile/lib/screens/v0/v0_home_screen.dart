@@ -222,7 +222,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 children: [
                   // 1) Header
                   _buildHeaderWidget(),
-                  
+                  SizedBox(height: 20),
                   Expanded(
                     child: Stack(
                       fit: StackFit.expand,
@@ -295,7 +295,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           // Title
           const SizedBox(width: 20),
           Text(
-            "Today's Exercises",
+            "Today's Practice",
             style: GoogleFonts.manrope(
               fontSize: 28,
               fontWeight: FontWeight.w400, // Thin/Light
@@ -323,7 +323,20 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     final isSelected = _selectedExerciseId == exercise.id;
     final isCompleted = exercise.isCompleted;
 
-    // Dimensions (Increased size)
+    // Logic: Identify "Next Up" exercise
+    // It's the first exercise in the list that is NOT completed.
+    // If all are completed, no exercise is "Next Up".
+    final nextUpExercise = _exercises.firstWhere(
+      (e) => !e.isCompleted, 
+      orElse: () => _exercises.last // Fallback (won't matter for glow logic if checking equality)
+    );
+    
+    // Check if THIS exercise is the "Next Up" one
+    // Only glow if there is actually a "Next Up" (i.e., not all completed)
+    final bool isAllCompleted = _exercises.every((e) => e.isCompleted);
+    final bool isNextUp = !isAllCompleted && (exercise.id == nextUpExercise.id);
+
+    // Dimensions
     final double size = isSelected ? 84 : 64;
     
     return GestureDetector(
@@ -339,33 +352,39 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           gradient: RadialGradient(
             center: const Alignment(-0.3, -0.3), // Light source top-left
             radius: 1.2,
-            colors: isCompleted
-                ? [
-                    exercise.color.withOpacity(0.4),
-                    exercise.color.withOpacity(0.2),
-                  ]
-                : [
-                    exercise.color.withOpacity(0.9), // Highlight
-                    exercise.color, // Body
-                    Color.lerp(exercise.color, Colors.black, 0.4)!, // Shadow
-                  ],
-            stops: isCompleted ? [0.0, 1.0] : [0.0, 0.6, 1.0],
+            colors: [
+              exercise.color.withOpacity(0.9), // Highlight
+              exercise.color, // Body
+              Color.lerp(exercise.color, Colors.black, 0.4)!, // Shadow
+            ],
+            // Standard stops for full color
+            stops: const [0.0, 0.6, 1.0],
           ),
           boxShadow: [
-            // 1) Slight White Glow (New Request)
+            // 1) "Next Up" Bright White Glow
+            if (isNextUp)
+              BoxShadow(
+                color: Colors.white.withOpacity(0.6), // Brighter/Stronger
+                blurRadius: 20,
+                spreadRadius: 4,
+              ),
+
+             // 2) Standard Selection Glow (if selected but NOT next up, though user didn't specify, likely mutual exclusive or additive)
+             // If selected AND next up, the white glow above covers it. 
+             // If selected and NOT next up (e.g. revisiting completed), maybe subtle glow?
+             if (isSelected && !isNextUp)
+              BoxShadow(
+                color: Colors.white.withOpacity(0.3),
+                blurRadius: 15,
+                spreadRadius: 2,
+              ),
+
+            // 3) Deep Shadow for Depth
             BoxShadow(
-              color: Colors.white.withOpacity(0.4),
-              blurRadius: 15,
-              spreadRadius: 2,
-            ),
-            // 2) Deep Shadow
-            BoxShadow(
-              color: (isSelected && !isCompleted) 
-                  ? exercise.color.withOpacity(0.6) 
-                  : Colors.black.withOpacity(0.3), // Darker shadow
-              blurRadius: (isSelected && !isCompleted) ? 25 : 10,
-              spreadRadius: (isSelected && !isCompleted) ? 4 : 0,
-              offset: (isSelected && !isCompleted) ? Offset.zero : const Offset(4, 6), // Deep offset
+              color: Colors.black.withOpacity(0.3), // Darker shadow
+              blurRadius: isSelected ? 25 : 10,
+              spreadRadius: isSelected ? 4 : 0,
+              offset: isSelected ? Offset.zero : const Offset(4, 6), // Deep offset
             )
           ],
         ),
