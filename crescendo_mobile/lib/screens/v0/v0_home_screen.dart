@@ -118,8 +118,10 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
 
   // --- Computed Properties ---
 
-  Exercise? get _selectedExercise => 
-      _exercises.firstWhere((e) => e.id == _selectedExerciseId, orElse: () => _exercises.first);
+  Exercise? get _selectedExercise {
+    final index = _exercises.indexWhere((e) => e.id == _selectedExerciseId);
+    return index != -1 ? _exercises[index] : null;
+  }
 
   int get _totalMinutes => _exercises.fold(0, (sum, e) => sum + e.durationMinutes);
   
@@ -134,12 +136,9 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Default selection
-    if (_exercises.isNotEmpty) {
-      _selectedExerciseId = _exercises.first.id;
-    }
+    // Default selection is now NULL (No selection initially)
   }
-
+  
   // --- Actions ---
 
   void _onCircleTap(Exercise exercise) {
@@ -168,6 +167,14 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     }
   }
 
+  void _onBackgroundTap() {
+    if (_selectedExerciseId != null) {
+      setState(() {
+        _selectedExerciseId = null;
+      });
+    }
+  }
+
   // --- UI Components ---
 
   @override
@@ -185,95 +192,101 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true, 
       backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // Background
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: gradientColors,
-                stops: const [0.0, 0.6, 1.0],
+      body: GestureDetector(
+        onTap: _onBackgroundTap,
+        behavior: HitTestBehavior.translucent, // Catch taps on empty space
+        child: Stack(
+          children: [
+            // Background
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: gradientColors,
+                  stops: const [0.0, 0.6, 1.0],
+                ),
               ),
             ),
-          ),
-          
-          // Subtle texture/grain could go here (omitted for pure Flutter implementation without assets)
-          
-          // Glow Stars Background
-          const Positioned.fill(
-            child: PulsatingStars(),
-          ),
-
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1) Header
-                _buildHeader(),
-                
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // 3) Left Side Vertical Circles
-                      Positioned(
-                        top: 0,
-                        bottom: 0,
-                        left: 20,
-                        width: 100, // Constrain width of the ball column
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: _exercises.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final exercise = entry.value;
-                            
-                            // Calculate horizontal offset for arc effect
-                            // normalizedIndex: 0.0 -> 1.0 (Top -> Bottom)
-                            final double normalizedIndex = index / (_exercises.length - 1);
-                            
-                            // Amplitude: How far right the arc goes (approx 8% of screen width ~ 35px)
-                            const double curveAmplitude = 35.0; 
-                            
-                            // Parabolic approximation of sine wave for 1 -> 0 -> 1 (Bulge Left, Open Right)
-                            // y = 1.0 - (4 * x * (1 - x))
-                            final double parabola = 4 * normalizedIndex * (1.0 - normalizedIndex);
-                            final double xTranslation = curveAmplitude * (1.0 - parabola);
-
-                            return Transform.translate(
-                              offset: Offset(xTranslation, 0),
-                              child: _buildExerciseCircle(exercise, index + 1),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-
-                      // 4) Main Content Area (Right)
-                      Positioned(
-                        top: 0,
-                        bottom: 0,
-                        left: 140, // To right of balls
-                        right: 20,
-                        child: Center(
-                          child: _buildInfoContent(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 5) Bottom Progress Section
-                _buildBottomProgress(),
-              ],
+            
+            // Subtle texture/grain could go here (omitted for pure Flutter implementation without assets)
+            
+            // Glow Stars Background
+            const Positioned.fill(
+              child: PulsatingStars(),
             ),
-          ),
-        ],
+  
+            SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1) Header
+                  _buildHeaderWidget(),
+                  
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 3) Left Side Vertical Circles
+                        Positioned(
+                          top: 0,
+                          bottom: 0,
+                          left: 20,
+                          width: 100, // Constrain width of the ball column
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: _exercises.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final exercise = entry.value;
+                              
+                              // Calculate horizontal offset for arc effect
+                              // normalizedIndex: 0.0 -> 1.0 (Top -> Bottom)
+                              final double normalizedIndex = index / (_exercises.length - 1);
+                              
+                              // Amplitude: How far right the arc goes (approx 8% of screen width ~ 35px)
+                              const double curveAmplitude = 35.0; 
+                              
+                              // Parabolic approximation of sine wave for 1 -> 0 -> 1 (Bulge Left, Open Right)
+                              // y = 1.0 - (4 * x * (1 - x))
+                              final double parabola = 4 * normalizedIndex * (1.0 - normalizedIndex);
+                              final double xTranslation = curveAmplitude * (1.0 - parabola);
+  
+                              return Transform.translate(
+                                offset: Offset(xTranslation, 0),
+                                child: _buildExerciseCircleWidget(exercise, index + 1),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+  
+                        // 4) Main Content Area (Right)
+                        Positioned(
+                          top: 0,
+                          bottom: 0,
+                          left: 140, // To right of balls
+                          right: 20,
+                          child: Center(
+                            child: _buildInfoContent(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+  
+                  // 5) Bottom Progress Section
+                  _buildBottomProgress(),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  // --- Helper Methods ---
+
+  Widget _buildHeaderWidget() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
       child: Row(
@@ -284,7 +297,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           Text(
             "Today's Exercises",
             style: GoogleFonts.manrope(
-              fontSize: 26,
+              fontSize: 28,
               fontWeight: FontWeight.w400, // Thin/Light
               color: Colors.white,
               letterSpacing: 0.5,
@@ -306,7 +319,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     );
   }
 
-  Widget _buildExerciseCircle(Exercise exercise, int number) {
+  Widget _buildExerciseCircleWidget(Exercise exercise, int number) {
     final isSelected = _selectedExerciseId == exercise.id;
     final isCompleted = exercise.isCompleted;
 
@@ -393,8 +406,28 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     );
   }
 
+
   Widget _buildInfoContent() {
-    if (_selectedExercise == null) return const SizedBox.shrink();
+    // Logic for content state
+    String title;
+    String description;
+    Key key;
+    
+    bool allDone = _exercises.every((e) => e.isCompleted);
+    
+    if (allDone) {
+      title = "Congrats!";
+      description = "You finished your exercises for today";
+      key = const ValueKey("congrats");
+    } else if (_selectedExercise == null) {
+      title = "Ready?";
+      description = "Select an exercise to begin";
+      key = const ValueKey("noselection");
+    } else {
+      title = _selectedExercise!.title;
+      description = _selectedExercise!.description;
+      key = ValueKey(_selectedExercise!.id);
+    }
 
     return Stack(
       alignment: Alignment.center,
@@ -436,12 +469,12 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
               ));
             },
             child: Column(
-              key: ValueKey(_selectedExercise!.id), // Key changes triggers animation
+              key: key, // Key changes triggers animation
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center, // Center align for glass circle
               children: [
                 Text(
-                  _selectedExercise!.title,
+                  title,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.manrope(
                     fontSize: 28, // Slightly smaller to fit circle
@@ -452,7 +485,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  _selectedExercise!.description,
+                  description,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.manrope(
                     fontSize: 16,
