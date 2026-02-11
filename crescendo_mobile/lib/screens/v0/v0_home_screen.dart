@@ -8,121 +8,332 @@ class V0HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Retro off-white/cream paper background
-    const backgroundColor = Color(0xFFF9F7F2);
+    // 1. Music-Tech Component Styles
+    final Color primaryIndigo = const Color(0xFF3F51B5);
+    final Color deepViolet = const Color(0xFF673AB7);
     
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: const Color(0xFFF8F9FA), // Off-white tech background
       body: Stack(
         children: [
-          // Bottom Retro Stripes Decoration
+          // 2. Background Gradient & Subtle Wash
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFFFFFF), // Pure White start
+                    Color(0xFFE8EAF6), // Pale Indigo end
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Subtle Diagonal Wash
           Positioned(
-            bottom: 0,
-            right: 0,
-            child: CustomPaint(
-              size: const Size(400, 600), // Increased container size for safety
-              painter: _RetroStripesPainter(),
+            top: -200,
+            right: -100,
+            child: Container(
+              width: 500,
+              height: 500,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    deepViolet.withOpacity(0.05),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
             ),
           ),
           
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 40),
-                  
-                  // Header Title
-                  Text(
-                    "Ballad",
-                    style: GoogleFonts.notable(
-                      fontSize: 64,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF2D2A32), // Dark, almost black, soft ink
-                      letterSpacing: -1.0,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  
-                  const SizedBox(height: 60),
-                  
-                  // Exercise Cards
-                  _buildExerciseCard(
-                    context,
-                    title: "Match the Note",
-                    subtitle: "Match the note you hear",
-                    icon: Icons.music_note_rounded,
-                    accentColor: const Color(0xFF4A148C), // Deep Purple
-                    onTap: () {
-                      // Todo: Navigate to exercise
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildExerciseCard(
-                    context,
-                    title: "Follow the Notes",
-                    subtitle: "Follow the notes smoothly",
-                    icon: Icons.show_chart_rounded,
-                    accentColor: const Color(0xFF7B1FA2), // Purple
-                    onTap: () {
-                       // Todo: Navigate to exercise
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _buildExerciseCard(
-                    context,
-                    title: "Easy Slides",
-                    subtitle: "Slide comfortably between pitches",
-                    icon: Icons.waves_rounded,
-                    accentColor: const Color(0xFF3F51B5), // Indigo
-                    onTap: () {
-                       // Todo: Navigate to exercise
-                    },
-                  ),
-                  
-                  const Spacer(),
-                  
-                  // Progress Bar Section
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 20),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 20),
+                
+                // 3. Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Ballad",
+                        style: GoogleFonts.manrope(
+                          fontSize: 48,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF1A1A2E), // Almost black indigo
+                          letterSpacing: -1.5,
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Today: 3 exercises · ~6 min",
-                          style: GoogleFonts.manrope(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF5D5A60),
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Vocal Calibration System",
+                        style: GoogleFonts.robotoMono( // Tech font for subtitle
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.indigo.withOpacity(0.6),
+                          letterSpacing: 1.0,
                         ),
-                        const SizedBox(height: 12),
-                        Row(
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 40),
+                
+                // 4. Exercise Cards List
+                Expanded(
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10),
+                    children: [
+                      _TechExerciseCard(
+                        title: "Pitch Matching",
+                        subtitle: "Frequency alignment training",
+                        icon: Icons.graphic_eq,
+                        gradientColors: [primaryIndigo, deepViolet],
+                        onTap: () {},
+                      ),
+                      const SizedBox(height: 16),
+                      _TechExerciseCard(
+                        title: "Smooth Slides",
+                        subtitle: "Continuous glissando control",
+                        icon: Icons.waves,
+                        gradientColors: [deepViolet, const Color(0xFF9C27B0)],
+                        onTap: () {},
+                      ),
+                      const SizedBox(height: 16),
+                      _TechExerciseCard(
+                        title: "Vowel Tuning",
+                        subtitle: "Formant resonance shaping",
+                        icon: Icons.record_voice_over,
+                        gradientColors: [const Color(0xFF2196F3), primaryIndigo],
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 5. Bottom Progress Section (Docked)
+                _TechBottomBar(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TechExerciseCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> gradientColors;
+  final VoidCallback onTap;
+
+  const _TechExerciseCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.gradientColors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 100,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.indigo.shade100.withOpacity(0.5),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.indigo.withOpacity(0.05),
+            offset: const Offset(0, 4),
+            blurRadius: 16,
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Row(
+            children: [
+              // Vertical Gradient Accent
+              Container(
+                width: 6,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: gradientColors,
+                  ),
+                ),
+              ),
+              
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                  child: Row(
+                    children: [
+                      // Gradient Icon
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: gradientColors,
+                        ).createShader(bounds),
+                        child: Icon(
+                          icon,
+                          color: Colors.white, // Required for ShaderMask
+                          size: 28,
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 20),
+                      
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Expanded(child: _buildProgressSegment(const Color(0xFF4A148C))), // Deep Purple
-                            const SizedBox(width: 4),
-                            Expanded(child: _buildProgressSegment(const Color(0xFF7B1FA2))), // Purple
-                            const SizedBox(width: 4),
-                            Expanded(child: _buildProgressSegment(const Color(0xFF3F51B5))), // Indigo
+                            Text(
+                              title,
+                              style: GoogleFonts.manrope(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1A1A2E),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              style: GoogleFonts.manrope(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF7986CB), // Muted Indigo
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                      
+                      // Chevron
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey.withOpacity(0.3),
+                        size: 24,
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TechBottomBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 40), // Extra bottom padding for safe area
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: Colors.indigo.shade50,
+            width: 1,
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Brief Session Info
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "TODAY'S SESSION",
+                style: GoogleFonts.robotoMono(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo.withOpacity(0.4),
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "6 min",
+                style: GoogleFonts.manrope(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF3F51B5),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(width: 24),
+          
+          // Waveform/Beats Progress Visualization
+          Expanded(
+            child: SizedBox(
+              height: 30,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(12, (index) {
+                  // Simulate specific waveform heights
+                  // 3 filled (complete), rest empty
+                  final bool isCompleted = index < 3;
+                  final double heightFactor = 0.4 + (index % 3) * 0.2 + (index % 2) * 0.1; 
+                  
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                      child: FractionallySizedBox(
+                        heightFactor: heightFactor,
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isCompleted 
+                                ? const Color(0xFF3F51B5) // Indigo Filled
+                                : const Color(0xFFE8EAF6), // Empty Pale
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
               ),
             ),
           ),
@@ -130,165 +341,4 @@ class V0HomeScreen extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildProgressSegment(Color color) {
-    return Container(
-      height: 8,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.3), // Unfilled state
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: 0.0, // Progress is 0 for now
-        child: Container(
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExerciseCard(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color accentColor,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 100, // Fixed height for visual consistency
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08), // Softer shadow
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            // Left Accent Stripe
-            Container(
-              width: 8,
-              color: accentColor,
-            ),
-            
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-                child: Row(
-                  children: [
-                    // Icon
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: accentColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        icon,
-                        color: accentColor,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    
-                    // Texts
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            style: GoogleFonts.manrope(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF2D2A32),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            subtitle,
-                            style: GoogleFonts.manrope(
-                              fontSize: 13,
-                              color: const Color(0xFF8E8699),
-                              height: 1.2,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    // Chevron
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.grey.withOpacity(0.4),
-                      size: 24,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
-
-class _RetroStripesPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    
-    // Stripe colors inspired by purple/indigo palette
-    final colors = [
-      const Color(0xFF4A148C), // Deep Purple
-      const Color(0xFF7B1FA2), // Purple
-      const Color(0xFF673AB7), // Deep Purple Accent
-      const Color(0xFF3F51B5), // Indigo
-    ];
-    
-    // Made stripes thicker for visibility
-    const double stripeWidth = 60.0;
-    
-    // Draw diagonal stripes from bottom-right corner
-    canvas.save();
-    canvas.translate(size.width, size.height);
-    canvas.rotate(-0.5); // Slight rotation
-    
-    for (int i = 0; i < colors.length; i++) {
-      paint.color = colors[i].withOpacity(0.8);
-      // Determine offset
-      double offset = i * stripeWidth;
-      
-      // Draw a rectangle for the stripe
-      // Extending far up (-1000) so the top edge is off-screen
-      canvas.drawRect(
-        Rect.fromLTWH(-400 + offset, -1000, stripeWidth, 2000),
-        paint,
-      );
-    }
-    
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-
-
