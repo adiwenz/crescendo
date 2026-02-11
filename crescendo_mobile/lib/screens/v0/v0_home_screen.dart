@@ -81,14 +81,14 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
       title: "Warm Up",
       description: "Gently get your voice ready to sing",
       durationMinutes: 5,
-      color: const Color(0xFF81D4FA), // Light Blue
+      color: const Color(0xFF0394FC), // Light Blue
     ),
     Exercise(
       id: "2",
       title: "Breath Control",
       description: "Expand your lung capacity and control",
       durationMinutes: 7,
-      color: const Color(0xFF9FA8DA), // Indigo/Periwinkle
+      color: const Color(0xFF8403fc), // Indigo/Periwinkle
     ),
     Exercise(
       id: "3",
@@ -316,16 +316,27 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isCompleted 
-              ? exercise.color.withOpacity(0.3) // Desaturated/dimmed
-              : exercise.color.withOpacity(0.8),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isCompleted
+                ? [
+                    exercise.color.withOpacity(0.2),
+                    exercise.color.withOpacity(0.4),
+                  ]
+                : [
+                    exercise.color.withOpacity(0.6), // Lighter/Highlight
+                    exercise.color, // Pure/Shadow
+                  ],
+          ),
           boxShadow: [
             BoxShadow(
               color: (isSelected && !isCompleted) 
                   ? exercise.color.withOpacity(0.6) 
-                  : Colors.transparent,
-              blurRadius: (isSelected && !isCompleted) ? 20 : 0,
+                  : Colors.black.withOpacity(0.1),
+              blurRadius: (isSelected && !isCompleted) ? 20 : 6,
               spreadRadius: (isSelected && !isCompleted) ? 2 : 0,
+              offset: (isSelected && !isCompleted) ? Offset.zero : const Offset(2, 4),
             )
           ],
         ),
