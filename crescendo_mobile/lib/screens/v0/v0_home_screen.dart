@@ -175,7 +175,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     // Lavender/Blue (top) -> Teal/Green (middle) -> Soft Aqua (bottom)
     // Approximate colors based on description/screenshot
     final gradientColors = [
-      const Color(0xFFC5CAE9), // Lavender/Blue
+      // const Color(0xFFC5CAE9), // Lavender/Blue
+      const Color(0xFF0e2763), // Lavender/Blue
       const Color(0xFF80CBC4), // Teal/Green
       const Color(0xFFB2DFDB), // Soft Aqua
     ];
@@ -192,7 +193,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: gradientColors,
-                stops: const [0.0, 0.5, 1.0],
+                stops: const [0.0, 0.6, 1.0],
               ),
             ),
           ),
@@ -273,16 +274,18 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Hamburger Icon
-          Icon(Icons.menu, color: Colors.white.withOpacity(0.6), size: 28),
-          
+          // Icon(Icons.menu, color: Colors.white.withOpacity(0.6), size: 28),
+          // Spacer(),
           // Title
+          SizedBox(width: 20),
           Text(
             "Today's Exercises",
             style: GoogleFonts.manrope(
-              fontSize: 22,
-              fontWeight: FontWeight.w300, // Thin/Light
+              fontSize: 26,
+              fontWeight: FontWeight.w400, // Thin/Light
               color: Colors.white,
               letterSpacing: 0.5,
+              // textAlign: TextAlign.center,
             ),
           ),
           
@@ -333,10 +336,9 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
             BoxShadow(
               color: (isSelected && !isCompleted) 
                   ? exercise.color.withOpacity(0.6) 
-                  : Colors.black.withOpacity(0.1),
-              blurRadius: (isSelected && !isCompleted) ? 20 : 6,
+                  : Colors.transparent,
+              blurRadius: (isSelected && !isCompleted) ? 20 : 0,
               spreadRadius: (isSelected && !isCompleted) ? 2 : 0,
-              offset: (isSelected && !isCompleted) ? Offset.zero : const Offset(2, 4),
             )
           ],
         ),
@@ -422,13 +424,13 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
         borderRadius: BorderRadius.circular(24),
         child: Stack(
           children: [
-            // Frosted Glass Effect
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                color: Colors.white.withOpacity(0.2), // Translucent white
-              ),
-            ),
+            // // Frosted Glass Effect
+            // BackdropFilter(
+            //   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            //   child: Container(
+            //     color: Colors.white.withOpacity(0.3), // Translucent white
+            //   ),
+            // ),
             
             // Content
             Padding(
@@ -442,8 +444,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                       Text(
                         "Progress",
                         style: GoogleFonts.manrope(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w400,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w500,
                           color: Colors.white,
                         ),
                       ),
@@ -452,7 +454,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                         style: GoogleFonts.manrope(
                           fontSize: 14,
                           fontWeight: FontWeight.w300,
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withOpacity(0.8),
                         ),
                       ),
                     ],
@@ -466,7 +468,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                       Container(
                         height: 24,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withOpacity(0.4),
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
@@ -479,7 +481,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                           height: 24,
                           decoration: BoxDecoration(
                             // Soft pastel fill (Teal/Blue ish)
-                            color: const Color(0xFF4DB6AC).withOpacity(0.8),
+                            color: const Color(0xFF4DB6AC).withOpacity(1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
