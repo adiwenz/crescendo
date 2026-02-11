@@ -208,11 +208,12 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 
                 Expanded(
                   child: Stack(
+                    fit: StackFit.expand,
                     children: [
                       // 3) Left Side Vertical Circles
                       Positioned(
-                        top: 40,
-                        bottom: 100,
+                        top: 0,
+                        bottom: 0,
                         left: 20,
                         width: 100, // Constrain width of the ball column
                         child: Column(
@@ -228,14 +229,14 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                             // Amplitude: How far right the arc goes (approx 8% of screen width ~ 35px)
                             const double curveAmplitude = 35.0; 
                             
-                            // Parabolic approximation of sine wave for 0 -> 1 -> 0
-                            // y = 4 * x * (1 - x)
+                            // Parabolic approximation of sine wave for 1 -> 0 -> 1 (Bulge Left, Open Right)
+                            // y = 1.0 - (4 * x * (1 - x))
                             final double parabola = 4 * normalizedIndex * (1.0 - normalizedIndex);
-                            final double xTranslation = curveAmplitude * parabola;
+                            final double xTranslation = curveAmplitude * (1.0 - parabola);
 
                             return Transform.translate(
                               offset: Offset(xTranslation, 0),
-                              child: _buildExerciseCircle(exercise),
+                              child: _buildExerciseCircle(exercise, index + 1),
                             );
                           }).toList(),
                         ),
@@ -299,7 +300,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     );
   }
 
-  Widget _buildExerciseCircle(Exercise exercise) {
+  Widget _buildExerciseCircle(Exercise exercise, int number) {
     final isSelected = _selectedExerciseId == exercise.id;
     final isCompleted = exercise.isCompleted;
 
@@ -310,7 +311,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
       onTap: () => _onCircleTap(exercise),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
+        curve: Curves.easeOutCubic,
         width: size,
         height: size,
         decoration: BoxDecoration(
@@ -318,15 +319,15 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           color: isCompleted 
               ? exercise.color.withOpacity(0.3) // Desaturated/dimmed
               : exercise.color.withOpacity(0.8),
-          boxShadow: isSelected && !isCompleted
-              ? [
-                  BoxShadow(
-                    color: exercise.color.withOpacity(0.6),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  )
-                ]
-              : [],
+          boxShadow: [
+            BoxShadow(
+              color: (isSelected && !isCompleted) 
+                  ? exercise.color.withOpacity(0.6) 
+                  : Colors.transparent,
+              blurRadius: (isSelected && !isCompleted) ? 20 : 0,
+              spreadRadius: (isSelected && !isCompleted) ? 2 : 0,
+            )
+          ],
         ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
@@ -346,7 +347,17 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                     ),
                   ),
                 )
-              : const SizedBox.shrink(key: ValueKey("empty")), // Plain circle
+              : Center(
+                  key: const ValueKey("number"),
+                  child: Text(
+                    "$number",
+                    style: GoogleFonts.manrope(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ), 
         ),
       ),
     );
