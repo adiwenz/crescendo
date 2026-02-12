@@ -28,7 +28,7 @@ import '../../utils/pitch_highway_tempo.dart';
 import '../../core/app_config.dart'; // Import AppConfig
 import '../../theme/ballad_theme.dart';
 import '../../widgets/ballad_scaffold.dart';
-import 'pitch_highway_review_screen.dart';
+import 'review_last_take_v2_screen.dart';
 
 import '../../services/progress_service.dart';
 import '../../services/exercise_metadata.dart';
@@ -240,7 +240,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
                     if (context.mounted) {
                        Navigator.of(context).pushReplacement(
                          MaterialPageRoute(
-                           builder: (_) => PitchHighwayReviewScreen(
+                           builder: (_) => ReviewLastTakeV2Screen(
                              notes: _notes,
                              referencePath: state.referencePath!,
                              recordingPath: state.recordingPath!,

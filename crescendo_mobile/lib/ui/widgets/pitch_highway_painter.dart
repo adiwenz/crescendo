@@ -351,11 +351,12 @@ class PitchHighwayPainter extends CustomPainter {
         if (n.isGlideEnd) continue;
 
         // Regular note rendering (non-glide notes)
-        // Skip notes during lead-in (leadInSec = 2.0s)
+        // Skip notes during lead-in (leadInSec = 2.0s) ONLY in recording mode
         // Pattern notes are built with: startSec = leadInSec + patternStartSec + xStart
         // For first pattern (k=0): patternStartSec = 2.0, so first note has startSec = 2.0 + 0.0 = 2.0
         // This check (< 2.0) skips notes BEFORE lead-in ends, but allows notes AT 2.0 (first note)
-        if (n.startSec < 2.0) continue;
+        // In review mode, we want to show all notes from the beginning
+        if (!isReviewMode && n.startSec < 2.0) continue;
 
         final startX = playheadX + (n.startSec - currentTime) * pixelsPerSecond;
         final endX = playheadX + (n.endSec - currentTime) * pixelsPerSecond;

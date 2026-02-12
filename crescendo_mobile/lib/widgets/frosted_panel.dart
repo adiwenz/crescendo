@@ -24,9 +24,9 @@ class FrostedPanel extends StatelessWidget {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.18),
+            color: Colors.white.withOpacity(0.08), // More transparent to show gradient
             borderRadius: effectiveRadius,
-            border: Border.all(color: Colors.white.withOpacity(0.22)),
+            border: Border.all(color: Colors.white.withOpacity(0.15)),
           ),
           child: child,
         ),

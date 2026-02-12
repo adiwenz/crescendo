@@ -1,25 +1,28 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../../models/reference_note.dart';
 import '../../models/pitch_frame.dart';
+import '../../models/vocal_exercise.dart';
+import '../../models/exercise_attempt.dart';
 import '../../services/pitch_highway_session_controller.dart';
 import '../../services/recording_service.dart';
 import '../../services/audio_offset_estimator.dart';
 import '../../services/vocal_range_service.dart'; // range
+import '../../services/transposed_exercise_builder.dart';
+import '../../services/attempt_repository.dart';
 import '../../ui/theme/app_theme.dart';
 import '../../ui/widgets/pitch_highway_painter.dart'; // painter
 import '../../utils/pitch_tail_buffer.dart'; // TailPoint
-import '../../utils/pitch_highway_tempo.dart'; // tempo
 import '../../theme/ballad_theme.dart';
 import '../../widgets/ballad_scaffold.dart';
 import '../../widgets/frosted_panel.dart';
 
-import '../../models/pitch_frame.dart'; // Ensure import
 
-class PitchHighwayReviewScreen extends StatefulWidget {
+class ReviewLastTakeV2Screen extends StatefulWidget {
   final List<ReferenceNote> notes;
   final String referencePath;
   final String recordingPath;
@@ -27,7 +30,7 @@ class PitchHighwayReviewScreen extends StatefulWidget {
   final double referenceDurationSec;
   final List<PitchFrame> alignedFrames;
 
-  const PitchHighwayReviewScreen({
+  const ReviewLastTakeV2Screen({
     super.key,
     required this.notes,
     required this.referencePath,
@@ -38,10 +41,97 @@ class PitchHighwayReviewScreen extends StatefulWidget {
   });
 
   @override
-  State<PitchHighwayReviewScreen> createState() => _PitchHighwayReviewScreenState();
+  State<ReviewLastTakeV2Screen> createState() => _ReviewLastTakeV2ScreenState();
+
+  /// Helper to fetch necessary data and push this screen
+  static Future<void> loadAndPush(
+    BuildContext context, {
+    required VocalExercise exercise,
+    required ExerciseAttempt attempt,
+  }) async {
+    final scaffold = ScaffoldMessenger.of(context);
+
+    try {
+      // 1. Resolve paths
+      var audioPath = attempt.recordingPath;
+      var contourJson = attempt.contourJson;
+      var recorderStartSec = attempt.recorderStartSec;
+      var referenceSampleRate = attempt.referenceSampleRate;
+
+      if (audioPath == null || audioPath.isEmpty || !File(audioPath).existsSync()) {
+        debugPrint('ReviewV2: recordingPath missing or invalid, trying recovery from last_take');
+        final lastTake = await AttemptRepository.instance.loadLastTake(exercise.id);
+        if (lastTake != null && File(lastTake.audioPath).existsSync()) {
+          audioPath = lastTake.audioPath;
+          recorderStartSec = lastTake.offsetMs / 1000.0;
+          referenceSampleRate = lastTake.referenceSampleRate;
+          
+          if (contourJson == null) {
+            final pf = File(lastTake.pitchPath);
+            if (pf.existsSync()) {
+              contourJson = await pf.readAsString();
+            }
+          }
+        }
+      }
+
+      if (audioPath == null || audioPath.isEmpty || !File(audioPath).existsSync()) {
+        throw 'Recording file not found';
+      }
+
+      // 2. Resolve reference path
+      String? refPath = attempt.referenceWavPath;
+      if (refPath == null || refPath.isEmpty) {
+        debugPrint('ReviewV2: No reference path in attempt. Using empty fallback.');
+      }
+      
+      // 3. Parse frames from contourJson
+      List<PitchFrame> frames = [];
+      if (contourJson != null && contourJson.isNotEmpty) {
+        try {
+           final List<dynamic> decoded = jsonDecode(contourJson);
+           frames = decoded.map<PitchFrame>((f) => PitchFrame.fromJson(Map<String, dynamic>.from(f))).toList();
+        } catch (e) {
+           debugPrint('ReviewV2: Error parsing contourJson: $e');
+        }
+      }
+
+      // 4. Build reference notes
+      final range = await VocalRangeService().getRange();
+      final sequence = TransposedExerciseBuilder.buildTransposedSequence(
+        exercise: exercise,
+        lowestMidi: range.$1,
+        highestMidi: range.$2,
+      );
+      final notes = sequence.melody;
+
+      if (!context.mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReviewLastTakeV2Screen(
+            notes: notes,
+            referencePath: refPath ?? '',
+            recordingPath: audioPath!,
+            offsetResult: AudioOffsetResult(
+              offsetSamples: ((recorderStartSec ?? 0.0) * (referenceSampleRate ?? 44100)).round(),
+              offsetMs: (recorderStartSec ?? 0.0) * 1000,
+              confidence: (attempt.overallScore ?? 0) / 100.0,
+              method: 'recovery',
+            ),
+            referenceDurationSec: exercise.estimatedDurationSec.toDouble(),
+            alignedFrames: frames,
+          ),
+        ),
+      );
+    } catch (e) {
+      scaffold.showSnackBar(SnackBar(content: Text('Error loading review: $e')));
+    }
+  }
 }
 
-class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
+class _ReviewLastTakeV2ScreenState extends State<ReviewLastTakeV2Screen> {
   late PitchHighwaySessionController _controller;
   
   // Visualization State
@@ -117,9 +207,30 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final gradientColors = [
+      const Color(0xFF0e2763), // Lavender/Blue
+      const Color(0xFF80CBC4), // Teal/Green
+      const Color(0xFFB2DFDB), // Soft Aqua
+    ];
+    
     return BalladScaffold(
       title: 'Review Take',
-      child: ValueListenableBuilder<PitchHighwaySessionState>(
+      padding: EdgeInsets.zero, // Full-screen gradient
+      child: Stack(
+        children: [
+          // Background gradient
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: gradientColors,
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+          ),
+          // Main content
+          ValueListenableBuilder<PitchHighwaySessionState>(
         valueListenable: _controller.state,
         builder: (context, state, _) {
           
@@ -136,9 +247,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
               // --- 1. Top Section: Pitch Lane (65%) ---
               Expanded(
                 flex: 65,
-                child: Container(
-                  color: Colors.transparent, // Let scaffold bg show through
-                  child: Stack(
+                child: Stack(
                     children: [
                       // Pitch Highway
                       Positioned.fill(
@@ -162,11 +271,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                  pitchTailTimeOffsetSec: 0,
                                  pixelsPerSecond: _pixelsPerSecond,
                                  playheadFraction: 0.45,
-                                 drawBackground: true, // Grid
+                                 drawBackground: false, // Disable grid to allow scrolling
                                  midiMin: _midiMin,
                                  midiMax: _midiMax,
-                                 isReviewMode: true, // NEW param to add to painter
-                                 colors: AppThemeColors.dark, // Dark theme for cosmic look
+                                 isReviewMode: true,
+                                 colors: AppThemeColors.dark,
                                ),
                              );
                           }
@@ -198,7 +307,6 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                       ),
                     ],
                   ),
-                ),
               ),
               
               // --- 2. Bottom Section: Controls (35%) ---
@@ -370,6 +478,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
             ],
           );
         },
+      ),
+        ],
       ),
     );
   }

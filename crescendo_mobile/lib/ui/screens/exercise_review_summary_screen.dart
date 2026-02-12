@@ -17,7 +17,7 @@ import '../../utils/audio_constants.dart';
 import '../../utils/pitch_math.dart';
 
 import '../widgets/overview_graph.dart';
-import 'pitch_highway_review_screen.dart';
+import 'review_last_take_v2_screen.dart';
 import '../../services/attempt_repository.dart';
 import '../../models/last_take.dart';
 import '../../models/pitch_frame.dart';
@@ -384,7 +384,7 @@ class _ExerciseReviewSummaryScreenState
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PitchHighwayReviewScreen(
+        builder: (_) => ReviewLastTakeV2Screen(
           notes: notes,
           referencePath: refPath!,
           recordingPath: audioPath!,
@@ -414,7 +414,7 @@ class _ExerciseReviewSummaryScreenState
       return;
     }
     
-    // TODO: Support segment seeking in PitchHighwayReviewScreen
+    // TODO: Support segment seeking in ReviewLastTakeV2Screen
     // final segmentStartSec = segment.startMs / 1000.0;
     // final replayStartSec = (segmentStartSec - 2.0).clamp(0.0, double.infinity);
     
@@ -425,7 +425,7 @@ class _ExerciseReviewSummaryScreenState
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PitchHighwayReviewScreen(
+        builder: (_) => ReviewLastTakeV2Screen(
           notes: notes,
           referencePath: refPath!,
           recordingPath: audioPath!,

@@ -248,14 +248,28 @@ class PitchHighwaySessionController {
     // Switch to playback session
     await AudioSessionService.applyReviewSession();
 
-    // Prepare players
+    // Prepare players with validation
     if (recPath.isNotEmpty) {
        final f = File(recPath);
        if (await f.exists()) {
           await _recPlayer.setSourceDeviceFile(recPath);
+       } else {
+          debugPrint('[V2Controller] Recording file not found: $recPath');
        }
+    } else {
+       debugPrint('[V2Controller] Recording path is empty');
     }
-    await _refReplayPlayer.setSourceDeviceFile(refPath);
+    
+    if (refPath.isNotEmpty) {
+       final f = File(refPath);
+       if (await f.exists()) {
+          await _refReplayPlayer.setSourceDeviceFile(refPath);
+       } else {
+          debugPrint('[V2Controller] Reference file not found: $refPath');
+       }
+    } else {
+       debugPrint('[V2Controller] Reference path is empty');
+    }
 
     if (_isDisposed) return;
     
@@ -309,12 +323,22 @@ class PitchHighwaySessionController {
       await _refReplayPlayer.setVolume(s.refVolume);
       await _recPlayer.setVolume(s.recVolume * 8.0);
 
-      // Reset sources to be safe
-      if (s.referencePath != null) {
-        await _refReplayPlayer.setSourceDeviceFile(s.referencePath!);
+      // Reset sources to be safe with validation
+      if (s.referencePath != null && s.referencePath!.isNotEmpty) {
+        final refFile = File(s.referencePath!);
+        if (await refFile.exists()) {
+          await _refReplayPlayer.setSourceDeviceFile(s.referencePath!);
+        } else {
+          debugPrint('[V2Controller] Reference file not found during replay: ${s.referencePath}');
+        }
       }
-      if (s.recordingPath != null) {
-        await _recPlayer.setSourceDeviceFile(s.recordingPath!);
+      if (s.recordingPath != null && s.recordingPath!.isNotEmpty) {
+        final recFile = File(s.recordingPath!);
+        if (await recFile.exists()) {
+          await _recPlayer.setSourceDeviceFile(s.recordingPath!);
+        } else {
+          debugPrint('[V2Controller] Recording file not found during replay: ${s.recordingPath}');
+        }
       }
 
       if (_isDisposed) return;

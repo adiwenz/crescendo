@@ -13,7 +13,7 @@ import '../../services/vocal_range_service.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../utils/audio_constants.dart';
 import '../widgets/overview_graph.dart';
-import 'pitch_highway_review_screen.dart';
+import 'review_last_take_v2_screen.dart';
 import 'exercise_review_summary_screen.dart';
 
 class ExerciseReviewScreen extends StatefulWidget {
@@ -240,17 +240,10 @@ class _ExerciseReviewScreenState extends State<ExerciseReviewScreen> {
       );
       return;
     }
-    Navigator.push(
+    ReviewLastTakeV2Screen.loadAndPush(
       context,
-      MaterialPageRoute(
-        builder: (_) => PitchHighwayReviewScreen(
-          exercise: widget.exercise,
-          lastTake: take,
-          explicitDifficulty: _currentAttempt.pitchDifficulty != null
-              ? pitchHighwayDifficultyFromName(_currentAttempt.pitchDifficulty!)
-              : null,
-        ),
-      ),
+      exercise: widget.exercise,
+      attempt: _currentAttempt,
     );
   }
 

@@ -8,6 +8,7 @@ import '../../services/exercise_level_progress_repository.dart';
 import '../../services/exercise_repository.dart';
 import '../../widgets/banner_card.dart';
 import '../../ui/screens/exercise_review_summary_screen.dart';
+import '../../ui/screens/review_last_take_v2_screen.dart';
 import '../../services/preview_audio_service.dart';
 import '../../services/exercise_metadata.dart';
 import 'dart:async';
@@ -565,20 +566,16 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
          return;
       }
       
-      debugPrint('[Preview] _reviewLast NAVIGATING to ExerciseReviewSummaryScreen. Exercise=${ex.id}, Attempt=${attempt.id}');
+      debugPrint('[Preview] _reviewLast NAVIGATING to ReviewLastTakeV2Screen. Exercise=${ex.id}, Attempt=${attempt.id}');
       
-      // Navigate to summary screen
-      Navigator.push(
+      // Navigate to direct V2 review screen
+      await ReviewLastTakeV2Screen.loadAndPush(
         context,
-        MaterialPageRoute(
-          builder: (_) => ExerciseReviewSummaryScreen(
-            exercise: ex,
-            attempt: attempt,
-          ),
-        ),
-      ).then((_) {
-        debugPrint('[Preview] _reviewLast: Returned from Review screen.');
-      });
+        exercise: ex,
+        attempt: attempt,
+      );
+
+      debugPrint('[Preview] _reviewLast: Returned from Review screen.');
 
     } catch (e, stack) {
       debugPrint('[Preview] _reviewLast CRITICAL ERROR: $e\n$stack');
