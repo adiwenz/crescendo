@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'abstract_banner_painter.dart';
 import '../ui/theme/app_theme.dart';
+import '../theme/ballad_theme.dart';
+import 'frosted_panel.dart';
 
 class CategoryTile extends StatelessWidget {
   final String title;
@@ -23,14 +25,8 @@ class CategoryTile extends StatelessWidget {
     final colors = AppThemeColors.of(context);
     final radius = BorderRadius.circular(AppThemeColors.radiusMd);
     
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: colors.surfaceGlass,
-        borderRadius: radius,
-        border: Border.all(color: colors.borderGlass, width: 1),
-        boxShadow: colors.elevationShadow,
-      ),
+    return FrostedPanel(
+      padding: EdgeInsets.zero,
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -64,8 +60,8 @@ class CategoryTile extends StatelessWidget {
                         children: [
                           Text(
                             title,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                            style: BalladTheme.bodyLarge.copyWith(
+                                  fontWeight: FontWeight.w700,
                                 ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -80,9 +76,7 @@ class CategoryTile extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           '$exerciseCount ${exerciseCount == 1 ? 'exercise' : 'exercises'}',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: colors.textSecondary,
-                              ),
+                          style: BalladTheme.bodySmall,
                         ),
                       ),
                   ],

@@ -8,6 +8,9 @@ import '../../ui/widgets/progress_charts.dart';
 import '../../models/exercise_attempt.dart';
 import '../../services/exercise_repository.dart';
 import '../../ui/route_observer.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../theme/ballad_theme.dart';
+import '../../widgets/frosted_panel.dart';
 import 'category_progress_screen.dart';
 
 class ProgressHomeScreen extends StatefulWidget {
@@ -93,28 +96,15 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('Progress'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              'Your practice over time',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
-            ),
-          ),
-        ),
-      ),
-      body: FutureBuilder<ProgressSummary>(
+    return BalladScaffold(
+      title: 'Progress',
+      child: FutureBuilder<ProgressSummary>(
         future: _future,
         initialData: _initial,
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
           if (snapshot.hasError) {
             return Center(
               child: Column(
@@ -135,149 +125,135 @@ class _ProgressHomeScreenState extends State<ProgressHomeScreen> with RouteAware
             );
           }
           final summary = snapshot.data!;
-          // Compute daily stats from the latest attempts cache
-          // The cache should be up-to-date since _onAttemptsChanged refreshes it
           final dailyStats = _computeDailyStats(_attempts.cache, _selectedFilter);
           
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
+              Text(
+                'Your practice over time',
+                style: BalladTheme.bodyMedium.copyWith(color: BalladTheme.textSecondary),
+              ),
+              const SizedBox(height: 16),
               // Today's stats card
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Today', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: MetricPill(label: 'Practice time', value: '—')),
-                          const SizedBox(width: 12),
-                          Expanded(child: MetricPill(label: 'Completed', value: '${summary.completedToday}')),
-                          const SizedBox(width: 12),
-                          Expanded(child: MetricPill(label: 'Avg score', value: summary.avgScore.isNaN ? '—' : '${summary.avgScore.toStringAsFixed(0)}%')),
-                        ],
-                      ),
-                    ],
-                  ),
+              FrostedPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Today', style: BalladTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: MetricPill(label: 'Practice time', value: '—')),
+                        const SizedBox(width: 12),
+                        Expanded(child: MetricPill(label: 'Completed', value: '${summary.completedToday}')),
+                        const SizedBox(width: 12),
+                        Expanded(child: MetricPill(label: 'Avg score', value: summary.avgScore.isNaN ? '—' : '${summary.avgScore.toStringAsFixed(0)}%')),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
               // Line graph: Trend
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Trend',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          // Filter buttons
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _FilterChip(
-                                label: 'Day',
-                                selected: _selectedFilter == _TrendFilter.day,
-                                onTap: () => setState(() => _selectedFilter = _TrendFilter.day),
+              FrostedPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Trend',
+                          style: BalladTheme.titleMedium,
+                        ),
+                        // Filter buttons
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _FilterChip(
+                              label: 'Day',
+                              selected: _selectedFilter == _TrendFilter.day,
+                              onTap: () => setState(() => _selectedFilter = _TrendFilter.day),
+                            ),
+                            const SizedBox(width: 8),
+                            _FilterChip(
+                              label: 'Week',
+                              selected: _selectedFilter == _TrendFilter.week,
+                              onTap: () => setState(() => _selectedFilter = _TrendFilter.week),
+                            ),
+                            const SizedBox(width: 8),
+                            _FilterChip(
+                              label: 'Month',
+                              selected: _selectedFilter == _TrendFilter.month,
+                              onTap: () => setState(() => _selectedFilter = _TrendFilter.month),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 120,
+                      child: dailyStats.avgScores.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No data yet',
+                                style: BalladTheme.bodySmall.copyWith(color: BalladTheme.textSecondary),
                               ),
-                              const SizedBox(width: 8),
-                              _FilterChip(
-                                label: 'Week',
-                                selected: _selectedFilter == _TrendFilter.week,
-                                onTap: () => setState(() => _selectedFilter = _TrendFilter.week),
-                              ),
-                              const SizedBox(width: 8),
-                              _FilterChip(
-                                label: 'Month',
-                                selected: _selectedFilter == _TrendFilter.month,
-                                onTap: () => setState(() => _selectedFilter = _TrendFilter.month),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 120,
-                        child: dailyStats.avgScores.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No data yet',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Colors.grey[600],
-                                      ),
-                                ),
-                              )
-                            : ProgressBarChart(values: dailyStats.avgScores),
-                      ),
-                    ],
-                  ),
+                            )
+                          : ProgressBarChart(values: dailyStats.avgScores),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
               // Primary category progress list
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Category Progress', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 12),
-                      ...summary.categories.map((c) {
-                        final subtitle = '${c.completedCount}/${c.totalCount} completed';
-                        final widgetRow = ProgressBarRow(
-                          title: c.title,
-                          subtitle: subtitle,
-                          percent: c.percent,
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              final repo = ExerciseRepository();
-                              final category = repo.getCategories().firstWhere(
-                                (cat) => cat.id == c.categoryId,
-                                orElse: () {
-                                  // If category not found, try to find by title match
-                                  final byTitle = repo.getCategories().where(
-                                    (cat) => cat.title.toLowerCase() == c.title.toLowerCase(),
-                                  ).toList();
-                                  if (byTitle.isNotEmpty) {
-                                    return byTitle.first;
-                                  }
-                                  // Last resort: return first category
-                                  return repo.getCategories().first;
-                                },
-                              );
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => CategoryProgressScreen(category: category),
-                                ),
-                              );
-                            },
-                            child: widgetRow,
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
+              FrostedPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Category Progress', style: BalladTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    ...summary.categories.map((c) {
+                      final subtitle = '${c.completedCount}/${c.totalCount} completed';
+                      final widgetRow = ProgressBarRow(
+                        title: c.title,
+                        subtitle: subtitle,
+                        percent: c.percent,
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            final repo = ExerciseRepository();
+                            final category = repo.getCategories().firstWhere(
+                              (cat) => cat.id == c.categoryId,
+                              orElse: () {
+                                // If category not found, try to find by title match
+                                final byTitle = repo.getCategories().where(
+                                  (cat) => cat.title.toLowerCase() == c.title.toLowerCase(),
+                                ).toList();
+                                if (byTitle.isNotEmpty) {
+                                  return byTitle.first;
+                                }
+                                // Last resort: return first category
+                                return repo.getCategories().first;
+                              },
+                            );
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CategoryProgressScreen(category: category),
+                              ),
+                            );
+                          },
+                          child: widgetRow,
+                        ),
+                      );
+                    }),
+                  ],
                 ),
               ),
             ],
@@ -388,17 +364,17 @@ class _FilterChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? colors.primary : Colors.transparent,
+          color: selected ? BalladTheme.accentPurple : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? colors.primary : colors.outline.withOpacity(0.5),
+            color: selected ? BalladTheme.accentPurple : Colors.white24,
             width: 1,
           ),
         ),
         child: Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: selected ? Colors.white : colors.onSurface,
+          style: BalladTheme.bodySmall.copyWith(
+                color: selected ? Colors.white : BalladTheme.textSecondary,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
               ),
         ),

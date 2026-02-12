@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../theme/ballad_theme.dart';
 
 class CentsMeter extends StatelessWidget {
   final double? cents;
@@ -16,7 +17,7 @@ class CentsMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasValue = cents != null;
     final target = (cents ?? 0).clamp(-50.0, 50.0).toDouble();
-    final activeColor = confidence >= 0.5 ? Colors.indigo : Colors.grey;
+    final activeColor = confidence >= 0.5 ? BalladTheme.accentTeal : BalladTheme.textSecondary;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: target),
       duration: const Duration(milliseconds: 180),
@@ -65,7 +66,7 @@ class CentsMeter extends StatelessWidget {
             Text(
               hasValue ? '${value >= 0 ? '+' : ''}${value.toStringAsFixed(0)}¢' : '—',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: BalladTheme.titleMedium,
             ),
           ],
         );
@@ -83,13 +84,13 @@ class _CentsMeterPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
     final track = Paint()
-      ..color = Colors.grey.shade300
+      ..color = Colors.white10
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), track);
 
     final tickPaint = Paint()
-      ..color = Colors.grey.shade400
+      ..color = Colors.white24
       ..strokeWidth = 1.5;
     final zeroPaint = Paint()
       ..color = color

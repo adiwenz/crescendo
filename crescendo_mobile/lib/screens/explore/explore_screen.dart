@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/exercise_category.dart';
 import '../../services/exercise_repository.dart';
 import '../../widgets/category_tile.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../theme/ballad_theme.dart';
 import 'category_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -75,35 +77,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
       categoryIndexMap[categories[i].id] = i;
     }
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Explore',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                      textAlign: TextAlign.left,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Find the right exercise',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                      textAlign: TextAlign.left,
-                    ),
-                  ],
-                ),
+    return BalladScaffold(
+      title: 'Explore',
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Explore',
+                    style: BalladTheme.titleLarge,
+                    textAlign: TextAlign.left,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Find the right exercise',
+                    style: BalladTheme.bodyMedium.copyWith(color: BalladTheme.textSecondary),
+                    textAlign: TextAlign.left,
+                  ),
+                ],
               ),
             ),
+          ),
             // Category sections
             Expanded(
               child: ListView(
@@ -145,7 +147,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -181,9 +182,7 @@ class _CategorySection extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 12),
           child: Text(
             title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: BalladTheme.titleMedium,
           ),
         ),
         // Category grid

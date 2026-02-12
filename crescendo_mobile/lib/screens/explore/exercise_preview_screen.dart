@@ -294,35 +294,15 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     widget.trace?.mark('build start (loading=$_loading)');
     
     final ex = _exercise;
-    // Use pre-computed title
-    final title = _categoryTitle.isNotEmpty ? _categoryTitle : 'Exercise';
+    final title = ex?.name ?? (_categoryTitle.isNotEmpty ? _categoryTitle : 'Exercise');
 
     final body = _loading
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               children: [
-                if (ex != null) 
-                  _Header(
-                    ex: ex, 
-                    bannerStyleId: _bannerStyleId
-                  ),
-                const SizedBox(height: 16),
-                FrostedPanel(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Purpose', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text(ex?.purpose ?? ex?.description ?? 'Build control and accuracy.', style: BalladTheme.bodyMedium),
-                      const SizedBox(height: 16),
-                      Text('How it works', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text(ex?.description ?? 'Follow along and match the guide.', style: BalladTheme.bodyMedium),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 8),
+
                 if (ex != null &&
                     ExerciseMetadata.forExercise(ex).previewSupported) ...[
                   const SizedBox(height: 16),
@@ -543,45 +523,51 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     try {
       final ex = _exercise;
       if (ex == null) {
-        debugPrint('[Preview] _reviewLast blocked: ex is null');
+        debugPrint('[Preview] _reviewLast ERROR: _exercise is null. Cannot navigate.');
         return;
       }
-      
+
       // Get ID from the lightweight attempt we have
       final currentLite = _latest;
       if (currentLite == null) {
-        debugPrint('[Preview] _reviewLast blocked: currentLite is null');
+        debugPrint('[Preview] _reviewLast ERROR: _latest attempt is null. Button should have been disabled.');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No last take found to review.')),
+          );
+        }
         return;
       }
       
       var attempt = currentLite.raw;
-      debugPrint('[Preview] _reviewLast processing attempt id=${attempt.id}');
+      debugPrint('[Preview] _reviewLast processing attempt id=${attempt.id} for exercise=${ex.id}');
       
       // Let's try to fetch full attempt if ID is valid
       if (attempt.id.isNotEmpty) {
-        debugPrint('[Preview] _reviewLast fetching full attempt...');
+        debugPrint('[Preview] _reviewLast fetching full attempt from repository...');
         try {
           final full = await _attempts.getFullAttempt(attempt.id);
           if (full != null) {
-            debugPrint('[Preview] _reviewLast full attempt found');
+            debugPrint('[Preview] _reviewLast SUCCESS: Full attempt fetched. ID=${full.id}');
             attempt = full;
           } else {
-            debugPrint('[Preview] _reviewLast full attempt NOT found');
+            debugPrint('[Preview] _reviewLast WARNING: getFullAttempt returned null for ID=${attempt.id}. Falling back to lite data.');
           }
         } catch (e) {
-          debugPrint('[Preview] Warning: Failed to fetch full attempt: $e');
-          // Fallback to existing attempt data
+          debugPrint('[Preview] _reviewLast EXCEPTION during getFullAttempt: $e');
         }
       } else {
-        debugPrint('[Preview] _reviewLast attempt ID is empty, using lite object');
+        debugPrint('[Preview] _reviewLast INFO: attempt ID is empty, using lite data object.');
       }
 
       if (!mounted) {
-         debugPrint('[Preview] _reviewLast aborted: not mounted');
+         debugPrint('[Preview] _reviewLast ABORTED: Widget unmounted during async fetch.');
          return;
       }
       
-      debugPrint('[Preview] _reviewLast pushing ExerciseReviewSummaryScreen. ID=${attempt.id} Type=${ex.type}');
+      debugPrint('[Preview] _reviewLast NAVIGATING to ExerciseReviewSummaryScreen. Exercise=${ex.id}, Attempt=${attempt.id}');
+      
+      // Navigate to summary screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -590,9 +576,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
             attempt: attempt,
           ),
         ),
-      );
+      ).then((_) {
+        debugPrint('[Preview] _reviewLast: Returned from Review screen.');
+      });
+
     } catch (e, stack) {
-      debugPrint('[Preview] _reviewLast ERROR: $e\n$stack');
+      debugPrint('[Preview] _reviewLast CRITICAL ERROR: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Unable to open review: $e')),
@@ -641,44 +630,6 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
         setState(() => _previewing = false);
       }
     }
-  }
-}
-
-class _Header extends StatelessWidget {
-  final VocalExercise ex;
-  final int bannerStyleId;
-
-  const _Header({required this.ex, required this.bannerStyleId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Exercise name as header
-        Text(
-          ex.name,
-          style: BalladTheme.titleLarge,
-        ),
-        const SizedBox(height: 6),
-        // Description
-        Text(
-          ex.description,
-          style: BalladTheme.bodyMedium,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 2,
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 140,
-          child: BannerCard(
-            title: ex.name,
-            subtitle: ex.description,
-            bannerStyleId: bannerStyleId,
-          ),
-        ),
-      ],
-    );
   }
 }
 

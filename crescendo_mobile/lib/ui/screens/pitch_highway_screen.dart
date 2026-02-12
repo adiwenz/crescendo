@@ -26,6 +26,8 @@ import '../../ui/widgets/pitch_highway_painter.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../../utils/pitch_highway_tempo.dart';
 import '../../core/app_config.dart'; // Import AppConfig
+import '../../theme/ballad_theme.dart';
+import '../../widgets/ballad_scaffold.dart';
 import 'pitch_highway_review_screen.dart';
 
 class PitchHighwayScreen extends StatefulWidget {
@@ -166,13 +168,17 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
     }
 
     if (_isLoading || _controller == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return BalladScaffold(
+        title: widget.exercise.name,
+        child: const Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
-    return Scaffold(
-      body: ValueListenableBuilder<PitchHighwaySessionState>(
+    return BalladScaffold(
+      title: widget.exercise.name,
+      padding: EdgeInsets.zero,
+      useSafeArea: false,
+      child: ValueListenableBuilder<PitchHighwaySessionState>(
         valueListenable: _controller!.state,
         builder: (context, state, _) {
           
@@ -261,7 +267,7 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
                              drawBackground: true,
                              midiMin: _midiMin,
                              midiMax: _midiMax,
-                             colors: AppThemeColors.of(context),
+                             colors: AppThemeColors.dark,
                            ),
                          );
                       }
@@ -271,50 +277,21 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
                 
               // 3. Processing
                if (state.phase == PitchHighwaySessionPhase.processing)
-                 Container(color: Colors.black54, child: const Center(child: CircularProgressIndicator())),
+                 Container(
+                   color: BalladTheme.bgTop.withOpacity(0.8), 
+                   child: const Center(child: CircularProgressIndicator(color: Colors.white))
+                 ),
 
               // 4. Overlays / Start Button (Idle) -> REMOVED
               
-              // Debug Text
+              // Debug Text - Hid in V0 and cleaned up
               if (!AppConfig.isV0)
                 Positioned(
-                   top: 40, right: 10,
-                   child: Text("${state.phase.name}", style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                   top: MediaQuery.of(context).padding.top + 50, right: 20,
+                   child: Text("${state.phase.name}", style: TextStyle(color: Colors.white.withOpacity(0.3))),
                 ),
               
-              // Close Button (Explicit Exit)
-              Positioned(
-                top: 40,
-                left: 10,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 32),
-                  onPressed: () => _onExit(),
-                ),
-              ),
-
-              // Clear Cache Button (Debug)
-              if (!AppConfig.isV0 && state.phase == PitchHighwaySessionPhase.idle)
-                Positioned(
-                  top: 80,
-                  right: 10,
-                  child: IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.amber, size: 32),
-                    onPressed: () async {
-                      setState(() => _isLoading = true);
-                      await ReferenceAudioGenerator.instance.clearCache();
-                      debugPrint('[V2] Cache cleared manually. Regenerating...');
-                      
-                      // Regenerate immediately
-                      await _loadData();
-                      
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Cache cleared & Audio regenerated!')),
-                        );
-                      }
-                    },
-                  ),
-                ),
+              // Close Button - REMOVED redundant button as AppBar provides it
             ],
           );
         },

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../../theme/ballad_theme.dart';
 
 class ProgressScoreRing extends StatelessWidget {
   final double? score;
@@ -22,9 +23,9 @@ class ProgressScoreRing extends StatelessWidget {
           child: CircularProgressIndicator(
             value: value,
             strokeWidth: 8,
-            backgroundColor: colors.divider,
+            backgroundColor: Colors.white10,
             valueColor: AlwaysStoppedAnimation<Color>(
-              colors.accentPurple,
+              BalladTheme.accentPurple,
             ),
           ),
         ),
@@ -32,7 +33,7 @@ class ProgressScoreRing extends StatelessWidget {
           score == null ? '—' : score!.toStringAsFixed(0),
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: colors.textPrimary,
+                color: BalladTheme.textPrimary,
               ),
         ),
       ],
@@ -56,8 +57,8 @@ class ProgressLineChart extends StatelessWidget {
     return CustomPaint(
       painter: _LineChartPainter(
         values: values,
-        color: lineColor ?? colors.accentPurple,
-        baselineColor: colors.divider.withOpacity(0.6),
+        color: lineColor ?? BalladTheme.accentPurple,
+        baselineColor: Colors.white10,
       ),
       child: const SizedBox.expand(),
     );
@@ -80,7 +81,7 @@ class ProgressSparkline extends StatelessWidget {
     return CustomPaint(
       painter: _LineChartPainter(
         values: values,
-        color: color ?? colors.accentPurple,
+        color: color ?? BalladTheme.accentPurple,
         baselineColor: Colors.transparent,
         showBaseline: false,
         strokeWidth: 2,
@@ -106,7 +107,7 @@ class ProgressBarChart extends StatelessWidget {
     return CustomPaint(
       painter: _BarChartPainter(
         values: values,
-        color: color ?? colors.accentPurple,
+        color: color ?? BalladTheme.accentTeal,
       ),
       child: const SizedBox.expand(),
     );

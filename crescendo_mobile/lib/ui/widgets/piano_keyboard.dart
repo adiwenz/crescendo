@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/ballad_theme.dart';
 
 class PianoKeyboard extends StatelessWidget {
   final int startMidi;
@@ -119,8 +120,8 @@ class _WhiteKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = highlighted ? Colors.orange : Colors.black12;
-    final fill = highlighted ? const Color(0xFFFFF3C2) : Colors.white;
+    final borderColor = highlighted ? BalladTheme.accentGold : Colors.white10;
+    final fill = highlighted ? BalladTheme.accentGold.withOpacity(0.2) : Colors.white.withOpacity(0.05);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -136,8 +137,8 @@ class _WhiteKey extends StatelessWidget {
           boxShadow: highlighted
               ? [
                   BoxShadow(
-                    color: Colors.orange.withOpacity(0.4),
-                    blurRadius: 8,
+                    color: BalladTheme.accentGold.withOpacity(0.3),
+                    blurRadius: 10,
                   ),
                 ]
               : null,
@@ -148,7 +149,7 @@ class _WhiteKey extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: highlighted ? Colors.deepOrange : Colors.black54,
+            color: highlighted ? BalladTheme.accentGold : BalladTheme.textSecondary,
           ),
         ),
       ),
@@ -167,7 +168,7 @@ class _BlackKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fill = highlighted ? const Color(0xFFFFD54F) : Colors.black87;
+    final fill = highlighted ? BalladTheme.accentTeal : Colors.black54;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -177,8 +178,8 @@ class _BlackKey extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           boxShadow: [
             BoxShadow(
-              color: highlighted ? Colors.orange.withOpacity(0.6) : Colors.black38,
-              blurRadius: 6,
+              color: highlighted ? BalladTheme.accentTeal.withOpacity(0.4) : Colors.black26,
+              blurRadius: 8,
             ),
           ],
         ),

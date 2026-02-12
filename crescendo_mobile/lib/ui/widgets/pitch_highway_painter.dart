@@ -9,6 +9,7 @@ import '../../models/siren_path.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_tail_buffer.dart';
 import '../theme/app_theme.dart';
+import '../../theme/ballad_theme.dart';
 
 enum PitchMatch { good, near, off }
 
@@ -18,6 +19,13 @@ int?
     _lastFirstNoteAlignmentLogRunId; // Track if we've logged first note alignment
 final Set<String> _firstNotePositionLogs =
     <String>{}; // Track logged first note positions for debug
+
+class _PainterStar {
+  final Offset offset;
+  final double radius;
+  final double phase;
+  const _PainterStar(this.offset, this.radius, this.phase);
+}
 
 class PitchHighwayPainter extends CustomPainter {
   final List<ReferenceNote> notes;
@@ -63,10 +71,24 @@ class PitchHighwayPainter extends CustomPainter {
     this.runId,
     this.isReviewMode = false,
     AppThemeColors? colors,
-  })  : colors = colors ?? AppThemeColors.dark,
+  })  : _stars = _buildStars(seed: 42),
+        colors = colors ?? AppThemeColors.dark,
         // CRITICAL: Always use time as repaint listenable for stability.
         // liveMidi.value is read directly in paint() method, so repaints happen on time ticks anyway.
         super(repaint: time);
+
+  final List<_PainterStar> _stars;
+
+  static List<_PainterStar> _buildStars({required int seed}) {
+    final rand = math.Random(seed);
+    return List.generate(40, (index) {
+      return _PainterStar(
+        Offset(rand.nextDouble(), rand.nextDouble()),
+        rand.nextDouble() * 1.5 + 0.5,
+        rand.nextDouble() * math.pi * 2,
+      );
+    });
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -88,21 +110,24 @@ class PitchHighwayPainter extends CustomPainter {
     final currentTime = time.value;
     if (drawBackground ?? true) {
       final bg = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colors.bgTop,
-            colors.bgBottom,
-          ],
-        ).createShader(Offset.zero & size);
+        ..shader = BalladTheme.backgroundGradient.createShader(Offset.zero & size);
       canvas.drawRect(Offset.zero & size, bg);
+
+      // Stars
+      final t = currentTime * 0.5; // Twinkle speed
+      final starPaint = Paint()..color = Colors.white;
+      for (final star in _stars) {
+        final twinkle = 0.5 + 0.5 * math.sin(t + star.phase);
+        final opacity = (0.1 + twinkle * 0.2).clamp(0.05, 0.4);
+        starPaint.color = Colors.white.withOpacity(opacity);
+        final dx = star.offset.dx * size.width;
+        final dy = star.offset.dy * size.height;
+        canvas.drawCircle(Offset(dx, dy), star.radius, starPaint);
+      }
     }
 
     final gridPaint = Paint()
-      ..color = isReviewMode
-          ? Colors.deepPurpleAccent.withOpacity(0.02) // Very subtle purple grid in review
-          : colors.divider.withOpacity(colors.isMagical ? 0.18 : (colors.isDark ? 1 : 0.6))
+      ..color = Colors.white.withOpacity(0.05)
       ..strokeWidth = 1;
     final gridStep = math.max(1, (midiMax - midiMin) ~/ 6);
     for (var midi = midiMin; midi <= midiMax; midi += gridStep) {
@@ -116,11 +141,7 @@ class PitchHighwayPainter extends CustomPainter {
     }
 
     final playheadX = size.width * playheadFraction;
-    final noteColor = (colors.isMagical
-          ? colors.accentPurple.withOpacity(0.65)
-          : (colors.isDark
-              ? colors.textPrimary.withOpacity(0.55)
-              : colors.accentPurple.withOpacity(0.55)));
+    final noteColor = BalladTheme.accentPurple.withOpacity(0.4);
     final barHeight = 16.0;
     final radius = Radius.circular(barHeight);
     final currentNote = _noteAtTime(currentTime);
@@ -396,9 +417,8 @@ class PitchHighwayPainter extends CustomPainter {
           barColor = noteColor;
         }
         final glowPaint = Paint()
-          ..color = (colors.isMagical ? colors.lavenderGlow : colors.glow)
-              .withOpacity(colors.isMagical ? 0.4 : 1)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+          ..color = BalladTheme.accentLavender.withOpacity(0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
         final paint = Paint()..color = barColor;
         canvas.drawRRect(rect, glowPaint);
         canvas.drawRRect(rect, paint);
@@ -478,21 +498,23 @@ class PitchHighwayPainter extends CustomPainter {
         );
         final head = Offset(playheadX, y);
         // Pitch ball - same size as tail, but more solid opacity
+        // Gold "Sun" outer glow
         canvas.drawCircle(
           head,
-          18,
+          20,
           Paint()
-            ..color = colors.goldAccent.withOpacity(0.9)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+            ..color = BalladTheme.accentGold.withOpacity(0.4)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
         );
+        // Core white star
         canvas.drawCircle(
           head,
-          14,
+          10,
           Paint()
-            ..color = colors.goldAccent.withOpacity(0.95)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+            ..color = Colors.white
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
         );
-        canvas.drawCircle(head, 10, Paint()..color = colors.goldAccent);
+        canvas.drawCircle(head, 6, Paint()..color = Colors.white);
       }
     }
 
@@ -506,7 +528,7 @@ class PitchHighwayPainter extends CustomPainter {
         shadowPaint,
       );
       final playheadPaint = Paint()
-        ..color = colors.accentBlue.withOpacity(0.7)
+        ..color = BalladTheme.accentBlue.withOpacity(0.5)
         ..strokeWidth = 2.0;
       canvas.drawLine(
           Offset(playheadX, 0), Offset(playheadX, size.height), playheadPaint);
@@ -671,7 +693,7 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = colors.goldAccent.withOpacity(alpha * 2.5);
+        ..color = BalladTheme.accentGold.withOpacity(alpha * 2.0);
       canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), glowPaint);
       canvas.drawLine(Offset(xPrev, prev.y), Offset(xCurr, curr.y), corePaint);
     }
@@ -718,7 +740,7 @@ class PitchHighwayPainter extends CustomPainter {
         ..strokeWidth = 14.0
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = trailColor.withOpacity(alpha * 2.5);
+        ..color = trailColor.withOpacity(alpha * 2.0);
       canvas.drawLine(
           Offset(xPrev, prev.yPx), Offset(xCurr, curr.yPx), glowPaint);
       canvas.drawLine(

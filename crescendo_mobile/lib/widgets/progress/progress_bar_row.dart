@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../ui/theme/app_theme.dart';
+import '../../theme/ballad_theme.dart';
 
 class ProgressBarRow extends StatelessWidget {
   final String title;
@@ -24,23 +24,23 @@ class ProgressBarRow extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
-            Text('${(pct * 100).round()}%', style: Theme.of(context).textTheme.bodySmall),
+            Text('${(pct * 100).round()}%', style: BalladTheme.bodySmall),
           ],
         ),
         const SizedBox(height: 4),
-        Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+        Text(subtitle, style: BalladTheme.bodySmall.copyWith(color: BalladTheme.textSecondary)),
         const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: LinearProgressIndicator(
             value: pct,
             minHeight: 8,
-            backgroundColor: AppThemeColors.light.divider,
+            backgroundColor: Colors.white10,
             valueColor: AlwaysStoppedAnimation<Color>(
-              AppThemeColors.light.accentPurple,
+              BalladTheme.accentPurple,
             ),
           ),
         ),

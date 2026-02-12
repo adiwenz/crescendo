@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/ballad_theme.dart';
 
 class MetricPill extends StatelessWidget {
   final String label;
@@ -10,23 +11,17 @@ class MetricPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: Colors.white10, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+          Text(label, style: BalladTheme.bodySmall.copyWith(color: BalladTheme.textSecondary)),
           const SizedBox(height: 4),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Text(value, style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
         ],
       ),
     );

@@ -12,6 +12,8 @@ import '../../utils/audio_constants.dart';
 import '../../ui/route_observer.dart';
 import '../widgets/cents_meter.dart';
 import '../widgets/piano_keyboard.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../theme/ballad_theme.dart';
 import '../../audio/reference_midi_synth.dart';
 
 // Pitch detection configuration constants
@@ -288,11 +290,11 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: [
+    return BalladScaffold(
+      title: 'Piano Pitch',
+      padding: EdgeInsets.zero,
+      child: Stack(
+        children: [
             LayoutBuilder(
               builder: (context, constraints) {
                 final keyboardWidth =
@@ -329,7 +331,7 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
                             padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
                             child: Text(
                               'Piano Pitch',
-                              style: Theme.of(context).textTheme.headlineMedium,
+                              style: BalladTheme.titleLarge,
                             ),
                           ),
                           Expanded(
@@ -347,37 +349,34 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
-                                      Text(
-                                        note,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .displaySmall
-                                            ?.copyWith(fontWeight: FontWeight.bold),
-                                      ),
+                                        Text(
+                                          note,
+                                          style: BalladTheme.titleLarge.copyWith(fontSize: 48),
+                                        ),
                                       const SizedBox(height: 6),
-                                      Text(
-                                        freqLabel,
-                                        style: Theme.of(context).textTheme.titleMedium,
-                                      ),
+                                        Text(
+                                          freqLabel,
+                                          style: BalladTheme.titleMedium,
+                                        ),
                                       const SizedBox(height: 24),
                                       CentsMeter(
                                         cents: cents,
                                         confidence: _tracker.confidence ?? 0,
                                       ),
                                       const SizedBox(height: 12),
-                                      Text(
-                                        inTune ? 'In tune' : 'Adjust pitch',
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                              color: inTune ? Colors.green : Colors.black54,
-                                            ),
-                                      ),
+                                        Text(
+                                          inTune ? 'In tune' : 'Adjust pitch',
+                                          textAlign: TextAlign.center,
+                                          style: BalladTheme.bodyLarge.copyWith(
+                                                color: inTune ? BalladTheme.accentTeal : BalladTheme.textSecondary,
+                                              ),
+                                        ),
                                       const Spacer(),
-                                      Text(
-                                        'Range: ${_tracker.rangeLabel}',
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context).textTheme.bodySmall,
-                                      ),
+                                        Text(
+                                          'Range: ${_tracker.rangeLabel}',
+                                          textAlign: TextAlign.center,
+                                          style: BalladTheme.bodySmall,
+                                        ),
                                     ],
                                   );
                                 },
@@ -467,7 +466,6 @@ class _PianoPitchScreenState extends State<PianoPitchScreen> with RouteAware, Wi
               ),
           ],
         ),
-      ),
     );
   }
 

@@ -13,6 +13,8 @@ class BalladScaffold extends StatelessWidget {
     this.floatingActionButton,
     this.extendBodyBehindAppBar = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 24.0),
+    this.useSafeArea = true,
+    this.extendBody = false,
   });
 
   final String title;
@@ -23,6 +25,8 @@ class BalladScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
   final bool extendBodyBehindAppBar;
   final EdgeInsetsGeometry padding;
+  final bool useSafeArea;
+  final bool extendBody;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +39,7 @@ class BalladScaffold extends StatelessWidget {
         Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: extendBodyBehindAppBar,
+          extendBody: extendBody,
           appBar: AppBar(
             backgroundColor: Colors.transparent,
             elevation: 0,
@@ -52,16 +57,22 @@ class BalladScaffold extends StatelessWidget {
             ),
             actions: actions,
           ),
-          body: SafeArea(
-            child: Padding(
-              padding: padding,
-              child: child,
-            ),
-          ),
+          body: _buildBody(),
           floatingActionButton: floatingActionButton,
         ),
       ],
     );
+  }
+
+  Widget _buildBody() {
+    Widget body = Padding(
+      padding: padding,
+      child: child,
+    );
+    if (useSafeArea) {
+      body = SafeArea(child: body);
+    }
+    return body;
   }
 }
 
