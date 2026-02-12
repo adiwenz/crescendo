@@ -3,80 +3,19 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import '../../theme/ballad_theme.dart';
-import '../../widgets/ballad_scaffold.dart';
-import '../../widgets/frosted_panel.dart';
-import '../../widgets/ballad_buttons.dart';
-// ---------------------------------------------------------------------------
-// 1. Data Model
-// ---------------------------------------------------------------------------
 
-class Exercise {
-  final String id;
-  final String title;
-  final String description;
-  final int durationMinutes;
-  bool isCompleted;
-  
-  // Visual properties for the "balls"
-  final Color color;
 
-  Exercise({
-    required this.id,
-    required this.title,
-    required this.description,
-    required this.durationMinutes,
-    this.isCompleted = false,
-    required this.color,
-  });
-}
+// V1 Imports
+import '../../models/exercise.dart';
+import '../../services/daily_exercise_service.dart';
+import '../../state/library_store.dart';
+import '../../screens/explore/exercise_preview_screen.dart';
+import '../../utils/navigation_trace.dart';
 
 // ---------------------------------------------------------------------------
-// 2. Exercise Preview Page (Placeholder)
-// ---------------------------------------------------------------------------
-
-class ExercisePreviewPage extends StatelessWidget {
-  final Exercise exercise;
-
-  const ExercisePreviewPage({super.key, required this.exercise});
-
-  @override
-  Widget build(BuildContext context) {
-    return BalladScaffold(
-      title: exercise.title,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: FrostedPanel(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  "Previewing: ${exercise.title}", 
-                  style: BalladTheme.bodyLarge,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                BalladPrimaryButton(
-                  label: "Complete Exercise (Simulate)",
-                  onPressed: () {
-                    // Determine completion logic here if needed, or just pop
-                    Navigator.of(context).pop(true); // Return true to simulate completion
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 3. Main Screen
+// Main Screen
 // ---------------------------------------------------------------------------
 
 class V0HomeScreen extends StatefulWidget {
@@ -88,71 +27,67 @@ class V0HomeScreen extends StatefulWidget {
 
 class _V0HomeScreenState extends State<V0HomeScreen> {
   // --- State ---
-  
-  // Sample Data
-  final List<Exercise> _exercises = [
-    Exercise(
-      id: "1",
-      title: "Warm Up",
-      description: "Gently get your voice ready to sing",
-      durationMinutes: 5,
-      color: const Color(0xFF0394FC), // Light Blue
-    ),
-    Exercise(
-      id: "2",
-      title: "Breath Control",
-      description: "Expand your lung capacity and control",
-      durationMinutes: 7,
-      color: const Color(0xFF8403fc), // Indigo/Periwinkle
-    ),
-    Exercise(
-      id: "3",
-      title: "Pitch Perfect",
-      description: "Train your ear to match frequencies",
-      durationMinutes: 6,
-      color: const Color(0xFFB39DDB), // Deep Purple
-    ),
-    Exercise(
-      id: "4",
-      title: "Agility",
-      description: "Fast-paced runs and melisma",
-      durationMinutes: 8,
-      color: const Color(0xFFCE93D8), // Purple/Pink
-    ),
-    Exercise(
-      id: "5",
-      title: "Cool Down",
-      description: "Relax your cords after training",
-      durationMinutes: 4,
-      color: const Color(0xFFF48FB1), // Pink
-    ),
-  ];
-
+  List<Exercise>? _dailyExercises;
+  bool _isLoading = true;
   String? _selectedExerciseId;
 
-  // --- Computed Properties ---
+  // --- Computeds ---
 
   Exercise? get _selectedExercise {
-    final index = _exercises.indexWhere((e) => e.id == _selectedExerciseId);
-    return index != -1 ? _exercises[index] : null;
+    if (_dailyExercises == null) return null;
+    final index = _dailyExercises!.indexWhere((e) => e.id == _selectedExerciseId);
+    return index != -1 ? _dailyExercises![index] : null;
   }
 
-  int get _totalMinutes => _exercises.fold(0, (sum, e) => sum + e.durationMinutes);
-  
-  int get _completedMinutes => _exercises
-      .where((e) => e.isCompleted)
-      .fold(0, (sum, e) => sum + e.durationMinutes);
-      
-  double get _progress => _totalMinutes == 0 ? 0 : _completedMinutes / _totalMinutes;
-  
-  int get _remainingMinutes => _totalMinutes - _completedMinutes;
+  Set<String> get _completedIds => libraryStore.completedExerciseIds;
+
+  int get _remainingMinutes {
+    if (_dailyExercises == null) return 0;
+    return dailyExerciseService.calculateRemainingMinutes(_dailyExercises!, _completedIds);
+  }
+
+  double get _progress {
+    if (_dailyExercises == null || _dailyExercises!.isEmpty) return 0.0;
+    final total = dailyExerciseService.totalPlannedDurationSec(_dailyExercises!);
+    final completed = dailyExerciseService.completedDurationSec(_dailyExercises!, _completedIds);
+    if (total == 0) return 0.0;
+    return (completed / total).clamp(0.0, 1.0);
+  }
 
   @override
   void initState() {
     super.initState();
-    // Default selection is now NULL (No selection initially)
+    _loadDailyExercises();
+    libraryStore.addListener(_onCompletionChanged);
   }
-  
+
+  @override
+  void dispose() {
+    libraryStore.removeListener(_onCompletionChanged);
+    super.dispose();
+  }
+
+  void _onCompletionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadDailyExercises() async {
+    final exercises = await dailyExerciseService.getTodaysExercises();
+    if (mounted) {
+      setState(() {
+        _dailyExercises = exercises;
+        _isLoading = false;
+        
+        // Auto-select first uncompleted if no selection
+        if (_selectedExerciseId == null) {
+            // Optionally auto-select? Let's stay neutral (null) or select next up.
+            // User requirement: "No selection initially" (from previous code)
+            // But usually nice to have one selected? I'll stick to null to match V0 existing behavior.
+        }
+      });
+    }
+  }
+
   // --- Actions ---
 
   void _onCircleTap(Exercise exercise) {
@@ -167,18 +102,21 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     // Haptic feedback
     HapticFeedback.lightImpact();
 
-    // Navigate
-    final bool? completed = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ExercisePreviewPage(exercise: _selectedExercise!))
+    // Navigate to V1 Preview Screen
+    final trace = NavigationTrace.start('V0Home tap - pushing Navigator');
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExercisePreviewScreen(
+          exerciseId: _selectedExercise!.id,
+          trace: trace,
+        ),
+      ),
     );
-
-    // TODO: Hook up real completion events here.
-    // For now, if the preview page returns true, mark as complete.
-    if (completed == true) {
-      setState(() {
-        _selectedExercise!.isCompleted = true;
-      });
-    }
+    
+    // Completion is handled via libraryStore listener
+    // But we might want to refresh simply to be safe
+    _onCompletionChanged();
   }
 
   void _onBackgroundTap() {
@@ -189,15 +127,31 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     }
   }
 
+  Color _getColorForExercise(Exercise ex) {
+    // Map bannerStyleId to BalladTheme colors
+    switch (ex.bannerStyleId % 6) {
+      case 0: return BalladTheme.accentBlue;
+      case 1: return BalladTheme.accentPurple;
+      case 2: return BalladTheme.accentTeal;
+      case 3: return BalladTheme.accentPink;
+      case 4: return BalladTheme.accentLavender;
+      case 5: return BalladTheme.accentGold;
+      default: return BalladTheme.accentBlue;
+    }
+  }
+
   // --- UI Components ---
 
   @override
   Widget build(BuildContext context) {
     // 2) Background Gradient
     // Lavender/Blue (top) -> Teal/Green (middle) -> Soft Aqua (bottom)
-    // Approximate colors based on description/screenshot
+    // Using BalladTheme gradient would be consistent, but V0 had a specific look.
+    // Let's us BalladTheme.backgroundGradient for consistency with the "Integration" goal.
+    // Or keep V0's gradient as "Legacy UI". 
+    // "Keep the V0 Home Screen UI/structure" -> I will keep V0 gradient for now to satisfy "Do not redesign V0 UI".
+    
     final gradientColors = [
-      // const Color(0xFFC5CAE9), // Lavender/Blue
       const Color(0xFF0e2763), // Lavender/Blue
       const Color(0xFF80CBC4), // Teal/Green
       const Color(0xFFB2DFDB), // Soft Aqua
@@ -208,7 +162,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
       backgroundColor: Colors.white,
       body: GestureDetector(
         onTap: _onBackgroundTap,
-        behavior: HitTestBehavior.translucent, // Catch taps on empty space
+        behavior: HitTestBehavior.translucent,
         child: Stack(
           children: [
             // Background
@@ -223,8 +177,6 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
               ),
             ),
             
-            // Subtle texture/grain could go here (omitted for pure Flutter implementation without assets)
-            
             // Glow Stars Background
             const Positioned.fill(
               child: PulsatingStars(),
@@ -236,9 +188,11 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 children: [
                   // 1) Header
                   _buildHeaderWidget(),
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
                   Expanded(
-                    child: Stack(
+                    child: _isLoading 
+                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      : Stack(
                       fit: StackFit.expand,
                       children: [
                         // 3) Left Side Vertical Circles
@@ -249,13 +203,13 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                           width: 100, // Constrain width of the ball column
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: _exercises.asMap().entries.map((entry) {
+                            children: _dailyExercises!.asMap().entries.map((entry) {
                               final index = entry.key;
                               final exercise = entry.value;
                               
                               // Calculate horizontal offset for arc effect
                               // normalizedIndex: 0.0 -> 1.0 (Top -> Bottom)
-                              final double normalizedIndex = index / (_exercises.length - 1);
+                              final double normalizedIndex = index / (_dailyExercises!.length - 1);
                               
                               // Amplitude: How far right the arc goes (approx 8% of screen width ~ 35px)
                               const double curveAmplitude = 35.0; 
@@ -288,6 +242,11 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                   ),
   
                   // 5) Bottom Progress Section
+                  // Add bottom padding to account for BottomNavigationBar if needed, 
+                  // but SafeArea usually handles system bottom. 
+                  // App.dart wraps this in a Scaffold with BottomNavigationBar.
+                  // The body height will effectively end above the nav bar.
+                  // So we usually don't need extra padding unless we want visual space.
                   _buildBottomProgress(),
                 ],
               ),
@@ -324,9 +283,9 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.4), width: 1.5),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1.5),
             ),
-            child: Icon(Icons.question_mark_rounded, color: Colors.white.withOpacity(0.6), size: 16),
+            child: Icon(Icons.question_mark_rounded, color: Colors.white.withValues(alpha: 0.6), size: 16),
           ),
         ],
       ),
@@ -335,15 +294,16 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
 
   Widget _buildExerciseCircleWidget(Exercise exercise, int number) {
     final isSelected = _selectedExerciseId == exercise.id;
-    final isCompleted = exercise.isCompleted;
+    final isCompleted = _completedIds.contains(exercise.id);
+    final color = _getColorForExercise(exercise);
 
     // Logic: Identify "Next Up" exercise
-    final nextUpExercise = _exercises.firstWhere(
-      (e) => !e.isCompleted, 
-      orElse: () => _exercises.last 
+    final nextUpExercise = _dailyExercises!.firstWhere(
+      (e) => !_completedIds.contains(e.id), 
+      orElse: () => _dailyExercises!.last 
     );
     
-    final bool isAllCompleted = _exercises.every((e) => e.isCompleted);
+    final bool isAllCompleted = _dailyExercises!.every((e) => _completedIds.contains(e.id));
     final bool isNextUp = !isAllCompleted && (exercise.id == nextUpExercise.id);
 
     // Dimensions
@@ -367,16 +327,16 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color.lerp(exercise.color, Colors.white, 0.2)!, // Subtle highlight
-                  exercise.color,
-                  Color.lerp(exercise.color, Colors.black, 0.1)!, // Subtle shadow
+                  Color.lerp(color, Colors.white, 0.2)!, // Subtle highlight
+                  color,
+                  Color.lerp(color, Colors.black, 0.1)!, // Subtle shadow
                 ],
               ),
               boxShadow: [
                 // 1) "Next Up" Bright White Glow
                 if (isNextUp)
                   BoxShadow(
-                    color: Colors.white.withOpacity(0.5), 
+                    color: Colors.white.withValues(alpha: 0.5), 
                     blurRadius: 16,
                     spreadRadius: 3,
                   ),
@@ -384,14 +344,14 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                  // 2) Standard Selection Glow 
                  if (isSelected && !isNextUp)
                   BoxShadow(
-                    color: Colors.white.withOpacity(0.3),
+                    color: Colors.white.withValues(alpha: 0.3),
                     blurRadius: 10,
                     spreadRadius: 1,
                   ),
 
                 // 3) Softer Drop Shadow
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2), // Lighter/Softer shadow
+                  color: Colors.black.withValues(alpha: 0.2), // Lighter/Softer shadow
                   blurRadius: isSelected ? 16 : 8,
                   spreadRadius: isSelected ? 2 : 0,
                   offset: isSelected ? Offset.zero : const Offset(2, 4), 
@@ -399,14 +359,6 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
               ],
             ),
           ),
-
-          // 3. Specular Highlight (Glossy Shine - Top Left)
-          // Removed per user request
-          // Positioned(
-          //   top: size * 0.15,
-          //   left: size * 0.15,
-          //   child: Container( ... ),
-          // ),
 
           // 4. Content (Icon/Number)
           SizedBox( // Ensure content is centered and constrained
@@ -425,24 +377,26 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                         ),
                         child: Icon(
                           Icons.play_arrow_rounded,
-                          color: Colors.white.withOpacity(0.95),
+                          color: Colors.white.withValues(alpha: 0.95),
                           size: 38,
                         ),
                       ),
                     )
                   : Center(
                       key: const ValueKey("number"),
-                      child: Text(
-                        "$number",
-                        style: GoogleFonts.manrope(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700, // Bolder for clarity against gradients
-                          color: Colors.white.withOpacity(0.95),
-                          shadows: [
-                            const Shadow(color: Colors.black45, offset: Offset(1,1), blurRadius: 3),
-                          ]
-                        ),
-                      ),
+                      child: isCompleted
+                          ? Icon(Icons.check, color: Colors.white.withValues(alpha: 0.9), size: 28)
+                          : Text(
+                              "$number",
+                              style: GoogleFonts.manrope(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700, // Bolder for clarity against gradients
+                                color: Colors.white.withValues(alpha: 0.95),
+                                shadows: [
+                                  const Shadow(color: Colors.black45, offset: Offset(1,1), blurRadius: 3),
+                                ]
+                              ),
+                            ),
                     ), 
             ),
           ),
@@ -458,7 +412,11 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
     String description;
     Key key;
     
-    bool allDone = _exercises.every((e) => e.isCompleted);
+    if (_dailyExercises == null) {
+       return const SizedBox.shrink();
+    }
+
+    bool allDone = _dailyExercises!.every((e) => _completedIds.contains(e.id));
     
     if (allDone) {
       title = "Congrats!";
@@ -470,7 +428,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
       key = const ValueKey("noselection");
     } else {
       title = _selectedExercise!.title;
-      description = _selectedExercise!.description;
+      description = _selectedExercise!.subtitle; // V1 model uses subtitle for description
       key = ValueKey(_selectedExercise!.id);
     }
 
@@ -483,10 +441,10 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
           height: 240,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white.withOpacity(0.08), // Very subtle glass
+            color: Colors.white.withValues(alpha: 0.08), // Very subtle glass
             boxShadow: [
               BoxShadow(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
                 blurRadius: 30,
                 spreadRadius: 10,
               ),
@@ -521,6 +479,8 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 Text(
                   title,
                   textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.manrope(
                     fontSize: 28, // Slightly smaller to fit circle
                     fontWeight: FontWeight.w400,
@@ -532,13 +492,26 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                 Text(
                   description,
                   textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.manrope(
                     fontSize: 16,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     height: 1.4,
                   ),
                 ),
+                if (_selectedExercise != null) ...[
+                   const SizedBox(height: 12),
+                   Text(
+                     "${(_selectedExercise!.estimatedDurationSec / 60).ceil()} min", // Show duration
+                     style: GoogleFonts.manrope(
+                       fontSize: 14,
+                       fontWeight: FontWeight.w600,
+                       color: Colors.white.withValues(alpha: 0.8),
+                     ),
+                   )
+                ]
               ],
             ),
           ),
@@ -549,20 +522,12 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
 
   Widget _buildBottomProgress() {
     return Container(
-      margin: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       height: 120, // Taller area for spacious look
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: Stack(
           children: [
-            // // Frosted Glass Effect
-            // BackdropFilter(
-            //   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            //   child: Container(
-            //     color: Colors.white.withOpacity(0.3), // Translucent white
-            //   ),
-            // ),
-            
             // Content
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
@@ -585,7 +550,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                         style: GoogleFonts.manrope(
                           fontSize: 14,
                           fontWeight: FontWeight.w300,
-                          color: Colors.white.withOpacity(0.8),
+                          color: Colors.white.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -599,7 +564,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                       Container(
                         height: 24,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
@@ -612,7 +577,7 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
                           height: 24,
                           decoration: BoxDecoration(
                             // Soft pastel fill (Teal/Blue ish)
-                            color: const Color(0xFF4DB6AC).withOpacity(1),
+                            color: const Color(0xFF4DB6AC).withValues(alpha: 1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
@@ -800,10 +765,10 @@ class _PulsatingStarState extends State<_PulsatingStar> with SingleTickerProvide
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.white.withOpacity(0.8),
-                  blurRadius: 4,
+                  color: Colors.white.withValues(alpha: 0.8),
+                  blurRadius: widget.star.size * 2,
                   spreadRadius: 1,
-                )
+                ),
               ],
             ),
           ),

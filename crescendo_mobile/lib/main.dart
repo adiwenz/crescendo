@@ -64,16 +64,8 @@ Future<void> main() async {
 
   final seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
   
-  String initialRoute;
-  if (AppConfig.isV0) {
-    initialRoute = '/v0_home';
-    debugPrint('[AppConfig] V0 Mode ACTIVE');
-  } else {
-    // Force onboarding or home based on legacy logic if needed, 
-    // but complying with "update app start routing"
-    // The user requested: "if isV0 => show V0HomeScreen as the root (no bottom nav)"
-    initialRoute = '/onboarding'; // seenOnboarding ? '/' : '/onboarding';
-  }
+  // Always use standard routing now that V0 is integrated
+  final initialRoute = seenOnboarding ? '/' : '/onboarding';
 
   runApp(CrescendoApp(initialRoute: initialRoute));
 }

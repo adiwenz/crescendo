@@ -1,4 +1,4 @@
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -9,10 +9,9 @@ import 'screens/find_range_lowest_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/subscription_features_screen.dart';
 import 'screens/exercise_categories_screen.dart';
-import '../screens/home/home_screen.dart';
 import '../screens/v0/v0_home_screen.dart';
 import '../screens/v0/v0_session_screen.dart';
-import '../screens/v0/v0_complete_screen.dart';
+
 import '../screens/explore/explore_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
@@ -123,7 +122,7 @@ class _RootScaffold extends StatelessWidget {
         child: LazyIndexedStack(
           index: currentIndex,
           children: [
-            const HomeScreen(),
+            const V0HomeScreen(),
             const ExploreScreen(),
             currentIndex == 2 ? const PianoPitchScreen() : const SizedBox.shrink(),
             const ProgressHomeScreen(),

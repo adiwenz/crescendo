@@ -57,11 +57,11 @@ class ExerciseRouteRegistry {
     ExercisePlan? exercisePlan,
     Future<ExercisePlan>? exercisePlanFuture,
   }) {
-    if (AppConfig.isV0 && !_v0AllowedIds.contains(exerciseId)) {
-      debugPrint('[V0] Blocked navigation to non-V0 exercise: $exerciseId');
-      // Optionally show a toast here
-      return false;
-    }
+    // V0/Ballad integration: Allow all exercises
+    // if (AppConfig.isV0 && !_v0AllowedIds.contains(exerciseId)) {
+    //   debugPrint('[V0] Blocked navigation to non-V0 exercise: $exerciseId');
+    //   return false;
+    // }
 
     final entry = entryFor(exerciseId);
     if (entry == null) return false;

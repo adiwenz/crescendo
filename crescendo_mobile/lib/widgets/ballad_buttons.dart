@@ -57,9 +57,12 @@ class BalladPrimaryButton extends StatelessWidget {
                       Icon(icon, color: Colors.white, size: 20),
                       const SizedBox(width: 8),
                     ],
-                    Text(
-                      label,
-                      style: BalladTheme.labelLarge,
+                    Flexible(
+                      child: Text(
+                        label,
+                        style: BalladTheme.labelLarge,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
