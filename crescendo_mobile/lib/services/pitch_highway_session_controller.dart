@@ -124,6 +124,9 @@ class PitchHighwaySessionController {
   Timer? _replayTimer;
   DateTime? _recordStartTime;
   DateTime? _replayStartTime;
+
+  DateTime? get recordStartTime => _recordStartTime;
+
   bool _isDisposed = false;
   
   // Throttle captured frames

@@ -141,9 +141,10 @@ class _ExerciseReviewSummaryScreenState
           final lastTake = await AttemptRepository.instance.loadLastTake(widget.exercise.id);
           
           // Check if this latest take corresponds to the attempt we're viewing
+          // Increased tolerance to 10 seconds to account for different save-time captures
           if (lastTake != null && 
               currentAttempt.completedAt != null &&
-              (lastTake.createdAt.millisecondsSinceEpoch - currentAttempt.completedAt!.millisecondsSinceEpoch).abs() < 1000) {
+              (lastTake.createdAt.millisecondsSinceEpoch - currentAttempt.completedAt!.millisecondsSinceEpoch).abs() < 10000) {
             _dbTake = lastTake;
             debugPrint('[ReviewSummary] Loading data from file: pitch=${lastTake.pitchPath}, audio=${lastTake.audioPath}');
             
@@ -363,7 +364,13 @@ class _ExerciseReviewSummaryScreenState
 
   void _openFullReplay() async {
     final take = _buildLastTake();
-    if (take == null || take.audioPath == null || take.referenceWavPath == null) {
+    
+    // Check if we have the reference path (critical for alignment)
+    final refPath = take?.referenceWavPath ?? _dbTake?.referenceWavPath ?? _displayAttempt.referenceWavPath;
+    final audioPath = take?.audioPath ?? _dbTake?.audioPath ?? _displayAttempt.recordingPath;
+
+    if (take == null || audioPath == null || refPath == null) {
+      debugPrint('[ReviewSummary] Cannot open replay: take=$take, audio=$audioPath, ref=$refPath');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No recorded take or reference available')),
       );
@@ -379,8 +386,8 @@ class _ExerciseReviewSummaryScreenState
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
           notes: notes,
-          referencePath: take.referenceWavPath!,
-          recordingPath: take.audioPath!,
+          referencePath: refPath!,
+          recordingPath: audioPath!,
           offsetResult: AudioOffsetResult(
             offsetSamples: ((take.recorderStartSec ?? 0.0) * (take.referenceSampleRate ?? 44100)).round(),
             offsetMs: (take.recorderStartSec ?? 0.0) * 1000,
@@ -396,7 +403,11 @@ class _ExerciseReviewSummaryScreenState
 
   void _openSegmentReplay(ExerciseSegment segment) async {
     final take = _buildLastTake();
-    if (take == null || take.audioPath == null || take.referenceWavPath == null) {
+    
+    final refPath = take?.referenceWavPath ?? _dbTake?.referenceWavPath ?? _displayAttempt.referenceWavPath;
+    final audioPath = take?.audioPath ?? _dbTake?.audioPath ?? _displayAttempt.recordingPath;
+
+    if (take == null || audioPath == null || refPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No recorded take or reference available')),
       );
@@ -416,8 +427,8 @@ class _ExerciseReviewSummaryScreenState
       MaterialPageRoute(
         builder: (_) => PitchHighwayReviewScreen(
           notes: notes,
-          referencePath: take.referenceWavPath!,
-          recordingPath: take.audioPath!,
+          referencePath: refPath!,
+          recordingPath: audioPath!,
           offsetResult: AudioOffsetResult(
             offsetSamples: ((take.recorderStartSec ?? 0.0) * (take.referenceSampleRate ?? 44100)).round(),
             offsetMs: (take.recorderStartSec ?? 0.0) * 1000,

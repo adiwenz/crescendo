@@ -30,6 +30,9 @@ import '../../theme/ballad_theme.dart';
 import '../../widgets/ballad_scaffold.dart';
 import 'pitch_highway_review_screen.dart';
 
+import '../../services/progress_service.dart';
+import '../../services/exercise_metadata.dart';
+
 class PitchHighwayScreen extends StatefulWidget {
   final VocalExercise exercise;
   final PitchHighwayDifficulty pitchDifficulty;
@@ -200,7 +203,34 @@ class _PitchHighwayScreenState extends State<PitchHighwayScreen> {
                  
                  // V0: Skip review, just finish
                  if (AppConfig.isV0) {
-                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                   WidgetsBinding.instance.addPostFrameCallback((_) async {
+                     // PERSIST ATTEMPT BEFORE EXITING
+                     final score = (state.offsetResult?.confidence ?? 0.0) * 100;
+                     final attempt = ProgressService().buildAttempt(
+                       exerciseId: widget.exercise.id,
+                       categoryId: widget.exercise.categoryId,
+                       startedAt: _controller?.recordStartTime ?? DateTime.now().subtract(Duration(seconds: state.recordVisualTimeSec.toInt())),
+                       completedAt: DateTime.now(),
+                       overallScore: score,
+                       recordingPath: state.recordingPath,
+                       recorderStartSec: state.offsetResult?.offsetMs != null ? state.offsetResult!.offsetMs / 1000.0 : 0.0,
+                       referenceWavPath: state.referencePath,
+                       referenceSampleRate: 44100, // standard
+                       countsForDailyEffort: true,
+                       contourJson: null, // We have the frames in alignedFrames, but ProgressService persistAttempt expects JSON or File?
+                       // Wait, persistAttempt handles file assets if we give it recordingPath/contourJson
+                     );
+                     
+                     // We need to convert frames to JSON if we want them saved for detailed review later
+                     // But for now, saving the score and paths is the priority
+                     
+                     try {
+                        await ProgressService().persistAttempt(attempt: attempt);
+                        debugPrint('[PitchHighway] V0 Auto-save OK');
+                     } catch (e) {
+                        debugPrint('[PitchHighway] V0 Auto-save FAILED: $e');
+                     }
+
                      if (context.mounted) Navigator.of(context).pop();
                    });
                    return Container(); // Return empty to avoid painting review logic
