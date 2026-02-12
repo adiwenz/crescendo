@@ -43,6 +43,9 @@ import 'exercise_review_summary_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_background.dart';
 import '../widgets/pitch_highway_painter.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/ballad_buttons.dart';
+import '../../theme/ballad_theme.dart';
 import '../../utils/daily_completion_utils.dart';
 import '../../utils/pitch_math.dart';
 import '../../utils/pitch_highway_tempo.dart';
@@ -120,8 +123,17 @@ class ExercisePlayerScreen extends StatelessWidget {
       ExerciseType.cooldownRecovery =>
         CooldownRecoveryPlayer(exercise: exercise),
     };
+    
+    // For V0/Ballad, use the cosmic scaffold
+    if (AppConfig.isV0) {
+      return BalladScaffold(
+        title: exercise.name,
+        child: body,
+      );
+    }
+
     return Scaffold(
-      appBar: (isPitchHighway || AppConfig.isV0)
+      appBar: (isPitchHighway)
           ? null
           : AppBar(
               leading: IconButton(
@@ -347,7 +359,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
                             return Text(
                               count.toString(),
                               textAlign: TextAlign.center,
-                              style: AppText.phaseLabel,
+                              style: AppText.phaseLabel.copyWith(color: Colors.white),
                             );
                           }
                           
@@ -355,7 +367,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
                           return Text(
                             phaseName,
                             textAlign: TextAlign.center,
-                            style: AppText.phaseLabel,
+                            style: AppText.phaseLabel.copyWith(color: Colors.white),
                           );
                         },
                       );
@@ -391,7 +403,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
                   Text(
                     _formatTime(totalElapsed),
                     style: const TextStyle(
-                      color: Colors.black54,
+                      color: Colors.white70,
                       fontFamily: 'Manrope',
                       fontSize: 14,
                     ),
@@ -422,7 +434,7 @@ class _BreathTimerPlayerState extends State<BreathTimerPlayer>
                   Text(
                     _formatTime(targetDuration),
                     style: const TextStyle(
-                      color: Colors.black54,
+                      color: Colors.white70,
                       fontFamily: 'Manrope',
                       fontSize: 14,
                     ),
@@ -609,22 +621,54 @@ class _SovtTimerPlayerState extends State<SovtTimerPlayer>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.exercise.description),
+          Text(
+            widget.exercise.description,
+            style: BalladTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
-          if (_preparing) Text('Starting in $_prepRemaining...'),
-          Text('${remaining.toStringAsFixed(0)}s remaining',
-              style: Theme.of(context).textTheme.headlineMedium),
+          if (_preparing) 
+            Text(
+              'Starting in $_prepRemaining...',
+              style: BalladTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+          const Spacer(),
+          Center(
+            child: Text(
+              '${remaining.toStringAsFixed(0)}s',
+              style: const TextStyle(
+                fontFamily: 'Manrope',
+                fontWeight: FontWeight.w700,
+                fontSize: 80,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          Center(
+            child: Text(
+              'Remaining',
+              style: BalladTheme.bodyMedium.copyWith(color: Colors.white54),
+            ),
+          ),
+          const Spacer(),
           const SizedBox(height: 12),
           if (_scorePct != null) ...[
             const SizedBox(height: 8),
-            Text('Score: ${_scorePct!.toStringAsFixed(0)}%',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Score: ${_scorePct!.toStringAsFixed(0)}%',
+               style: BalladTheme.titleMedium.copyWith(color: BalladTheme.accentTeal),
+              textAlign: TextAlign.center,
+            ),
           ],
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: _running ? _stop : _start,
-            icon: Icon(_running ? Icons.stop : Icons.play_arrow),
-            label: Text(_running ? 'Stop' : 'Start'),
+          SizedBox(
+            height: 56,
+            child: BalladPrimaryButton(
+              onPressed: _running ? _stop : _start,
+              label: _running ? 'Stop' : 'Start',
+              icon: _running ? Icons.stop : Icons.play_arrow,
+            ),
           ),
         ],
       ),

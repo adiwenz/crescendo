@@ -354,6 +354,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                 if (ex?.usesPitchHighway == true) ...[
                   const SizedBox(height: 16),
                   FrostedPanel(
+                    borderRadius: BorderRadius.circular(24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -452,27 +453,29 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                   ),
                 ],
                 const SizedBox(height: 16),
-                Row(
+                Column(
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: double.infinity,
                       child: BalladPrimaryButton(
                         onPressed: _isPreparing ? null : _startExercise,
                         label: _isPreparing ? 'Preparing audio...' : 'Start Exercise',
                         isLoading: _isPreparing,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: BalladSecondaryButton(
-                         label: 'Review last take',
-                         onPressed: _latest == null ? null : _reviewLast,
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: BalladPrimaryButton(
+                        label: 'Review last take',
+                        onPressed: _latest == null ? null : _reviewLast,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (_latest != null)
-                if (_latest != null)
+                if (_latest != null) ...[
+                  const SizedBox(height: 16),
                   FrostedPanel(
                     padding: EdgeInsets.zero, // ListTile has its own padding
                     child: ListTile(
@@ -488,6 +491,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                       trailing: Icon(Icons.history, color: BalladTheme.textSecondary),
                     ),
                   ),
+                ],
               ],
             );
 
@@ -535,60 +539,66 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
   }
 
   Future<void> _reviewLast() async {
-    final ex = _exercise;
-    if (ex == null) return;
-    
-    // Get ID from the lightweight attempt we have
-    final currentLite = _latest;
-    if (currentLite == null) return;
-    
-    // Fetch full 
-    // We already have some info, but reviews might need full DB object
-    // Since we don't have global cache anymore, we'll try to find it
-    // AttemptRepository.latestFor will fail if we haven't loaded cache.
-    // Instead we can just open the review screen with what we have? 
-    // Review screen takes `ExerciseAttempt`. The one we constructed in _load is partial.
-    // But ExerciseReviewSummaryScreen might fetch details if needed?
-    // Actually, `ExerciseReviewSummaryScreen` usually expects a full object or it just displays stats.
-    // Let's reload the specific attempt by ID if we can.
-    
-    // If we only have score/date, we don't have the ID?
-    // fetchLastScore DOES return ID (empty string in my imp? NO, I should fix that).
-    
-    // Wait, ProgressRepository.fetchLastScore returns empty ID?
-    // id: '', // Not needed
-    // I should fix ProgressRepository to return the actual ID if possible, but take_scores table has ID.
-    // Yes, take_scores has ID.
-    
-    // Assuming I fix ProgressRepository to return ID (I will in next step):
-    
-    var attempt = currentLite.raw;
-    
-    // Inspect if we need to load more data
-    // If it's a "lite" object (startedAt is null), we might want full object.
-    // But for now, let's try to pass what we have.
-    // Actually, ExerciseReviewSummaryScreen might need recording path?
-    // The lite object has null recordingPath.
-    
-    // Let's try to fetch full attempt if ID is valid
-    if (attempt.id.isNotEmpty) {
-      final full = await _attempts.getFullAttempt(attempt.id);
-      if (full != null) {
-        attempt = full;
+    debugPrint('[Preview] _reviewLast triggered');
+    try {
+      final ex = _exercise;
+      if (ex == null) {
+        debugPrint('[Preview] _reviewLast blocked: ex is null');
+        return;
+      }
+      
+      // Get ID from the lightweight attempt we have
+      final currentLite = _latest;
+      if (currentLite == null) {
+        debugPrint('[Preview] _reviewLast blocked: currentLite is null');
+        return;
+      }
+      
+      var attempt = currentLite.raw;
+      debugPrint('[Preview] _reviewLast processing attempt id=${attempt.id}');
+      
+      // Let's try to fetch full attempt if ID is valid
+      if (attempt.id.isNotEmpty) {
+        debugPrint('[Preview] _reviewLast fetching full attempt...');
+        try {
+          final full = await _attempts.getFullAttempt(attempt.id);
+          if (full != null) {
+            debugPrint('[Preview] _reviewLast full attempt found');
+            attempt = full;
+          } else {
+            debugPrint('[Preview] _reviewLast full attempt NOT found');
+          }
+        } catch (e) {
+          debugPrint('[Preview] Warning: Failed to fetch full attempt: $e');
+          // Fallback to existing attempt data
+        }
+      } else {
+        debugPrint('[Preview] _reviewLast attempt ID is empty, using lite object');
+      }
+
+      if (!mounted) {
+         debugPrint('[Preview] _reviewLast aborted: not mounted');
+         return;
+      }
+      
+      debugPrint('[Preview] _reviewLast pushing ExerciseReviewSummaryScreen. ID=${attempt.id} Type=${ex.type}');
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExerciseReviewSummaryScreen(
+            exercise: ex,
+            attempt: attempt,
+          ),
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('[Preview] _reviewLast ERROR: $e\n$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to open review: $e')),
+        );
       }
     }
-
-    if (!mounted) return;
-    
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ExerciseReviewSummaryScreen(
-          exercise: ex,
-          attempt: attempt,
-        ),
-      ),
-    );
   }
 
   Future<void> _playPreview(VocalExercise ex) async {

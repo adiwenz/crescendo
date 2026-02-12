@@ -24,6 +24,10 @@ import '../../models/pitch_frame.dart';
 
 import '../../models/last_take_draft.dart';
 import '../../services/audio_offset_estimator.dart'; // AudioOffsetResult
+import '../../theme/ballad_theme.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/ballad_buttons.dart';
+import '../../widgets/frosted_panel.dart';
 
 class ExerciseReviewSummaryScreen extends StatefulWidget {
   final VocalExercise exercise;
@@ -164,9 +168,12 @@ class _ExerciseReviewSummaryScreenState
           if (full != null) {
             pitchJson = full.contourJson;
             currentAttempt = full;
+            debugPrint('[ReviewSummary] Legacy contour loaded: ${pitchJson?.length ?? 0} chars');
           }
         }
       }
+
+      debugPrint('[ReviewSummary] Data loaded. pitchJsonLength=${pitchJson?.length ?? 0}');
 
     // Parse contour data (pitch samples)
     _samples = _parseContour(pitchJson);
@@ -458,45 +465,39 @@ class _ExerciseReviewSummaryScreenState
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Review: ${widget.exercise.name}'),
-      ),
-      body: SingleChildScrollView(
+    return BalladScaffold(
+      title: 'Review: ${widget.exercise.name}',
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Overall Score
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Overall Score',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            FrostedPanel(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Overall Score',
+                    style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    '${_displayAttempt.overallScore.toStringAsFixed(0)}%',
+                    style: BalladTheme.titleLarge.copyWith(
+                      color: BalladTheme.accentLavender,
+                      fontWeight: FontWeight.bold,
                     ),
-                    Text(
-                      '${_displayAttempt.overallScore.toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF6366F1),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
 
             // Overview Graph
-            const Text(
+            Text(
               'Overview',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: BalladTheme.titleMedium,
             ),
             const SizedBox(height: 12),
             if (_samples.isNotEmpty)
@@ -506,67 +507,63 @@ class _ExerciseReviewSummaryScreenState
                 durationMs: _durationMs,
               )
             else
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('No pitch data available'),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No pitch data available',
+                  style: BalladTheme.bodyMedium.copyWith(color: BalladTheme.textSecondary),
+                ),
               ),
 
             const SizedBox(height: 32),
 
             // Actions
-            const Text(
+            Text(
               'Review Options',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: BalladTheme.titleMedium,
             ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: BalladPrimaryButton(
                 onPressed: _samples.isEmpty ? null : _openFullReplay,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Review Full Take'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
+                icon: Icons.play_arrow,
+                label: 'Review Full Take',
               ),
             ),
 
             if (_segments.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text(
+              const SizedBox(height: 24),
+              Text(
                 'Jump to Segment',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               ..._segments.map((segment) {
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: OutlinedButton(
-                    onPressed: () => _openSegmentReplay(segment),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _getSegmentLabel(segment),
-                        ),
-                        Text(
-                          '${_formatTime(segment.startMs)} - ${_formatTime(segment.endMs)}',
-                          style: TextStyle(
-                            color: Theme.of(context).textTheme.bodySmall?.color,
-                            fontSize: 12,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () => _openSegmentReplay(segment),
+                    borderRadius: BorderRadius.circular(12),
+                    child: FrostedPanel(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _getSegmentLabel(segment),
+                              style: BalladTheme.bodyMedium,
+                            ),
                           ),
-                        ),
-                      ],
+                          Text(
+                            '${_formatTime(segment.startMs)} - ${_formatTime(segment.endMs)}',
+                            style: BalladTheme.bodySmall.copyWith(
+                              color: BalladTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );

@@ -13,6 +13,9 @@ import '../../ui/theme/app_theme.dart';
 import '../../ui/widgets/pitch_highway_painter.dart'; // painter
 import '../../utils/pitch_tail_buffer.dart'; // TailPoint
 import '../../utils/pitch_highway_tempo.dart'; // tempo
+import '../../theme/ballad_theme.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/frosted_panel.dart';
 
 import '../../models/pitch_frame.dart'; // Ensure import
 
@@ -114,20 +117,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9F9FC), // Soft lavender/white tint
-      appBar: AppBar(
-        title: const Text('Review Take', style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.w600)),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          color: const Color(0xFF1A1A1A),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: ValueListenableBuilder<PitchHighwaySessionState>(
+    return BalladScaffold(
+      title: 'Review Take',
+      child: ValueListenableBuilder<PitchHighwaySessionState>(
         valueListenable: _controller.state,
         builder: (context, state, _) {
           
@@ -174,7 +166,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                  midiMin: _midiMin,
                                  midiMax: _midiMax,
                                  isReviewMode: true, // NEW param to add to painter
-                                 colors: AppThemeColors.light, // Light theme for canvas
+                                 colors: AppThemeColors.dark, // Dark theme for cosmic look
                                ),
                              );
                           }
@@ -192,7 +184,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
-                              colors: [Colors.white.withOpacity(0.9), Colors.white.withOpacity(0.0)],
+                              colors: [BalladTheme.bgTop.withOpacity(0.9), BalladTheme.bgTop.withOpacity(0.0)],
                             ),
                           ),
                           child: CustomPaint(
@@ -212,18 +204,8 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
               // --- 2. Bottom Section: Controls (35%) ---
               Expanded(
                 flex: 35,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 20,
-                        offset: Offset(0, -5),
-                      ),
-                    ],
-                  ),
+                child: FrostedPanel(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -235,8 +217,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                           // Time Display
                           Text(
                             _formatTime(now),
-                            style: const TextStyle(
-                              color: Color(0xFF1A1A1A), 
+                            style: BalladTheme.titleLarge.copyWith(
                               fontSize: 32, 
                               fontWeight: FontWeight.w300,
                               letterSpacing: -1.0,
@@ -251,9 +232,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                 trackHeight: 4,
                                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                                activeTrackColor: const Color(0xFF8055E3).withOpacity(0.3), // User requested #8055e3
-                                inactiveTrackColor: const Color(0xFFE0E0E0),
-                                thumbColor: const Color(0xFF8055E3),
+                                activeTrackColor: BalladTheme.accentLavender.withOpacity(0.3),
+                                inactiveTrackColor: Colors.white24,
+                                thumbColor: BalladTheme.accentLavender,
                               ),
                               child: Slider(
                                 value: now.clamp(0.0, widget.referenceDurationSec),
@@ -269,7 +250,7 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.skip_previous_rounded),
-                                color: const Color(0xFF8055E3),
+                                color: BalladTheme.accentLavender,
                                 iconSize: 32,
                                 onPressed: () => _controller.seekTo(0),
                               ),
@@ -280,11 +261,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                   width: 64,
                                   height: 64,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF8055E3),
+                                    color: BalladTheme.accentPurple,
                                     borderRadius: BorderRadius.circular(32),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: const Color(0xFF8055E3).withOpacity(0.4),
+                                        color: BalladTheme.accentPurple.withOpacity(0.4),
                                         blurRadius: 12,
                                         offset: const Offset(0, 4),
                                       )
@@ -320,11 +301,11 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                             children: [
                               Text(
                                 "Offset: ${widget.offsetResult.offsetMs.toStringAsFixed(1)} ms",
-                                style: const TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.w500),
+                                style: BalladTheme.bodySmall.copyWith(color: BalladTheme.textSecondary),
                               ),
                               Row(
                                 children: [
-                                  Text("Align", style: TextStyle(color: state.applyOffset ? const Color(0xFF8055E3) : Colors.black26, fontSize: 13, fontWeight: FontWeight.w600)),
+                                Text("Align", style: TextStyle(color: state.applyOffset ? BalladTheme.accentLavender : BalladTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                                   const SizedBox(width: 8),
                                   Transform.scale(
                                     scale: 0.8,
@@ -332,9 +313,9 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                       value: state.applyOffset,
                                       onChanged: (v) => _controller.setApplyOffset(v),
                                       activeColor: Colors.white,
-                                      activeTrackColor: const Color(0xFF8055E3),
+                                      activeTrackColor: BalladTheme.accentLavender,
                                       inactiveThumbColor: Colors.white,
-                                      inactiveTrackColor: Colors.grey.shade300,
+                                      inactiveTrackColor: Colors.white10,
                                       trackOutlineColor: MaterialStateProperty.all(Colors.transparent),
                                     ),
                                   ),
@@ -345,15 +326,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                           // Mix Sliders (Compact)
                           Row(
                             children: [
-                              const Text("Ref", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
+                              const Text("Ref", style: TextStyle(color: BalladTheme.accentLavender, fontSize: 11)), // Unified color
                               Expanded(
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 2,
                                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
-                                    thumbColor: const Color(0xFF8055E3),
+                                    activeTrackColor: BalladTheme.accentLavender.withOpacity(0.5),
+                                    thumbColor: BalladTheme.accentLavender,
                                   ),
                                   child: Slider(
                                     value: state.refVolume, 
@@ -362,15 +343,15 @@ class _PitchHighwayReviewScreenState extends State<PitchHighwayReviewScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text("You", style: TextStyle(color: Color(0xFF8055E3), fontSize: 11)), // Unified color
+                              const Text("You", style: TextStyle(color: BalladTheme.accentLavender, fontSize: 11)), // Unified color
                               Expanded(
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 2,
                                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                                    activeTrackColor: const Color(0xFF8055E3).withOpacity(0.5),
-                                    thumbColor: const Color(0xFF8055E3),
+                                    activeTrackColor: BalladTheme.accentLavender.withOpacity(0.5),
+                                    thumbColor: BalladTheme.accentLavender,
                                   ),
                                   child: Slider(
                                     value: state.recVolume, 
@@ -410,8 +391,8 @@ class _TimeRulerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black54..strokeWidth = 1.0;
-    final textStyle = const TextStyle(color: Colors.black54, fontSize: 10);
+    final paint = Paint()..color = Colors.white54..strokeWidth = 1.0;
+    final textStyle = const TextStyle(color: Colors.white54, fontSize: 10);
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     
     // Draw ticks every 1 second
