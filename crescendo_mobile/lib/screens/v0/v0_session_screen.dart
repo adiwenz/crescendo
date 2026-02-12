@@ -4,6 +4,8 @@ import '../../models/vocal_exercise.dart';
 import '../../models/pitch_highway_difficulty.dart';
 import '../../ui/screens/pitch_highway_screen.dart';
 import '../../ui/screens/exercise_player_screen.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../theme/ballad_theme.dart';
 import 'v0_complete_screen.dart';
 
 class V0SessionScreen extends StatefulWidget {
@@ -99,9 +101,22 @@ class _V0SessionScreenState extends State<V0SessionScreen> {
   @override
   Widget build(BuildContext context) {
     // Show loading while transitioning between exercises
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(),
+    // Show loading while transitioning between exercises
+    return const BalladScaffold(
+      title: "Session in Progress",
+      showBack: false,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 16),
+            Text(
+              "Loading next exercise...",
+              style: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+          ],
+        ),
       ),
     );
   }

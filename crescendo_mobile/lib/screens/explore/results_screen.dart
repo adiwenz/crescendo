@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/frosted_panel.dart';
+import '../../widgets/ballad_buttons.dart';
+import '../../theme/ballad_theme.dart';
 
 class ResultsScreen extends StatelessWidget {
   final double score;
@@ -13,37 +17,53 @@ class ResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = (score / 100).clamp(0.0, 1.0);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Results')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 140,
-              height: 140,
-              child: Stack(
-                alignment: Alignment.center,
+    return BalladScaffold(
+      title: 'Results',
+      showBack: false, // Don't allow back to session
+      child: Center(
+        child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: FrostedPanel(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(
-                    value: pct,
-                    strokeWidth: 10,
-                    backgroundColor: Colors.black12,
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: 140,
+                    height: 140,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: pct,
+                          strokeWidth: 10,
+                          backgroundColor: Colors.white12,
+                          color: BalladTheme.accentTeal, // Use theme accent
+                        ),
+                        Text(
+                            '${score.toStringAsFixed(0)}%',
+                            style: BalladTheme.titleLarge,
+                        ),
+                      ],
+                    ),
                   ),
-                  Text('${score.toStringAsFixed(0)}%'),
+                  const SizedBox(height: 24),
+                  Text(
+                      'Exercise complete', 
+                      style: BalladTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 32),
+                  BalladPrimaryButton(
+                    label: 'Continue',
+                    onPressed: () {
+                      Navigator.popUntil(context, (route) => route.isFirst || route.settings.name == '/explore');
+                    },
+                  ),
+                  const SizedBox(height: 10),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            Text('Exercise complete', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.popUntil(context, (route) => route.isFirst || route.settings.name == '/explore');
-              },
-              child: const Text('Continue'),
-            ),
-          ],
         ),
       ),
     );

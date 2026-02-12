@@ -3,7 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'package:google_fonts/google_fonts.dart';
+import '../../theme/ballad_theme.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/frosted_panel.dart';
+import '../../widgets/ballad_buttons.dart';
 // ---------------------------------------------------------------------------
 // 1. Data Model
 // ---------------------------------------------------------------------------
@@ -39,22 +43,32 @@ class ExercisePreviewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(exercise.title)),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text("Previewing: ${exercise.title}", style: const TextStyle(fontSize: 18)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                // Determine completion logic here if needed, or just pop
-                Navigator.of(context).pop(true); // Return true to simulate completion
-              },
-              child: const Text("Complete Exercise (Simulate)"),
+    return BalladScaffold(
+      title: exercise.title,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: FrostedPanel(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  "Previewing: ${exercise.title}", 
+                  style: BalladTheme.bodyLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                BalladPrimaryButton(
+                  label: "Complete Exercise (Simulate)",
+                  onPressed: () {
+                    // Determine completion logic here if needed, or just pop
+                    Navigator.of(context).pop(true); // Return true to simulate completion
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

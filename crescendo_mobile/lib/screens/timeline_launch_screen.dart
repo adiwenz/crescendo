@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../design/styles.dart';
+import '../../theme/ballad_theme.dart';
+import '../../widgets/ballad_scaffold.dart';
 import 'explore/exercise_preview_screen.dart';
-
-// Debug toggle - set to false once layout matches target
-const bool kDebugLayout = false;
 
 // Timeline Exercise Model
 class TimelineExercise {
@@ -44,21 +41,18 @@ class TimelineLaunchScreen extends StatefulWidget {
 }
 
 class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
-  // Today's ordered list from top to bottom on the arc
   late List<TimelineExercise> _exercises;
-  String? _selectedExerciseId; // Track selected exercise
-  TimelineExercise? _lastSelectedExercise; // Track last selected for fade out
+  String? _selectedExerciseId; 
+  TimelineExercise? _lastSelectedExercise;
 
   @override
   void initState() {
     super.initState();
-    // Initialize with sample data
     _exercises = [
       TimelineExercise(
         id: 'agility',
         name: 'Agility',
-        description:
-            'Gentle warmup exercises to prepare your voice for practice. Focus on relaxed breathing and smooth transitions.',
+        description: 'Gentle warmup exercises to prepare your voice for practice.',
         level: 1,
         minutes: 5,
         completed: true,
@@ -66,8 +60,7 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
       TimelineExercise(
         id: 'sirens',
         name: 'Sirens',
-        description:
-            'Sirens help you explore your full vocal range smoothly. Start from your lowest comfortable note and glide up to your highest, then back down.',
+        description: 'Sirens help you explore your full vocal range smoothly.',
         level: 1,
         minutes: 5,
         completed: true,
@@ -75,8 +68,7 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
       TimelineExercise(
         id: 'slides',
         name: 'Slides',
-        description:
-            'Pitch slides build accuracy and vocal flexibility. Practice smooth ascending and descending slides across your range.',
+        description: 'Pitch slides build accuracy and vocal flexibility.',
         level: 1,
         minutes: 5,
         completed: true,
@@ -84,11 +76,10 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
       TimelineExercise(
         id: 'breathing',
         name: 'Breathing',
-        description:
-            'Proper breathing is the foundation of good vocal technique. Learn to control your breath and support your voice with diaphragmatic breathing exercises.',
+        description: 'Proper breathing is the foundation of good vocal technique.',
         level: 1,
         minutes: 10,
-        completed: false, // This is the "next" exercise
+        completed: false, // Next
       ),
       TimelineExercise(
         id: 'take-10',
@@ -99,22 +90,16 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
         completed: false,
       ),
     ];
-
-    // Don't auto-select any exercise on load
     _selectedExerciseId = null;
   }
 
-  // Get the next exercise (first incomplete)
   TimelineExercise? _getNextExercise() {
     for (final exercise in _orderedExercises) {
-      if (!exercise.completed) {
-        return exercise;
-      }
+      if (!exercise.completed) return exercise;
     }
-    return _orderedExercises.last; // Fallback to last if all completed
+    return _orderedExercises.last;
   }
 
-  // Get selected exercise
   TimelineExercise? _getSelectedExercise() {
     if (_selectedExerciseId == null) return null;
     try {
@@ -124,17 +109,13 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
     }
   }
 
-  // Select an exercise (does not start it)
   void _selectExercise(String exerciseId) {
     setState(() {
-      // Store the current selection before changing
       if (_selectedExerciseId != null) {
         _lastSelectedExercise = _getSelectedExercise();
       }
-      // Toggle selection - if clicking the same exercise, deselect it
       if (_selectedExerciseId == exerciseId) {
         _selectedExerciseId = null;
-        // Clear last selected after fade out completes
         Future.delayed(const Duration(milliseconds: 800), () {
           if (mounted && _selectedExerciseId == null) {
             setState(() {
@@ -144,22 +125,20 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
         });
       } else {
         _selectedExerciseId = exerciseId;
-        _lastSelectedExercise = null; // Clear when selecting new one
+        _lastSelectedExercise = null;
       }
     });
   }
 
-  // Get exercises in order: [exercise4, exercise3, exercise2, nextExercise, takeExercise]
   List<TimelineExercise> get _orderedExercises => [
-        _exercises[0], // exercise4 (Warmup)
-        _exercises[1], // exercise3 (Sirens)
-        _exercises[2], // exercise2 (Slides)
-        _exercises[3], // nextExercise (Breathing)
-        _exercises[4], // takeExercise (TAKE)
+        _exercises[0],
+        _exercises[1],
+        _exercises[2],
+        _exercises[3],
+        _exercises[4],
       ];
 
   Future<void> _startExercise(TimelineExercise exercise) async {
-    // Navigate to exercise preview
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -167,15 +146,11 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
       ),
     );
 
-    // When exercise completes, return to Home
     if (mounted && result != null) {
-      // Mark as completed
       final index = _exercises.indexWhere((e) => e.id == exercise.id);
       if (index != -1) {
         setState(() {
           _exercises[index] = _exercises[index].copyWith(completed: true);
-
-          // Auto-select the next incomplete exercise
           final newNext = _getNextExercise();
           if (newNext != null) {
             _selectedExerciseId = newNext.id;
@@ -193,430 +168,211 @@ class _TimelineLaunchScreenState extends State<TimelineLaunchScreen> {
     final W = screenWidth;
     final H = screenHeight;
 
-    // Gold block boundaries
+    // Adjusted anchors for Ballad layout
     final goldTop = safeAreaTop + 84;
     final goldHeight = 0.52 * H;
     final goldBottom = goldTop + goldHeight;
 
-    // Hard anchor points (global coordinates)
     final n4 = Offset(0.40 * W, goldTop + 0.14 * goldHeight);
     final n3 = Offset(0.30 * W, goldTop + 0.30 * goldHeight);
     final n2 = Offset(0.24 * W, goldTop + 0.48 * goldHeight);
     final play = Offset(0.34 * W, goldTop + 0.73 * goldHeight);
     final take = Offset(0.57 * W, goldBottom + 0.02 * H);
 
-    // Node radii
     const smallR = 30.0;
-    const nextR = 50.0; // Large next exercise circle
+    const nextR = 50.0;
     const takeR = 54.0;
 
     final nextExercise = _getNextExercise();
-    final selectedExercise =
-        _getSelectedExercise() ?? nextExercise ?? _orderedExercises.first;
-    // Find the last completed exercise (or first if none completed)
-    TimelineExercise? currentExercise;
-    for (int i = _orderedExercises.length - 1; i >= 0; i--) {
-      if (_orderedExercises[i].completed) {
-        currentExercise = _orderedExercises[i];
-        break;
-      }
-    }
-    currentExercise ??= _orderedExercises.first;
+    final selectedExercise = _getSelectedExercise() ?? nextExercise ?? _orderedExercises.first;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
-      child: Scaffold(
-        body: Stack(
-          children: [
-            // Background: Gradient + Gold block + Off-white
-            Column(
+    return BalladScaffold(
+      title: 'Your Journey',
+      padding: EdgeInsets.zero, // Use full screen for absolute positioning
+      child: Stack(
+        children: [
+          // Background Elements? 
+          // BalladScaffold provides the main gradient.
+          
+          // Exercise info overlay
+          Positioned(
+            right: (screenWidth - (take.dx + takeR + 100)) / 2,
+            top: H * 0.30,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 800),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+              child: _selectedExerciseId != null
+                  ? _AppearingExerciseNames(
+                      key: ValueKey(_selectedExerciseId),
+                      exercise: selectedExercise,
+                    )
+                  : _lastSelectedExercise != null
+                      ? _AppearingExerciseNames(
+                          key: ValueKey('last-${_lastSelectedExercise!.id}'),
+                          exercise: _lastSelectedExercise!,
+                        )
+                      : const SizedBox.shrink(key: ValueKey('empty')),
+            ),
+          ),
+
+          // Timeline Arc and Nodes
+          GestureDetector(
+            onTap: () {
+              if (_selectedExerciseId != null) {
+                setState(() => _selectedExerciseId = null);
+              }
+            },
+            child: Stack(
               children: [
-                // Top bar with gradient background
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: AppStyles.welcomeBackgroundGradient,
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _TimelineSplinePainter(
+                      points: [n4, n3, n2, play, take],
+                    ),
                   ),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Hamburger icon
-                              IconButton(
-                                icon: const Icon(Icons.menu,
-                                    color: AppStyles.textSecondary),
-                                onPressed: () {},
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                              // Title with underline
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'WELCOME',
-                                    style: AppStyles.appBarTitle,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  // Faint gray line under "Welcome"
-                                  Container(
-                                    width:
-                                        80, // Approximate width of "Welcome" text
-                                    height: 1,
-                                    color: AppStyles.textSecondary
-                                        .withOpacity(0.2),
-                                  ),
-                                ],
-                              ),
-                              // Help/info icon
-                              IconButton(
-                                icon: Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: AppStyles.border,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.help_outline,
-                                    size: 18,
-                                    color: AppStyles.textSecondary,
+                ),
+
+                // Nodes
+                _buildNodePositioned(n4, smallR, _orderedExercises[0], Colors.white.withOpacity(0.3)),
+                _buildNodePositioned(n3, smallR, _orderedExercises[1], Colors.white.withOpacity(0.5)),
+                _buildNodePositioned(n2, smallR, _orderedExercises[2], Colors.white.withOpacity(0.7)),
+                
+                // Next Exercise (Play)
+                Positioned(
+                  left: play.dx - nextR,
+                  top: play.dy - nextR,
+                  child: GestureDetector(
+                    onTap: () => _handleTap(_orderedExercises[3]),
+                    child: AnimatedScale(
+                      scale: _selectedExerciseId == _orderedExercises[3].id ? 1.15 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        width: nextR * 2,
+                        height: nextR * 2,
+                        decoration: BoxDecoration(
+                          gradient: BalladTheme.primaryButtonGradient,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                             BoxShadow(
+                              color: BalladTheme.accentTeal.withOpacity(0.4),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _selectedExerciseId == _orderedExercises[3].id
+                              ? Icon(Icons.play_arrow, color: Colors.white, size: nextR * 0.8)
+                              : Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Text(
+                                    _orderedExercises[3].name,
+                                    textAlign: TextAlign.center,
+                                    style: BalladTheme.labelLarge.copyWith(fontSize: 14),
+                                    maxLines: 2,
                                   ),
                                 ),
-                                onPressed: () {},
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-                // Middle section with gradient
-                Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: AppStyles.welcomeMiddleGradient,
+
+                // Take Exercise
+                Positioned(
+                  left: take.dx - takeR,
+                  top: take.dy - takeR,
+                  child: GestureDetector(
+                    onTap: () => _handleTap(_orderedExercises[4]),
+                    child: AnimatedScale(
+                      scale: _selectedExerciseId == _orderedExercises[4].id ? 1.1 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        width: takeR * 2,
+                        height: takeR * 2,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [BalladTheme.accentGold, Color(0xFFFFCC80)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: BalladTheme.accentGold.withOpacity(0.3),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _selectedExerciseId == _orderedExercises[4].id
+                              ? Icon(Icons.play_arrow, color: Colors.white, size: takeR * 0.8)
+                              : Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    _orderedExercises[4].name,
+                                    textAlign: TextAlign.center,
+                                    style: BalladTheme.labelLarge.copyWith(
+                                      color: Colors.black87, // Gold bg needs dark text? or white?
+                                      // Ballad buttons usually white text on gradient. 
+                                      // But gold is light. Let's try dark text or keep it consistent.
+                                      // BalladPrimaryButton uses white text on teal/purple.
+                                      // Let's use darker text for contrast on gold.
+                                      // actually lets use white text with shadow or just semi-bold.
+                                      // Gold (FFD700) is bright. White text might be hard to read.
+                                      // I'll stick to BalladTheme.textPrimary (white-ish) but maybe add shadow depending on contrast.
+                                      // Ah, BalladTheme.accentGold is Color(0xFFFFD700).
+                                      // Let's use dark text for Gold buttons.
+                                      color: const Color(0xFF3E2D5C), // Dark purple/navy 
+                                    ),
+                                    maxLines: 2,
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
-
-            // Exercise name on the right side when selected (behind colorful circles)
-            Positioned(
-              right: (screenWidth - (take.dx + takeR + 100)) /
-                  2, // Centered between circles and right edge
-              top: MediaQuery.of(context).size.height *
-                  0.30, // Moved slightly up
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 800),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  return FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  );
-                },
-                child: _selectedExerciseId != null
-                    ? _AppearingExerciseNames(
-                        key: ValueKey(_selectedExerciseId),
-                        exercise: selectedExercise,
-                      )
-                    : _lastSelectedExercise != null
-                        ? _AppearingExerciseNames(
-                            key: ValueKey('last-${_lastSelectedExercise!.id}'),
-                            exercise: _lastSelectedExercise!,
-                          )
-                        : const SizedBox.shrink(key: ValueKey('empty')),
-              ),
-            ),
-
-            // Timeline arc and nodes overlay (on top of appearing circle)
-            GestureDetector(
-              onTap: () {
-                // Deselect when tapping outside circles
-                if (_selectedExerciseId != null) {
-                  setState(() {
-                    _selectedExerciseId = null;
-                  });
-                }
-              },
-              child: Stack(
-                children: [
-                  // Single smooth continuous curve through all points
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _TimelineSplinePainter(
-                        points: [n4, n3, n2, play, take],
-                      ),
-                    ),
-                  ),
-
-                  // Exercise 4 (top, rightmost) - completed
-                  Positioned(
-                    left: n4.dx - smallR,
-                    top: n4.dy - smallR,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_selectedExerciseId == _orderedExercises[0].id) {
-                          _startExercise(_orderedExercises[0]);
-                        } else {
-                          _selectExercise(_orderedExercises[0].id);
-                        }
-                      },
-                      child: AnimatedScale(
-                        scale: _selectedExerciseId == _orderedExercises[0].id
-                            ? 1.1
-                            : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: _TimelineExerciseNode(
-                          exercise: _orderedExercises[0],
-                          size: smallR * 2,
-                          color: AppStyles.timelineLightest, // Lightest
-                          hasCheckBadge: true,
-                          isSelected:
-                              _selectedExerciseId == _orderedExercises[0].id,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Exercise 3 (middle) - completed
-                  Positioned(
-                    left: n3.dx - smallR,
-                    top: n3.dy - smallR,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_selectedExerciseId == _orderedExercises[1].id) {
-                          _startExercise(_orderedExercises[1]);
-                        } else {
-                          _selectExercise(_orderedExercises[1].id);
-                        }
-                      },
-                      child: AnimatedScale(
-                        scale: _selectedExerciseId == _orderedExercises[1].id
-                            ? 1.1
-                            : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: _TimelineExerciseNode(
-                          exercise: _orderedExercises[1],
-                          size: smallR * 2,
-                          color: AppStyles.timelineMedium, // Medium
-                          hasCheckBadge: true,
-                          isSelected:
-                              _selectedExerciseId == _orderedExercises[1].id,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Exercise 2 (deepest left) - completed
-                  Positioned(
-                    left: n2.dx - smallR,
-                    top: n2.dy - smallR,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_selectedExerciseId == _orderedExercises[2].id) {
-                          _startExercise(_orderedExercises[2]);
-                        } else {
-                          _selectExercise(_orderedExercises[2].id);
-                        }
-                      },
-                      child: AnimatedScale(
-                        scale: _selectedExerciseId == _orderedExercises[2].id
-                            ? 1.1
-                            : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: _TimelineExerciseNode(
-                          exercise: _orderedExercises[2],
-                          size: smallR * 2,
-                          color: AppStyles.timelineDarker, // Darker
-                          hasCheckBadge: true,
-                          isSelected:
-                              _selectedExerciseId == _orderedExercises[2].id,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Next Exercise (large, primary focus) - at play position
-                  Positioned(
-                    left: play.dx - nextR,
-                    top: play.dy - nextR,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_selectedExerciseId == _orderedExercises[3].id) {
-                          _startExercise(_orderedExercises[3]);
-                        } else {
-                          _selectExercise(_orderedExercises[3].id);
-                        }
-                      },
-                      child: AnimatedScale(
-                        scale: _selectedExerciseId == _orderedExercises[3].id
-                            ? 1.15
-                            : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          width: nextR * 2,
-                          height: nextR * 2,
-                          decoration: BoxDecoration(
-                            gradient: AppStyles.timelineBeigeGradient,
-                            shape: BoxShape.circle,
-                            boxShadow:
-                                _selectedExerciseId == _orderedExercises[3].id
-                                    ? AppStyles.selectedCircleGlow
-                                    : [
-                                        BoxShadow(
-                                          color: AppStyles.shadowColor,
-                                          blurRadius: AppStyles.shadowBlur,
-                                          offset: AppStyles.shadowOffset,
-                                        ),
-                                      ],
-                          ),
-                          child: Center(
-                            child: _selectedExerciseId ==
-                                    _orderedExercises[3].id
-                                ? Icon(
-                                    Icons.play_arrow,
-                                    color: AppStyles.white,
-                                    size: nextR * 0.8,
-                                  )
-                                : Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        _orderedExercises[3].name,
-                                        textAlign: TextAlign.center,
-                                        style:
-                                            AppStyles.sectionHeading.copyWith(
-                                          color: AppStyles.white,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Large TAKE circle
-                  Positioned(
-                    left: take.dx - takeR,
-                    top: take.dy - takeR,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_selectedExerciseId == _orderedExercises[4].id) {
-                          _startExercise(_orderedExercises[4]);
-                        } else {
-                          _selectExercise(_orderedExercises[4].id);
-                        }
-                      },
-                      child: AnimatedScale(
-                        scale: _selectedExerciseId == _orderedExercises[4].id
-                            ? 1.1
-                            : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          width: takeR * 2,
-                          height: takeR * 2,
-                          decoration: BoxDecoration(
-                            gradient: AppStyles.timelineDarkestGradient,
-                            shape: BoxShape.circle,
-                            boxShadow:
-                                _selectedExerciseId == _orderedExercises[4].id
-                                    ? AppStyles.selectedCircleGlow
-                                    : null,
-                          ),
-                          child: Center(
-                            child: _selectedExerciseId ==
-                                    _orderedExercises[4].id
-                                ? Icon(
-                                    Icons.play_arrow,
-                                    color: AppStyles.white,
-                                    size: takeR * 0.8,
-                                  )
-                                : Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        _orderedExercises[4].name, // "TAKE"
-                                        textAlign: TextAlign.center,
-                                        style: AppStyles.headingMedium.copyWith(
-                                          color: AppStyles.white,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Debug overlay (only when kDebugLayout is true)
-                  if (kDebugLayout)
-                    ..._buildDebugOverlay([n4, n3, n2, play, take], W),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  List<Widget> _buildDebugOverlay(List<Offset> points, double screenWidth) {
-    final labels = ['n4', 'n3', 'n2', 'play', 'take'];
-    return List.generate(points.length, (i) {
-      return Positioned(
-        left: points[i].dx - 5,
-        top: points[i].dy - 5,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${labels[i]}\n(${points[i].dx.toStringAsFixed(0)}, ${points[i].dy.toStringAsFixed(0)})',
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.red,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+  void _handleTap(TimelineExercise exercise) {
+    if (_selectedExerciseId == exercise.id) {
+      _startExercise(exercise);
+    } else {
+      _selectExercise(exercise.id);
+    }
+  }
+
+  Widget _buildNodePositioned(Offset pos, double radius, TimelineExercise exercise, Color color) {
+    return Positioned(
+      left: pos.dx - radius,
+      top: pos.dy - radius,
+      child: GestureDetector(
+        onTap: () => _handleTap(exercise),
+        child: AnimatedScale(
+          scale: _selectedExerciseId == exercise.id ? 1.1 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          child: _TimelineExerciseNode(
+            exercise: exercise,
+            size: radius * 2,
+            color: color,
+            isSelected: _selectedExerciseId == exercise.id,
+          ),
         ),
-      );
-    });
+      ),
+    );
   }
 }
 
-// Exercise name text on the right side of screen
 class _AppearingExerciseNames extends StatelessWidget {
   final TimelineExercise exercise;
 
@@ -627,56 +383,45 @@ class _AppearingExerciseNames extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 800), // Longer fade in/out
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: child,
-        );
-      },
-      child: Container(
-        key: ValueKey(exercise.id),
-        width: 220, // Bigger circle
-        height: 220, // Bigger circle
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppStyles.white.withOpacity(0.2), // Translucent circle
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Exercise name - wrapped in FittedBox to fit inside circle
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                exercise.name,
-                style: AppStyles.headingLarge.copyWith(
-                  color: AppStyles.white
-                      .withOpacity(0.9), // White, slightly translucent
-                  fontWeight: FontWeight.w600,
-                  fontSize: 32, // Keep font size the same
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
+    return Container(
+      key: ValueKey(exercise.id),
+      width: 220,
+      height: 220,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.05),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              exercise.name,
+              style: BalladTheme.titleLarge.copyWith(fontSize: 32),
+              textAlign: TextAlign.center,
+              maxLines: 2,
             ),
-            const SizedBox(height: 8),
-            // Duration - same white color as text
-            Text(
-              '${exercise.minutes} min',
-              style: AppStyles.body.copyWith(
-                color: AppStyles.white.withOpacity(0.9), // Same white as text
-                fontSize: 16,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${exercise.minutes} min',
+            style: BalladTheme.bodyMedium.copyWith(
+              color: Colors.white.withOpacity(0.7),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            exercise.description,
+            style: BalladTheme.bodyMedium.copyWith(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -686,130 +431,125 @@ class _TimelineExerciseNode extends StatelessWidget {
   final TimelineExercise exercise;
   final double size;
   final Color color;
-  final bool hasCheckBadge;
   final bool isSelected;
 
   const _TimelineExerciseNode({
     required this.exercise,
     required this.size,
     required this.color,
-    this.hasCheckBadge = false,
     this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: AppStyles.getCircleGradient(color),
-            shape: BoxShape.circle,
-            boxShadow: isSelected ? AppStyles.selectedCircleGlow : null,
-          ),
-          child: Center(
-            child: isSelected
-                ? Icon(
-                    Icons.play_arrow,
-                    color: AppStyles.white,
-                    size: size * 0.4,
-                  )
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+        boxShadow: isSelected ? [
+          BoxShadow(
+            color: color.withOpacity(0.6),
+            blurRadius: 12,
+            spreadRadius: 2,
+          )
+        ] : null,
+      ),
+      child: Center(
+        child: isSelected
+            ? Icon(Icons.play_arrow, color: Colors.white, size: size * 0.4)
+            : exercise.completed
+                ? Icon(Icons.check, color: Colors.white, size: size * 0.4)
                 : Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        exercise.name,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: exercise.completed
-                              ? AppStyles.white
-                              : AppStyles.textPrimary,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                    padding: const EdgeInsets.all(4),
+                    child: Text(
+                      exercise.name,
+                      textAlign: TextAlign.center,
+                      style: BalladTheme.labelSmall.copyWith(
+                        fontSize: 10,
+                        color: Colors.white,
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-          ),
-        ),
-        if (hasCheckBadge && exercise.completed)
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check,
-                size: 12,
-                color: AppStyles.timelineCheckIcon,
-              ),
-            ),
-          ),
-      ],
+      ),
     );
   }
-}
-
-// Helper function to convert Catmull-Rom spline to cubic Bezier
-Path _catmullRomToBezier(List<Offset> pts, {double tension = 0.5}) {
-  assert(pts.length >= 2);
-  final path = Path()..moveTo(pts[0].dx, pts[0].dy);
-
-  for (int i = 0; i < pts.length - 1; i++) {
-    final p0 = i == 0 ? pts[i] : pts[i - 1];
-    final p1 = pts[i];
-    final p2 = pts[i + 1];
-    final p3 = (i + 2 < pts.length) ? pts[i + 2] : pts[i + 1];
-
-    final c1 = Offset(
-      p1.dx + (p2.dx - p0.dx) * tension / 6.0,
-      p1.dy + (p2.dy - p0.dy) * tension / 6.0,
-    );
-    final c2 = Offset(
-      p2.dx - (p3.dx - p1.dx) * tension / 6.0,
-      p2.dy - (p3.dy - p1.dy) * tension / 6.0,
-    );
-
-    path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
-  }
-  return path;
 }
 
 class _TimelineSplinePainter extends CustomPainter {
   final List<Offset> points;
 
-  _TimelineSplinePainter({
-    required this.points,
-  });
+  _TimelineSplinePainter({required this.points});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppStyles.timelineSpline // Muted gray-brown
+      ..color = Colors.white.withOpacity(0.15)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
-    if (points.length < 2) return;
+    // Draw splines between points
+    // Simplified: Just draw nice curves or straight lines for now, 
+    // or reimplement CatmullRom if I had the helper.
+    // I will use a simple smooth path since I don't want to reimplement the complex helper right now if not needed,
+    // but the original file had `_catmullRomToBezier`. I should ideally include it.
+    
+    // Re-implementing simplified curve
+    final path = Path()..moveTo(points[0].dx, points[0].dy);
+    
+    // Quadratic beziers between points
+    for (int i = 0; i < points.length - 1; i++) {
+        final p1 = points[i];
+        final p2 = points[i+1];
+        // Control point logic (midpoint with some offset?)
+        // Let's just draw straight line or simple curve
+        // Using QuadraticBezier to midpoint
+        path.quadraticBezierTo(
+            p1.dx, p2.dy, // Control point roughly forming an arc?
+            p2.dx, p2.dy
+        );
+        // This might look jagged. 
+        // Let's copy the helper logic from memory/previous file or just use standard smooth curve.
+    }
 
-    // Create smooth continuous curve through all points using Catmull-Rom spline
-    final path = _catmullRomToBezier(points, tension: 0.5);
+    // Better: Draw a single arc?
+    // The points are n4, n3, n2, play, take.
+    // They roughly form a spiral/arc.
+    // I'll stick to the original helper if I can, but I overwrote it.
+    // Wait, I can reproduce the helper.
+    
+    _drawCatmullRom(canvas, paint, points);
+  }
 
-    // Draw single continuous path
+  void _drawCatmullRom(Canvas canvas, Paint paint, List<Offset> points) {
+    final path = Path()..moveTo(points[0].dx, points[0].dy);
+    for (int i = 0; i < points.length - 1; i++) {
+        final p0 = i > 0 ? points[i-1] : points[i];
+        final p1 = points[i];
+        final p2 = points[i+1];
+        final p3 = i < points.length - 2 ? points[i+2] : points[i+1];
+        
+        // Catmull-Rom to Cubic Bezier conversion
+        // p1 -> p2
+        // cp1 = p1 + (p2 - p0) / 6 * tension (0.5)
+        // cp2 = p2 - (p3 - p1) / 6 * tension
+        
+        const t = 0.5;
+        final d1 = p2 - p0;
+        final d2 = p3 - p1;
+        
+        final cp1 = p1 + d1 * (t / 6.0);
+        final cp2 = p2 - d2 * (t / 6.0);
+        
+        path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, p2.dx, p2.dy);
+    }
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant _TimelineSplinePainter oldDelegate) {
-    return oldDelegate.points != points;
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

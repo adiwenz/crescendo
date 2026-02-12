@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../services/vocal_range_service.dart';
 import '../../ui/screens/select_vocal_range_screen.dart';
 import '../../state/library_store.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/frosted_panel.dart';
+import '../../widgets/ballad_buttons.dart';
+import '../../theme/ballad_theme.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -53,81 +57,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const CircleAvatar(
-              radius: 36,
-              child: Icon(Icons.person, size: 36),
+    return BalladScaffold(
+      title: 'Profile',
+      child: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Center(
+            child: CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.white.withOpacity(0.2),
+              child: const Icon(Icons.person, size: 40, color: Colors.white),
             ),
-            const SizedBox(height: 12),
-            Center(
-              child: Text(
-                'User',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              'User',
+              style: BalladTheme.titleMedium,
             ),
-            const SizedBox(height: 24),
-            // Vocal Range Section
-            Column(
+          ),
+          const SizedBox(height: 32),
+          
+          // Vocal Range Section
+          FrostedPanel(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Vocal Range'),
-                  subtitle: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : _hasCustomRange
-                          ? Text(
-                              'Range: $_rangeDisplay',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            )
-                          : Text(
-                              'Setting your vocal range will personalize exercises to fit your voice.',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
+                Text(
+                  'Vocal Range', 
+                  style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _setRange,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text('Set Range'),
-                  ),
+                const SizedBox(height: 8),
+                _loading
+                    ? const SizedBox(
+                        height: 20,
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                      )
+                    : Text(
+                        _hasCustomRange
+                            ? 'Range: $_rangeDisplay'
+                            : 'Setting your vocal range will personalize exercises to fit your voice.',
+                        style: BalladTheme.bodyMedium,
+                      ),
+                const SizedBox(height: 16),
+                BalladPrimaryButton(
+                  label: 'Set Range',
+                  onPressed: _setRange,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            _settingsRow(context, 'Subscription', () => Navigator.pushNamed(context, '/settings/subscription')),
-            _settingsRow(context, 'Preferences', () => Navigator.pushNamed(context, '/settings')),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Settings
+          FrostedPanel(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              children: [
+                _settingsRow(context, 'Subscription', () => Navigator.pushNamed(context, '/settings/subscription')),
+                Divider(color: Colors.white.withOpacity(0.1), height: 1),
+                _settingsRow(context, 'Preferences', () => Navigator.pushNamed(context, '/settings')),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          
+          // Danger Zone
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               onPressed: () async {
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
-                    title: const Text('Reset progress?'),
-                    content: const Text('This will clear completed exercises.'),
+                    backgroundColor: const Color(0xFF1A1A2E),
+                    title: const Text('Reset progress?', style: TextStyle(color: Colors.white)),
+                    content: const Text('This will clear completed exercises.', style: TextStyle(color: Colors.white70)),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
                       ),
-                      ElevatedButton(
+                      TextButton(
                         onPressed: () => Navigator.pop(context, true),
+                        style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
                         child: const Text('Reset'),
                       ),
                     ],
@@ -143,17 +162,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
               child: const Text('Reset progress'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _settingsRow(BuildContext context, String title, VoidCallback onTap) {
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right),
+      title: Text(title, style: BalladTheme.bodyMedium),
+      trailing: Icon(Icons.chevron_right, color: BalladTheme.textSecondary),
       onTap: onTap,
     );
   }

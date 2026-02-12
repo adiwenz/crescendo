@@ -19,6 +19,10 @@ import '../../services/vocal_range_service.dart';
 import '../../audio/ref_audio/wav_cache_manager.dart';
 import '../../audio/ref_audio/ref_spec.dart';
 import '../../utils/navigation_trace.dart';
+import '../../widgets/ballad_scaffold.dart';
+import '../../widgets/frosted_panel.dart';
+import '../../widgets/ballad_buttons.dart';
+import '../../theme/ballad_theme.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final String exerciseId;
@@ -291,12 +295,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
     
     final ex = _exercise;
     // Use pre-computed title
-    final appBarBuild = AppBar(title: Text(_categoryTitle.isNotEmpty ? _categoryTitle : 'Exercise'));
+    final title = _categoryTitle.isNotEmpty ? _categoryTitle : 'Exercise';
 
     final body = _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               children: [
                 if (ex != null) 
                   _Header(
@@ -304,167 +308,146 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                     bannerStyleId: _bannerStyleId
                   ),
                 const SizedBox(height: 16),
-                Card(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Purpose',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        Text(ex?.purpose ??
-                            ex?.description ??
-                            'Build control and accuracy.'),
-                        const SizedBox(height: 16),
-                        const Text('How it works',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        Text(ex?.description ??
-                            'Follow along and match the guide.'),
-                      ],
-                    ),
+                FrostedPanel(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Purpose', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(ex?.purpose ?? ex?.description ?? 'Build control and accuracy.', style: BalladTheme.bodyMedium),
+                      const SizedBox(height: 16),
+                      Text('How it works', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(ex?.description ?? 'Follow along and match the guide.', style: BalladTheme.bodyMedium),
+                    ],
                   ),
                 ),
                 if (ex != null &&
                     ExerciseMetadata.forExercise(ex).previewSupported) ...[
                   const SizedBox(height: 16),
-                  Card(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Preview',
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
-                          Text(ex.description),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed:
-                                    _previewing ? null : () => _playPreview(ex),
-                                icon: Icon(_previewing
-                                    ? Icons.pause
-                                    : Icons.play_arrow),
-                                label: Text(
-                                    _previewing ? 'Playing…' : 'Play preview'),
+                  const SizedBox(height: 16),
+                  FrostedPanel(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Preview', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        Text(ex.description, style: BalladTheme.bodyMedium),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            IntrinsicWidth(
+                              child: BalladPrimaryButton(
+                                onPressed: _previewing ? null : () => _playPreview(ex),
+                                icon: _previewing ? Icons.pause : Icons.play_arrow,
+                                label: _previewing ? 'Playing…' : 'Play preview',
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
                 if (ex?.usesPitchHighway == true) ...[
                   const SizedBox(height: 16),
-                  Card(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Difficulty',
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: List.generate(3, (index) {
-                              final level = index + 1;
-                              final unlocked = level <= _highestUnlockedLevel;
-                              final selected = _selectedLevel == level;
-                              final highlighted = _highlightedLevel == level;
-                              final best = _bestScoresByLevel[level];
-                              final difficulty =
-                                  pitchHighwayDifficultyFromLevel(level);
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                padding: const EdgeInsets.all(2),
+                  FrostedPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Difficulty', style: BalladTheme.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(3, (index) {
+                            final level = index + 1;
+                            final unlocked = level <= _highestUnlockedLevel;
+                            final selected = _selectedLevel == level;
+                            final highlighted = _highlightedLevel == level;
+                            final best = _bestScoresByLevel[level];
+                            final difficulty = pitchHighwayDifficultyFromLevel(level);
+                            
+                            return GestureDetector(
+                              onTap: unlocked
+                                  ? () async {
+                                      setState(() => _selectedLevel = level);
+                                      await _levelProgress.setLastSelectedLevel(
+                                        exerciseId: widget.exerciseId,
+                                        level: level,
+                                      );
+                                      _triggerPreparation();
+                                    }
+                                  : null,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: highlighted
-                                      ? Colors.amber.withOpacity(0.2)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(999),
+                                  borderRadius: BorderRadius.circular(20),
+                                  color: selected 
+                                      ? BalladTheme.accentTeal.withOpacity(0.2) 
+                                      : (highlighted ? BalladTheme.accentGold.withOpacity(0.2) : Colors.white.withOpacity(0.05)),
+                                  border: Border.all(
+                                    color: selected 
+                                        ? BalladTheme.accentTeal 
+                                        : (highlighted ? BalladTheme.accentGold : Colors.white.withOpacity(0.2)),
+                                    width: 1.5,
+                                  ),
                                 ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    ChoiceChip(
-                                      label: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text('Level $level'),
-                                          if (!unlocked) ...[
-                                            const SizedBox(width: 6),
-                                            Icon(Icons.lock,
-                                                size: 14,
-                                                color: Colors.grey[600]),
-                                          ],
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Level $level',
+                                          style: BalladTheme.bodyMedium.copyWith(
+                                            color: selected || highlighted ? Colors.white : Colors.white70,
+                                            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                        if (!unlocked) ...[
+                                          const SizedBox(width: 6),
+                                          const Icon(Icons.lock, size: 14, color: Colors.white38),
                                         ],
-                                      ),
-                                      selected: selected,
-                                      onSelected: unlocked
-                                          ? (_) async {
-                                              setState(
-                                                  () => _selectedLevel = level);
-                                              await _levelProgress
-                                                  .setLastSelectedLevel(
-                                                exerciseId: widget.exerciseId,
-                                                level: level,
-                                              );
-                                              _triggerPreparation(); // Refresh plan for new level
-                                            }
-                                          : null,
+                                      ],
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      pitchHighwayDifficultySpeedLabel(
-                                          difficulty),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(color: Colors.grey[600]),
+                                      pitchHighwayDifficultySpeedLabel(difficulty),
+                                      style: BalladTheme.bodySmall.copyWith(color: Colors.white54),
                                     ),
                                     if (best != null)
                                       Text(
                                         'Best: $best%',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(color: Colors.grey[600]),
+                                        style: BalladTheme.bodySmall.copyWith(color: BalladTheme.accentTeal),
                                       ),
                                   ],
                                 ),
-                              );
-                            }),
-                          ),
-                          if (_highestUnlockedLevel <
-                              ExerciseLevelProgress.maxLevel)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                'Score 90%+ on the previous level to unlock.',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: Colors.grey[600]),
                               ),
+                            );
+                          }),
+                        ),
+                        if (_highestUnlockedLevel < ExerciseLevelProgress.maxLevel)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: Colors.white54),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Score 90%+ to unlock next level.',
+                                    style: BalladTheme.bodySmall.copyWith(color: Colors.white54),
+                                  ),
+                                ),
+                              ],
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -472,55 +455,45 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen>
                 Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton(
+                      child: BalladPrimaryButton(
                         onPressed: _isPreparing ? null : _startExercise,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('Start Exercise'),
-                              if (_isPreparing) ...[
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'Preparing audio...',
-                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                        label: _isPreparing ? 'Preparing audio...' : 'Start Exercise',
+                        isLoading: _isPreparing,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: OutlinedButton(
-                        onPressed: _latest == null ? null : _reviewLast,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          child: Text('Review last take'),
-                        ),
+                      child: BalladSecondaryButton(
+                         label: 'Review last take',
+                         onPressed: _latest == null ? null : _reviewLast,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 if (_latest != null)
-                  Card(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                if (_latest != null)
+                  FrostedPanel(
+                    padding: EdgeInsets.zero, // ListTile has its own padding
                     child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                       title: Text(
-                          'Last score: ${_latest!.score.toStringAsFixed(0)}'),
-                      subtitle: Text('Completed ${_latest!.dateLabel}'),
+                          'Last score: ${_latest!.score.toStringAsFixed(0)}',
+                          style: BalladTheme.bodyLarge,
+                      ),
+                      subtitle: Text(
+                          'Completed ${_latest!.dateLabel}',
+                          style: BalladTheme.bodyMedium.copyWith(color: BalladTheme.textSecondary),
+                      ),
+                      trailing: Icon(Icons.history, color: BalladTheme.textSecondary),
                     ),
                   ),
               ],
             );
 
-    return Scaffold(
-      appBar: appBarBuild,
-      body: body,
+    return BalladScaffold(
+      title: title,
+      child: body,
     );
   }
 
@@ -675,13 +648,13 @@ class _Header extends StatelessWidget {
         // Exercise name as header
         Text(
           ex.name,
-          style: Theme.of(context).textTheme.headlineMedium,
+          style: BalladTheme.titleLarge,
         ),
         const SizedBox(height: 6),
         // Description
         Text(
           ex.description,
-          style: Theme.of(context).textTheme.bodyMedium,
+          style: BalladTheme.bodyMedium,
           overflow: TextOverflow.ellipsis,
           maxLines: 2,
         ),
