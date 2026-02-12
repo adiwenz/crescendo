@@ -348,62 +348,41 @@ class _V0HomeScreenState extends State<V0HomeScreen> {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              // Enhanced 3D Gradient (Radial) - Base
-              gradient: RadialGradient(
-                center: const Alignment(-0.3, -0.3), // Light source top-left
-                radius: 1.3,
+              // Mostly flat gradient (Linear instead of Radial)
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
                 colors: [
-                  // Highlight (Top Left) -> Body -> Shadow (Bottom Right)
-                  Color.lerp(exercise.color, Colors.white, 0.4)!, // Lighter highlight
-                  exercise.color, // Main Body
-                  Color.lerp(exercise.color, Colors.black, 0.6)!, // Deep Shadow
+                  Color.lerp(exercise.color, Colors.white, 0.2)!, // Subtle highlight
+                  exercise.color,
+                  Color.lerp(exercise.color, Colors.black, 0.1)!, // Subtle shadow
                 ],
-                stops: const [0.0, 0.5, 1.0],
               ),
               boxShadow: [
                 // 1) "Next Up" Bright White Glow
                 if (isNextUp)
                   BoxShadow(
-                    color: Colors.white.withOpacity(0.6), // Brighter/Stronger
-                    blurRadius: 20,
-                    spreadRadius: 4,
+                    color: Colors.white.withOpacity(0.5), 
+                    blurRadius: 16,
+                    spreadRadius: 3,
                   ),
 
                  // 2) Standard Selection Glow 
                  if (isSelected && !isNextUp)
                   BoxShadow(
                     color: Colors.white.withOpacity(0.3),
-                    blurRadius: 15,
-                    spreadRadius: 2,
+                    blurRadius: 10,
+                    spreadRadius: 1,
                   ),
 
-                // 3) Deep Drop Shadow (Environment Shadow)
+                // 3) Softer Drop Shadow
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.4), // Darker shadow
-                  blurRadius: isSelected ? 25 : 12,
-                  spreadRadius: isSelected ? 4 : 0,
-                  offset: isSelected ? Offset.zero : const Offset(4, 6), // Deep offset
+                  color: Colors.black.withOpacity(0.2), // Lighter/Softer shadow
+                  blurRadius: isSelected ? 16 : 8,
+                  spreadRadius: isSelected ? 2 : 0,
+                  offset: isSelected ? Offset.zero : const Offset(2, 4), 
                 )
               ],
-            ),
-          ),
-
-          // 2. Inner Glow / Reflected Light (Bottom Right)
-          // Simulates light passing through or reflecting off the bottom inside
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                center: const Alignment(0.6, 0.6), // Bottom Right
-                radius: 1.0,
-                colors: [
-                  Colors.white.withOpacity(0.2), // Subtle light
-                  Colors.transparent,
-                ],
-                stops: const [0.0, 0.5],
-              ),
             ),
           ),
 
